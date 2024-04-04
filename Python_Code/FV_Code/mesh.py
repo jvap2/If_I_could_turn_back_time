@@ -25,14 +25,19 @@ class Mesh():
         return self.x
     def get_time(self):
         return self.t
-    def get_u(self):
-        return self.u
-    def set_u(self,u):
-        self.u = u
+    def get_a(self):
+        return self.a
+    def get_b(self):
+        return self.b
     def get_h(self):
         return self.h
     def get_k(self):
         return self.k
     def midpoint(self):
         return (self.x[1:]+self.x[:-1])/2
+    def cv(self):
+        cv = np.empty((self.N+1,))
+        cv[0],cv[-1]= self.midpoint()[0]-self.x[0],self.x[-1]-self.midpoint()[-1]
+        cv[1:-1] = self.midpoint()[1:]-self.midpoint()[:-1]
+        return cv
         
