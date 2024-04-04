@@ -10,7 +10,10 @@ class Mesh():
         self.t_m = t_m
         self.M = M
         self.h = (b-a)/N
-        self.k = (t_m-t_0)/M
+        if M == 0:
+            self.k = 0
+        else:
+            self.k = (t_m-t_0)/M
         self.x = np.linspace(a,b,N+1)
         self.t = np.linspace(t_0,t_m,M+1)
     def NumSubIntervals(self):
