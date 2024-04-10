@@ -27,6 +27,23 @@ class RKIntegrator(torch.nn.Module):
         x = x + self.dt * sum([self.weights[i] * k[i] for i in range(self.k)])
         return x
     
+
+def bmv(w, x):
+    """Matrix-vector multiplication that works even if x is a sequence of
+    vectors.
+
+    If w has size m,n and x has size n, performs a standard
+    matrix-vector multiply, yielding a vector of size m.
+
+    If w has size m,n and x has size b,n, multiplies w with every
+    column of x, yielding a matrix of size b,m.
+    """
+    
+    x = x.unsqueeze(-1)
+    y = w @ x
+    y = y.squeeze(-1)
+    return y
+    
 class RNN(torch.nn.Module):
     """Simple recurrent neural network.
 
