@@ -48,93 +48,53 @@ def u(x,t,alpha,L):
     return u
 
 
-# Set up RNN
+# Set up RNN for time stepping Runge Kutta Method
 
-class RNN(torch.nn.Module):
-    def __init__(self, dims):
+class RK_RNN(torch.nn.Module):
+    def __init__(self, f, dt, k):
         super().__init__()
-        self.dims = dims
-        self.h0 = torch.nn.Parameter(torch.empty(dims))
-        self.W_hi = torch.nn.Parameter(torch.empty(dims, dims))
-        self.W_hh = torch.nn.Parameter(torch.empty(dims, dims))
-        self.b = torch.nn.Parameter(torch.empty(dims))
-        torch.nn.init.normal_(self.h0, std=0.01)
-        torch.nn.init.normal_(self.W_hi, std=0.01)
-        torch.nn.init.normal_(self.W_hh, std=0.01)
-        torch.nn.init.normal_(self.b, std=0.01)
+        self.f = f
+        self.dt = dt
+        self.k = k
+        self.weights = torch.nn.ParameterList([torch.nn.Parameter(torch.empty(k)) for i in range(k)])
+        for i in range(k):
+            torch.nn.init.normal_(self.weights[i], std=0.01)
     
-    def start(self):
-        """Return the initial state."""
-        return self.h0
-    def step(self, state, inp):
-        """Given the old state, read in an input vector (inp) and
-        compute the new state and output vector (out).
-
-        Arguments:
-            state:  State (Tensor of size dims)
-            inp:    Input vector (Tensor of size dims)
-        """
-        if state.size()[-1] != self.dims:
-            raise TypeError(f'Previous hidden-state vector must have size {self.dims}')
-        if inp.size()[-1] != self.dims:
-            raise TypeError(f'Input vector must have size {self.dims}')
-        state = torch.tanh(torch.matmul(self.W_hi, inp) + torch.matmul(self.W_hh, state) + self.b)
-        return (state, state + inp)
-    def forward(self, inputs):
-        """Run the RNN on an input sequence.
-        Argument:
-            Input vectors (Tensor of size n,dims)
-        Return:
-            Output vectors (Tensor of size n,dims)
-        """
-        if inputs.ndim != 2:
-            raise TypeError("inputs must have exactly two axes")
-        if inputs.size()[1] != self.dims:
-            raise TypeError(f'Input vectors must have size {self.dims}')
-        h = self.start()
-        outputs = []
-        for inp in inputs:
-            h, o = self.step(h, inp)
-            outputs.append(o)
-        return torch.stack(outputs)
+    def forward(self, x):
+        k = [self.f(x)]
+        for i in range(1, self.k):
+            x_i = x
+            for j in range(i):
+                x_i = x_i + self.dt * self.weights[j] * k[j]
+            k.append(self.f(x_i))
+        x = x + self.dt * sum([self.weights[i] * k[i] for i in range(self.k)])
+        return x
     
-# Set up the RNN
-rnn = RNN(1)
+def bmv(w, x):
+    x = x.unsqueeze(-1)
+    y = w @ x
+    y = y.squeeze(-1)
+    return y
 
-# Set up the optimizer
-optimizer = torch.optim.Adam(rnn.parameters(), lr=0.01)
+## Solve the heat equation using the RK_RNN
 
+rnn = RK_RNN(f, 0.01, 100)
 
-# Set up the training data
-x = torch.linspace(0,1,100)
-t = torch.linspace(0,1,100)
-X,T = torch.meshgrid(x,t)
-X = X.flatten()
-T = T.flatten()
-X = X.unsqueeze(1)
-T = T.unsqueeze(1)
+x = torch.linspace(0, 1, 100)
+t = torch.linspace(0, 1, 100)
+X, T = torch.meshgrid(x, t)
 
-# Set up the training loop
-for epoch in range(1000):
-    optimizer.zero_grad()
-    u_hat = rnn(torch.cat([X,T],1))
-    u_hat = u_hat[:,0]
-    u = u(X,T,1,1)
-    loss = torch.mean((u_hat - u)**2)
-    loss.backward()
-    optimizer.step()
-    print(f'Epoch: {epoch}, Loss: {loss.item()}')
+u = rnn(X)
 
-
-# Plot the results
+# Plot the solution
 import matplotlib.pyplot as plt
-u_hat = rnn(torch.cat([X,T],1))
-u_hat = u_hat[:,0]
-u_hat = u_hat.reshape(100,100)
-plt.imshow(u_hat.detach().numpy())
-plt.savefig('heat_eqn_0.png')
+from mpl_toolkits.mplot3d import Axes3D
 
-u = u(X,T,1,1)
-u = u.reshape(100,100)
-plt.imshow(u.detach().numpy())
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(X, T, u.detach().numpy(), cmap='viridis')
+ax.set_xlabel('x')
+ax.set_ylabel('t')
+ax.set_zlabel('u')
 plt.savefig('heat_eqn.png')
