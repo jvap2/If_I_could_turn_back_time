@@ -26,9 +26,13 @@ else:
     print("CUDA is not available on your system.")
     device = torch.device("cpu")
 
-
-x = np.linspace(0,1,256)
-time_steps = 10
+x_0 = .5
+D = 0.1
+U = 1
+sigma = 0.1
+x_dim = 512
+x = np.linspace(0,1,512)
+time_steps = 100
 t = np.linspace(0,1,time_steps)
 
 def true_sol(x,t,sigma,D,U,x_0):
@@ -49,26 +53,26 @@ def boundary_conditions_gpu(t):
     return torch.zeros_like(t).to(device)
 
 class ConvectionDiffusionPDE(nn.Module):
-    def __init__(self, D, U, sigma,x_0):
+    def __init__(self, D, U, sigma,x_0,x_dim):
         super(ConvectionDiffusionPDE, self).__init__()
         self.D = D
         self.U = U
         self.sigma = sigma
         self.x_0 = x_0
-        self.linear1 = nn.Linear(256, 128)  # First linear layer
-        self.linear2 = nn.Linear(128, 256)  # Second linear layer
+        self.linear1 = nn.Linear(x_dim, 128)  # First linear layer
+        self.linear2 = nn.Linear(128,x_dim)  # Second linear layer
     def forward(self, x):
         x = self.linear1(x)
         x = torch.tanh(x)
         x = self.linear2(x)
         return x
-    def loss(self, x, t, model_result):
-        return mse_loss(model_result, true_sol(x,t,self.sigma,self.D,self.U,0))+mse_loss(model_result[0],boundary_conditions_gpu(t))+mse_loss(model_result[-1],boundary_conditions_gpu(t))
+    def loss(self, x, t, model_result,w_1,w_b1,w_b2):
+        return w_1*mse_loss(model_result, true_sol(x,t,self.sigma,self.D,self.U,0))+w_b1*mse_loss(model_result[0],boundary_conditions_gpu(t))+w_b2*mse_loss(model_result[-1],boundary_conditions_gpu(t))
     
 
 # Set up the model
 
-model = [ConvectionDiffusionPDE(0.1, 1, 0.1, 0.5).to(device) for _ in range(time_steps)]
+model = [ConvectionDiffusionPDE(D,U,sigma,x_0,x_dim).to(device) for _ in range(time_steps)]
 
 
 epochs = 1000
@@ -85,12 +89,15 @@ t_=t.to(device)
 # print(type(true))
 output = []
 print(t.shape[0])
+w_1 = .5
+w_b1 = .25
+w_b2 = .25
 for i in range(t.shape[0]):
     optimizer = Adam(model[i].parameters(), lr=0.0001)
     for j in range(epochs):
         res = model[i](x_)
         optimizer.zero_grad()
-        loss = model[i].loss(x_,t_[i],res)
+        loss = model[i].loss(x_,t_[i],res,w_1,w_b1,w_b2)
         loss.backward()
         optimizer.step()
         print(f'Epoch {j}, Loss {loss.item()}')
@@ -99,7 +106,7 @@ for i in range(t.shape[0]):
 output = torch.stack(output)
 print(output.shape)
 
-true = true_sol_cpu(x_sol,t_sol,0.1,0.1,1,0.5)
+true = true_sol_cpu(x_sol,t_sol,sigma,D,U,x_0)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
