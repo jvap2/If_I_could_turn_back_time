@@ -46,6 +46,9 @@ def true_sol_cpu(x,t,sigma,D,U,x_0):
 def initial_condition(x,x_0,sigma):
     return np.exp(-1/2*((x-x_0)/sigma)**2)
 
+def initial_condition_gpu(x,x_0,sigma):
+    return torch.exp(-1/2*((x-x_0)/sigma)**2).to(device)
+
 def boundary_condition(t):
     return np.zeros_like(t)
 
@@ -66,8 +69,8 @@ class ConvectionDiffusionPDE(nn.Module):
         x = torch.tanh(x)
         x = self.linear2(x)
         return x
-    def loss(self, x, t, model_result,w_1,w_b1,w_b2):
-        return w_1*mse_loss(model_result, true_sol(x,t,self.sigma,self.D,self.U,0))+w_b1*mse_loss(model_result[0],boundary_conditions_gpu(t))+w_b2*mse_loss(model_result[-1],boundary_conditions_gpu(t))
+    def loss(self, x, t, model_result,w_1,w_b1,w_b2, x_0):
+        return w_1*mse_loss(model_result, true_sol(x,t,self.sigma,self.D,self.U,x_0))+w_b1*mse_loss(model_result[0],boundary_conditions_gpu(t))+w_b2*mse_loss(model_result[-1],boundary_conditions_gpu(t))
     
 
 # Set up the model
@@ -97,7 +100,7 @@ for i in range(t.shape[0]):
     for j in range(epochs):
         res = model[i](x_)
         optimizer.zero_grad()
-        loss = model[i].loss(x_,t_[i],res,w_1,w_b1,w_b2)
+        loss = model[i].loss(x_,t_[i],res,w_1,w_b1,w_b2,x_0)
         loss.backward()
         optimizer.step()
         print(f'Epoch {j}, Loss {loss.item()}')
