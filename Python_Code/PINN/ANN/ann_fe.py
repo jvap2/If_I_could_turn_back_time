@@ -144,7 +144,9 @@ std_cond_first_layer = np.std(cond_first_layer)
 mean_cond_second_layer = np.mean(cond_second_layer)
 std_cond_second_layer = np.std(cond_second_layer)
 
-df = pd.read_csv('convection_diffusion.csv')
+file = 'convection_diffusion.csv'
+
+df = pd.read_csv(file)
 trial = df.shape[0]
 df.loc[trial-1,'L2Error'] = l2_error.item()
 df.loc[trial-1,'AverageTimeperEpoch'] = ave_time
@@ -160,7 +162,7 @@ df.loc[trial-1,'D'] = D
 df.loc[trial-1,'U'] = U
 df.loc[trial-1,'Sigma'] = sigma
 df.loc[trial-1,'X_0'] = x_0
-df.to_csv('convection_diffusion.csv',index=False)
+df.to_csv(file,index=False)
 
 
 
