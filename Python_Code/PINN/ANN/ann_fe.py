@@ -6,8 +6,14 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
+import time
+import pandas as pd
+import sys
 
 
+x_steps = int(sys.argv[1])
+t_steps = int(sys.argv[2])
+hidden_size = int(sys.argv[3])
 ## Define convection-diffusion equation as a space time (x,t) dependent PDE
 '''
 dc/dt + u dc/dx = D d^2c/dx^2, x in [0,1], t in [0,1]
@@ -27,13 +33,11 @@ else:
     device = torch.device("cpu")
 
 x_0 = .5
-D = 0.1
-U = 1
+D = 1
+U = 5
 sigma = 0.1
-x_dim = 512
-x = np.linspace(0,1,512)
-time_steps = 100
-t = np.linspace(0,1,time_steps)
+x = np.linspace(0,1,x_steps)
+t = np.linspace(0,1,t_steps)
 
 def true_sol(x,t,sigma,D,U,x_0):
     arg = -(x - x_0- U*t)**2/(2*sigma**2 + 4*D*t)
@@ -56,14 +60,14 @@ def boundary_conditions_gpu(t):
     return torch.zeros_like(t).to(device)
 
 class ConvectionDiffusionPDE(nn.Module):
-    def __init__(self, D, U, sigma,x_0,x_dim):
+    def __init__(self, D, U, sigma,x_0,x_dim,hidden_size):
         super(ConvectionDiffusionPDE, self).__init__()
         self.D = D
         self.U = U
         self.sigma = sigma
         self.x_0 = x_0
-        self.linear1 = nn.Linear(x_dim, 128)  # First linear layer
-        self.linear2 = nn.Linear(128,x_dim)  # Second linear layer
+        self.linear1 = nn.Linear(x_dim, hidden_size)  # First linear layer
+        self.linear2 = nn.Linear(hidden_size,x_dim)  # Second linear layer
     def forward(self, x):
         x = self.linear1(x)
         x = torch.tanh(x)
@@ -75,7 +79,7 @@ class ConvectionDiffusionPDE(nn.Module):
 
 # Set up the model
 
-model = [ConvectionDiffusionPDE(D,U,sigma,x_0,x_dim).to(device) for _ in range(time_steps)]
+model = [ConvectionDiffusionPDE(D,U,sigma,x_0,x_steps,hidden_size).to(device) for _ in range(t_steps)]
 
 
 epochs = 1000
@@ -95,10 +99,16 @@ print(t.shape[0])
 w_1 = .5
 w_b1 = .25
 w_b2 = .25
+count = 0
+time_overall = 0
 for i in range(t.shape[0]):
     optimizer = Adam(model[i].parameters(), lr=0.0001)
     for j in range(epochs):
+        count+=1
+        start = time.time()
         res = model[i](x_)
+        stop = time.time()
+        time_overall += stop-start
         optimizer.zero_grad()
         loss = model[i].loss(x_,t_[i],res,w_1,w_b1,w_b2,x_0)
         loss.backward()
@@ -108,23 +118,67 @@ for i in range(t.shape[0]):
             output.append(res)
 output = torch.stack(output)
 print(output.shape)
-
+ave_time = time_overall/count
 true = true_sol_cpu(x_sol,t_sol,sigma,D,U,x_0)
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
 
-X, T = np.meshgrid(x_sol, t_sol)
-Z_true = true
-Z_pred = output.cpu().detach().numpy()
+l2_error = np.mean(np.power(output.cpu().detach().numpy() - true, 2))
+l2_error = np.sqrt(l2_error)
+print(f"L2 Error: {l2_error.item()}")
+weight_matrices = []
+for i in range(t_steps):
+    weight_matrices.append(model[i].state_dict())
 
-ax.plot_surface(x_sol, t_sol, Z_true, label='True')
-ax.plot_surface(x_sol, t_sol, Z_pred, label='Predicted')
+## Extract weight matrices and find their condition number
+cond_first_layer = []
+cond_second_layer = []
+for i in range(t_steps):
+    for key in weight_matrices[i]:
+        if key == 'linear1.weight':
+            cond_first_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy()))
+        if key == 'linear2.weight':
+            cond_second_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy().T))
+## Find the mean and standard deviation of the condition numbers
+mean_cond_first_layer = np.mean(cond_first_layer)
+std_cond_first_layer = np.std(cond_first_layer)
+mean_cond_second_layer = np.mean(cond_second_layer)
+std_cond_second_layer = np.std(cond_second_layer)
 
-ax.set_xlabel('x')
-ax.set_ylabel('t')
-ax.set_zlabel('C')
+df = pd.read_csv('convection_diffusion.csv')
+trial = df.shape[0]
+df.loc[trial-1,'L2Error'] = l2_error.item()
+df.loc[trial-1,'AverageTimeperEpoch'] = ave_time
+df.loc[trial-1,'MeanConditionNumberFirstLayer'] = mean_cond_first_layer
+df.loc[trial-1,'StdConditionNumberFirstLayer'] = std_cond_first_layer
+df.loc[trial-1,'MeanConditionNumberSecondLayer'] = mean_cond_second_layer
+df.loc[trial-1,'StdConditionNumberSecondLayer'] = std_cond_second_layer
+df.loc[trial-1,'XSteps'] = x_steps
+df.loc[trial-1,'TSteps'] = t_steps
+df.loc[trial-1,'HiddenSize'] = hidden_size
+df.loc[trial-1,'Epochs'] = epochs
+df.loc[trial-1,'D'] = D
+df.loc[trial-1,'U'] = U
+df.loc[trial-1,'Sigma'] = sigma
+df.loc[trial-1,'X_0'] = x_0
+df.to_csv('convection_diffusion.csv',index=False)
 
-plt.legend()
-plt.savefig('convection_diffusion.png')
+
+
+
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
+
+# X, T = np.meshgrid(x_sol, t_sol)
+# Z_true = true
+# Z_pred = output.cpu().detach().numpy()
+
+# ax.plot_surface(x_sol, t_sol, Z_true, label='True')
+# ax.plot_surface(x_sol, t_sol, Z_pred, label='Predicted')
+
+# ax.set_xlabel('x')
+# ax.set_ylabel('t')
+# ax.set_zlabel('C')
+
+# plt.legend()
+# plt.savefig('convection_diffusion.png')
 
