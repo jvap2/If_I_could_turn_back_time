@@ -109,3 +109,6 @@ __device__ T dTanh(T x)
 {
     return 1.0f - x * x;
 }
+
+
+// layers.cu
