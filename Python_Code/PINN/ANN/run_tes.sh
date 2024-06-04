@@ -8,7 +8,7 @@ do
     do
         for k in 128 256
         do 
-            python3 ann_fe.py $i $j $k
+            python3 ann_fe.py $i $j $k >> output.csv
         done
     done
 done

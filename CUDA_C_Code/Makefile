@@ -3,6 +3,7 @@ NVCC_FLAGS := --extended-lambda -Xcompiler -O3 -rdc=true -gencode arch=compute_8
 LINK_FLAGS := -arch=sm_89  
 INC_FLAGS := -lcudadevrt -lcurand -lcusparse -lcublas -lnvToolsExt -lcusolver
 # C_FLAGS := -std=c++11 
+NVCC := nvcc
 
 INC := include
 OBJ := obj
@@ -12,28 +13,18 @@ BIN := bin
 
 IMM: $(BIN)/IMM
 
-$(BIN)/IMM: $(OBJ)/main.o $(OBJ)/rim.o $(OBJ)/data.o $(OBJ)/err.o $(OBJ)/pr.o $(OBJ)/bfs.o
+$(BIN)/IMM: $(OBJ)/main.o $(OBJ)/ml.o
 	$(NVCC) $(LINK_FLAGS) $(INC_FLAGS) $^ -o $@
 
 
 
-$(OBJ)/data.o: $(SRC)/dataprocessing.cu
+$(OBJ)/ml.o: $(SRC)/ml_time.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ)/main.o: $(SRC)/main.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
-$(OBJ)/rim.o: $(SRC)/rim.cu 
-	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
-$(OBJ)/pr.o: $(SRC)/pr.cu
-	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
-
-$(OBJ)/err.o: $(INC)/GPUErrors.cu
-	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
-
-$(OBJ)/bfs.o: $(SRC)/prob_bfs.cu
-	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 
 clean:
