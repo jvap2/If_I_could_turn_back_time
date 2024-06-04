@@ -42,6 +42,13 @@
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
+
+// functions.cpp
+void InitializeMatrix(float *matrix, int ny, int nx);
+void ZeroMatrix(float *temp, const int ny, const int nx);
+
+
+//ml_time.cu
 __global__ void TiledMult(float* g_A, float* g_B, float* g_C, const int Width);
 __global__ void MatMult(float* g_A, float* g_B, float* g_C, const int ny, const int nx);
 

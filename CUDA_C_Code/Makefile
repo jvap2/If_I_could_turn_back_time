@@ -13,10 +13,11 @@ BIN := bin
 
 IMM: $(BIN)/IMM
 
-$(BIN)/IMM: $(OBJ)/main.o $(OBJ)/ml.o
+$(BIN)/IMM: $(OBJ)/main.o $(OBJ)/ml.o $(OBJ)/func.o $(OBJ)/err.o
 	$(NVCC) $(LINK_FLAGS) $(INC_FLAGS) $^ -o $@
 
-
+$(OBJ)/func.o: $(SRC)/functions.cu
+	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ)/ml.o: $(SRC)/ml_time.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
@@ -24,7 +25,8 @@ $(OBJ)/ml.o: $(SRC)/ml_time.cu
 $(OBJ)/main.o: $(SRC)/main.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
-
+$(OBJ)/err.o: $(INC)/GPUErrors.cu
+	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 
 clean:
