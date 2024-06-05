@@ -4,7 +4,8 @@ template <typename T>
 class Matrix
 {
 public:
-    Matrix();
+    Matrix(int rows, int cols);
+    Matrix(int rows, int cols, T *data);
     ~Matrix();
     int rows;
     int cols;
@@ -21,6 +22,7 @@ public:
     void matrix_elementwise_divide(T *A, T *B, T *C);
     void matrix_elementwise_add(T *A, T *B, T *C);
     void matrix_elementwise_subtract(T *A, T *B, T *C);
+    void matrix_sum(T *A, T *C, int axis);
     void set_rows(int rows);
     void set_cols(int cols);
     int get_rows();
