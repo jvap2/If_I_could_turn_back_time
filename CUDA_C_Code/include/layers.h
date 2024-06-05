@@ -35,7 +35,9 @@ template <typename T>
 class Sigmoid: public Matrix
 {
 public:
-    Sigmoid();
+    Sigmoid(int rows, int cols);
+    int rows;
+    int cols;
     ~Sigmoid();
     void forward(T *input, T *output, int size);
     void backward(T *input, T *output, int size);
@@ -45,7 +47,9 @@ template <typename T>
 class RELU_layer: public Matrix
 {
 public:
-    RELU_layer();
+    RELU_layer(int rows, int cols);
+    int rows;
+    int cols;
     ~RELU_layer();
     void forward(T *input, T *output, int size);
     void backward(T *input, T *output, int size);
@@ -55,11 +59,16 @@ template <typename T>
 class Linear: public Matrix
 {
     public:
-        Linear();
+        Linear(int rows, int cols);
+        int rows;
+        int cols;
+        T* weights;
+        T* biases;
         ~Linear();
         void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
         void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
-        void update(T *weight, T *bias, T *d_weight, T *d_bias, int input_size, int output_size, T learning_rate);
+        void update_weights(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size);
+        void set_weights(T *weights, T *biases)
 };
 
 template <typename T>

@@ -545,3 +545,299 @@ int Matrix<T>:: get_rows(){
     return rows;
 }
 
+
+template <typename T>
+Sigmoid<T>::Sigmoid(int rows, int cols):Matrix<T>(rows, cols){
+    this->rows = rows;
+    this->cols = cols;
+}
+
+
+template <typename T>
+void Sigmoid<T>::forward(T *input, T *output, int size){
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    cudaMalloc((void**)&d_input, size * sizeof(T));
+    cudaMalloc((void**)&d_output, size * sizeof(T));
+
+    // Copy input from host to device
+    cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the sigmoid kernel
+    sigmoid_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+}
+
+template <typename T>
+__global__ void sigmoid_kernel(T *input, T *output, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        output[index] = 1 / (1 + exp(-input[index]));
+    }
+}
+
+template <typename T>
+void Sigmoid<T>::backward(T *input, T *output, int size){
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    cudaMalloc((void**)&d_input, size * sizeof(T));
+    cudaMalloc((void**)&d_output, size * sizeof(T));
+
+    // Copy input from host to device
+    cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the sigmoid derivative kernel
+    sigmoid_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+}
+
+template <typename T>
+__global__ void sigmoid_derivative_kernel(T *input, T *output, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        output[index] = input[index] * (1 - input[index]);
+    }
+}
+
+template <typename T>
+RELU_layer<T>::RELU_layer(int rows, int cols):Matrix<T>(rows, cols){
+    this->rows = rows;
+    this->cols = cols;
+}
+
+template <typename T>
+void RELU_layer<T>::forward(T *input, T *output, int size){
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    cudaMalloc((void**)&d_input, size * sizeof(T));
+    cudaMalloc((void**)&d_output, size * sizeof(T));
+
+    // Copy input from host to device
+    cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the RELU kernel
+    RELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+}
+
+template <typename T>
+__global__ void RELU_kernel(T *input, T *output, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        output[index] = fmax(0, input[index]);
+    }
+}
+
+template <typename T>
+void RELU_layer<T>::backward(T *input, T *output, int size){
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    cudaMalloc((void**)&d_input, size * sizeof(T));
+    cudaMalloc((void**)&d_output, size * sizeof(T));
+
+    // Copy input from host to device
+    cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the RELU derivative kernel
+    RELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+}
+
+template <typename T>
+__global__ void RELU_derivative_kernel(T *input, T *output, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        output[index] = input[index] > 0 ? 1 : 0;
+    }
+}
+
+template <typename T>
+Linear<T>::Linear(int rows, int cols):Matrix<T>(rows, cols){
+    this->rows = rows;
+    this->cols = cols;
+}
+
+template <typename T>
+void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+    // Allocate device memory for input, output, weights, and biases
+    T *d_input, *d_output, *d_weights, *d_biases;
+    cudaMalloc((void**)&d_input, input_size * sizeof(T));
+    cudaMalloc((void**)&d_output, output_size * sizeof(T));
+    cudaMalloc((void**)&d_weights, rows * cols * sizeof(T));
+    cudaMalloc((void**)&d_biases, rows * cols * sizeof(T));
+
+    // Copy input, weights, and biases from host to device
+    cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the linear kernel
+    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+    cudaFree(d_weights);
+    cudaFree(d_biases);
+}
+
+template <typename T>
+__global__ void linear_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < output_size) {
+        T sum = 0;
+        for (int i = 0; i < input_size; i++) {
+            sum += input[i] * weights[i * output_size + index];
+        }
+        output[index] = sum + biases[index];
+    }
+}
+
+template <typename T>
+void Linear<T>::backward(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+    // Allocate device memory for input, output, weights, and biases
+    T *d_input, *d_output, *d_weights, *d_biases;
+    cudaMalloc((void**)&d_input, input_size * sizeof(T));
+    cudaMalloc((void**)&d_output, output_size * sizeof(T));
+    cudaMalloc((void**)&d_weights, rows * cols * sizeof(T));
+    cudaMalloc((void**)&d_biases, rows * cols * sizeof(T));
+
+    // Copy input, weights, and biases from host to device
+    cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the linear derivative kernel
+    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+
+    // Copy the result output from device to host
+    cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+    cudaFree(d_weights);
+    cudaFree(d_biases);
+}
+
+template <typename T>
+__global__ void linear_derivative_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < output_size) {
+        T sum = 0;
+        for (int i = 0; i < input_size; i++) {
+            sum += input[i] * weights[i * output_size + index];
+        }
+        output[index] = sum + biases[index];
+    }
+}
+
+template <typename T>
+void Linear<T>::update_weights(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size){
+    // Allocate device memory for weights, biases, d_weights, and d_biases
+    T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
+    cudaMalloc((void**)&d_weights, rows * cols * sizeof(T));
+    cudaMalloc((void**)&d_biases, rows * sizeof(T));
+    cudaMalloc((void**)&d_d_weights, rows * cols * sizeof(T));
+    cudaMalloc((void**)&d_d_biases, rows * sizeof(T));
+
+    // Copy weights, biases, d_weights, and d_biases from host to device
+    cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_d_weights, d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_d_biases, d_biases, rows * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the update weights kernel
+    update_weights_kernel<T><<<gridDim, blockDim>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, input_size, output_size);
+
+    // Copy the result weights and biases from device to host
+    cudaMemcpy(weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_weights);
+    cudaFree(d_biases);
+    cudaFree(d_d_weights);
+    cudaFree(d_d_biases);
+}
+
+template <typename T>
+__global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < output_size) {
+        for (int i = 0; i < input_size; i++) {
+            weights[i * output_size + index] -= learning_rate * d_weights[i * output_size + index];
+        }
+        biases[index] -= learning_rate * d_biases[index];
+    }
+}
+
+template <typename T>
+void Linear<T>::set_weights(T *weights, T *biases){
+    this->weights = weights;
+    this->biases = biases;
+}
+
+
