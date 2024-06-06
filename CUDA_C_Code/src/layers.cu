@@ -849,11 +849,11 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
     this->hidden_size = hidden_size;
     this->output_size = output_size;
 
-    this->input = new T[input_size];
+    this->input = Matrix<float>(1, input_size);
     for (int i = 0; i < num_layers; i++) {
-        this->hidden[i] = new T[hidden_size[i]];
+        this->hidden[i] = Matrix<float>(hidden_size[i], hidden_size[i+1]);
     }
-    this->output = new T[output_size];
+    this->output = Matrix<float>(1, output_size);
 }
 
 template <typename T>

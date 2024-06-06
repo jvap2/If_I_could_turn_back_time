@@ -96,9 +96,9 @@ class Network
         int *hidden_size;
         int output_size;
         int num_layers;
-        T* input;
-        T* output;
-        T** hidden;
+        Matrix<T> input;
+        Matrix<T> output;
+        Matrix<T>* hidden;
         thrust::host_vector<Linear<T>*> layers;  // Change this line
         void forward(T *input, T *output);
         void backward(T *input, T *output);

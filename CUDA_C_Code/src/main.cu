@@ -11,8 +11,12 @@ int main(){
     hidden_layers[0] = 512;
     hidden_layers[1] = 256;
     // Create a network
-    Network<float> net(input_size,  hidden_layers, output_size, 2);
-
+    Network<float> net(input_size,  hidden_layers, output_size, 4);
+    net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
+    net.addLayer(new RELU_layer<float>(hidden_layers[0], hidden_layers[0]));
+    net.addLayer(new Linear<float>(hidden_layers[0], hidden_layers[1]));
+    net.addLayer(new RELU_layer<float>(hidden_layers[1], hidden_layers[1]));
+    net.addLayer(new Linear<float>(hidden_layers[1], output_size));
 
 
     // Add layers to the network
