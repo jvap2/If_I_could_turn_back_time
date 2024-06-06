@@ -854,14 +854,6 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
         this->hidden[i] = new T[hidden_size[i]];
     }
     this->output = new T[output_size];
-
-    this->input_layer = new Linear<T>(input_size, hidden_size);
-    for(int i = 0; i < num_layers; i++){
-        this->hidden_layer[i] = new Linear<T>(hidden_size[i], hidden_size[i+1]);
-        this->activation[i] = new Sigmoid<T>(hidden_size[i+1], hidden_size[i+1]);
-    }
-    this->output_layer = new Linear<T>(hidden_size[num_layers-1], output_size);
-    this->activation = new Sigmoid<T>(output_size, output_size);
 }
 
 template <typename T>
