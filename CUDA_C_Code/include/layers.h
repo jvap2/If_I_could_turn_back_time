@@ -32,7 +32,7 @@ private:
 };
 
 template <typename T>
-class Sigmoid: public Matrix
+class Sigmoid: public Matrix<T>
 {
 public:
     Sigmoid(int rows, int cols);
@@ -44,7 +44,7 @@ public:
 };
 
 template <typename T>
-class RELU_layer: public Matrix
+class RELU_layer: public Matrix<T>
 {
 public:
     RELU_layer(int rows, int cols);
@@ -55,8 +55,19 @@ public:
     void backward(T *input, T *output, int size);
 };
 
+
 template <typename T>
-class Linear: public Matrix
+class Softmax: public Matrix<T>
+{
+    public:
+        Softmax();
+        ~Softmax();
+        void forward(T *input, T *output, int size);
+        void backward(T *input, T *output, int size);
+};
+
+template <typename T>
+class Linear: public Matrix<T>
 {
     public:
         Linear(int rows, int cols);
@@ -67,17 +78,75 @@ class Linear: public Matrix
         ~Linear();
         void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
         void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
-        void update_weights(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size);
-        void set_weights(T *weights, T *biases)
+        void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
+        void set_weights(T *weights, T *biases);
 };
 
 template <typename T>
-class Softmax: public Matrix
-{
-    public:
-        Softmax();
-        ~Softmax();
-        void forward(T *input, T *output, int size);
-        void backward(T *input, T *output, int size);
-};
+__global__ void matrix_multiply_kernel(T *A, T *B, T *C, int rows, int cols);
 
+template <typename T>
+__global__ void matrix_add_kernel(T *A, T *B, T *C, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_subtract_kernel(T *A, T *B, T *C, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_transpose_kernel(T *A, T *C, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_scalar_multiply_kernel(T *A, T *C, T scalar, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_scalar_add_kernel(T *A, T *C, T scalar, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_scalar_subtract_kernel(T *A, T *C, T scalar, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_scalar_divide_kernel(T *A, T *C, T scalar, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_elementwise_multiply_kernel(T *A, T *B, T *C, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_elementwise_divide_kernel(T *A, T *B, T *C, int rows, int cols);
+
+
+template <typename T>
+__global__ void matrix_elementwise_add_kernel(T *A, T *B, T *C, int rows, int cols);
+
+
+template <typename T>
+__global__ void matrix_elementwise_subtract_kernel(T *A, T *B, T *C, int rows, int cols);
+
+template <typename T>
+__global__ void matrix_sum_kernel(T *A, T *C, int rows, int cols, int axis);
+
+template <typename T>
+__global__ void sigmoid_kernel(T *input, T *output, int size);
+
+template <typename T>
+__global__ void sigmoid_derivative_kernel(T *input, T *output, int size);
+
+template <typename T>
+__global__ void RELU_kernel(T *input, T *output, int size);
+
+template <typename T>
+__global__ void RELU_derivative_kernel(T *input, T *output, int size);
+
+template <typename T>
+__global__ void linear_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size);
+
+template <typename T>
+__global__ void linear_derivative_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size);
+
+template <typename T>
+__global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size);
+
+template <typename T>
+__global__ void matrix_sum_axis0_kernel(T *A, T *C, int rows, int cols);
+
+
+template <typename T>
+__global__ void matrix_sum_axis1_kernel(T *A, T *C, int rows, int cols);

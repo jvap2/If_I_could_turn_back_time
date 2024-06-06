@@ -19,7 +19,7 @@ $(BIN)/IMM: $(OBJ)/main.o $(OBJ)/ml.o $(OBJ)/func.o $(OBJ)/err.o
 $(OBJ)/func.o: $(SRC)/functions.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
-$(OBJ)/ml.o: $(SRC)/ml_time.cu
+$(OBJ)/ml.o: $(SRC)/layers.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ)/main.o: $(SRC)/main.cu

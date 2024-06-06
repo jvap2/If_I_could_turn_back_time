@@ -1,5 +1,6 @@
 #include "../include/include.h"
 #include "../include/layers.h"
+#include "../include/network.h"
 
 // Function to initialize the weights and biases of the network
 template <typename T>
@@ -790,7 +791,7 @@ __global__ void linear_derivative_kernel(T *input, T *output, T *weights, T *bia
 }
 
 template <typename T>
-void Linear<T>::update_weights(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size){
+void Linear<T>::update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){
     // Allocate device memory for weights, biases, d_weights, and d_biases
     T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
     cudaMalloc((void**)&d_weights, rows * cols * sizeof(T));
@@ -840,4 +841,25 @@ void Linear<T>::set_weights(T *weights, T *biases){
     this->biases = biases;
 }
 
+//Assemble network
 
+template <typename T>
+Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_layers){
+    this->input_size = input_size;
+    this->hidden_size = hidden_size;
+    this->output_size = output_size;
+
+    this->input = new T[input_size];
+    for (int i = 0; i < num_layers; i++) {
+        this->hidden[i] = new T[hidden_size[i]];
+    }
+    this->output = new T[output_size];
+
+    this->input_layer = new Linear<T>(input_size, hidden_size);
+    for(int i = 0; i < num_layers; i++){
+        this->hidden_layer[i] = new Linear<T>(hidden_size[i], hidden_size[i+1]);
+        this->activation[i] = new Sigmoid<T>(hidden_size[i+1], hidden_size[i+1]);
+    }
+    this->output_layer = new Linear<T>(hidden_size[num_layers-1], output_size);
+    this->activation = new Sigmoid<T>(output_size, output_size);
+}
