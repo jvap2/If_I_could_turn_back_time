@@ -945,6 +945,22 @@ int Network<T>::get_output_size(){
     return output_size;
 }
 
+template <typename T>
+void Network<T>::addLayer(Linear<T> *layer){
+    layers.push_back(layer);
+}
+
+template <typename T>
+void Network<T>::addLayer(Sigmoid<T> *layer){
+    layers.push_back(layer);
+}
+
+template <typename T>
+void Network<T>::forward(T *input, T *output){
+    for(int i = 0; i < layers.size(); i++){
+        layers[i]->forward(input, output);
+    }
+}
 
 
 

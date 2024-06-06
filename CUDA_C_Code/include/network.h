@@ -17,6 +17,10 @@ class Network
         void forward(T *input, T *output);
         void backward(T *input, T *output);
         void update_weights(T learning_rate);
+        void addLayer(Linear<T>* layer);
+        void addLayer(Sigmoid<T>* layer);    
+        void addLayer(RELU_layer<T>* layer);
+        void addLayer(Softmax<T>* layer);
         void train(T *input, T *output, int epochs, T learning_rate);
         void predict(T *input, T *output);
         void set_input_size(int input_size);
