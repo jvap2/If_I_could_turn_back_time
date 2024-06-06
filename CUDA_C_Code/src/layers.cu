@@ -863,3 +863,89 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
     this->output_layer = new Linear<T>(hidden_size[num_layers-1], output_size);
     this->activation = new Sigmoid<T>(output_size, output_size);
 }
+
+template <typename T>
+void Network<T>::forward(T *input, T *output){
+    this->input_layer->forward(input, this->hidden[0], this->input_size, this->hidden_size[0]);
+    for(int i = 0; i < num_layers; i++){
+        this->hidden_layer[i]->forward(this->hidden[i], this->hidden[i+1], this->hidden_size[i], this->hidden_size[i+1]);
+        this->activation[i]->forward(this->hidden[i+1], this->hidden[i+1], this->hidden_size[i+1]);
+    }
+    this->output_layer->forward(this->hidden[num_layers-1], this->output, this->hidden_size[num_layers-1], this->output_size);
+    this->activation[num_layers]->forward(this->output, output, this->output_size);
+}
+
+template <typename T>
+void Network<T>::backward(T *input, T *output){
+    this->activation[num_layers]->backward(this->output, this->output, this->output_size);
+    this->output_layer->backward(this->hidden[num_layers-1], this->output, this->output_layer->weights, this->output_layer->biases, this->hidden_size[num_layers-1], this->output_size);
+    for(int i = num_layers-1; i >= 0; i--){
+        this->activation[i]->backward(this->hidden[i+1], this->hidden[i+1], this->hidden_size[i+1]);
+        this->hidden_layer[i]->backward(this->hidden[i], this->hidden[i+1], this->hidden_layer[i]->weights, this->hidden_layer[i]->biases, this->hidden_size[i], this->hidden_size[i+1]);
+    }
+    this->input_layer->backward(input, this->hidden[0], this->input_layer->weights, this->input_layer->biases, this->input_size, this->hidden_size[0]);
+}
+
+template <typename T>
+void Network<T>::update_weights(T learning_rate){
+    this->input_layer->update_weights(this->input_layer->weights, this->input_layer->biases, learning_rate, this->input_size, this->hidden_size[0]);
+    for(int i = 0; i < num_layers; i++){
+        this->hidden_layer[i]->update_weights(this->hidden_layer[i]->weights, this->hidden_layer[i]->biases, learning_rate, this->hidden_size[i], this->hidden_size[i+1]);
+    }
+    this->output_layer->update_weights(this->output_layer->weights, this->output_layer->biases, learning_rate, this->hidden_size[num_layers-1], this->output_size);
+}
+
+
+template <typename T>
+void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
+    for(int i = 0; i < epochs; i++){
+        forward(input, output);
+        backward(input, output);
+        update_weights(learning_rate);
+    }
+}
+
+template <typename T>
+void Network<T>::predict(T *input, T *output){
+    forward(input, output);
+}
+
+template <typename T>
+void Network<T>::set_input_size(int input_size){
+    this->input_size = input_size;
+}
+
+template <typename T>
+void Network<T>::set_hidden_size(int* hidden_size){
+    this->hidden_size = hidden_size;
+}
+
+template <typename T>
+void Network<T>::set_output_size(int output_size){
+    this->output_size = output_size;
+}
+
+template <typename T>
+void Network<T>::set_num_layers(int num_layers){
+    this->num_layers = num_layers;
+}
+
+template <typename T>
+int Network<T>::get_input_size(){
+    return input_size;
+}
+
+template <typename T>
+int* Network<T>::get_hidden_size(){
+    return hidden_size;
+}
+
+template <typename T>
+int Network<T>::get_output_size(){
+    return output_size;
+}
+
+
+
+
+
