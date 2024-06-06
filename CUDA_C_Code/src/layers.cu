@@ -1,6 +1,6 @@
 #include "../include/include.h"
 #include "../include/layers.h"
-#include "../include/network.h"
+
 
 // Function to initialize the weights and biases of the network
 template <typename T>
@@ -865,17 +865,6 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 }
 
 template <typename T>
-void Network<T>::forward(T *input, T *output){
-    this->input_layer->forward(input, this->hidden[0], this->input_size, this->hidden_size[0]);
-    for(int i = 0; i < num_layers; i++){
-        this->hidden_layer[i]->forward(this->hidden[i], this->hidden[i+1], this->hidden_size[i], this->hidden_size[i+1]);
-        this->activation[i]->forward(this->hidden[i+1], this->hidden[i+1], this->hidden_size[i+1]);
-    }
-    this->output_layer->forward(this->hidden[num_layers-1], this->output, this->hidden_size[num_layers-1], this->output_size);
-    this->activation[num_layers]->forward(this->output, output, this->output_size);
-}
-
-template <typename T>
 void Network<T>::backward(T *input, T *output){
     this->activation[num_layers]->backward(this->output, this->output, this->output_size);
     this->output_layer->backward(this->hidden[num_layers-1], this->output, this->output_layer->weights, this->output_layer->biases, this->hidden_size[num_layers-1], this->output_size);
@@ -962,6 +951,13 @@ void Network<T>::forward(T *input, T *output){
     }
 }
 
+template <typename T>
+Network<T>:: ~Network(){
+    for(int i=0; i<num_layers; i++){
+        delete[] layers[i];
+    }
+
+}
 
 
 

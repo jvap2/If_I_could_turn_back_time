@@ -1,7 +1,7 @@
 #include "../include/include.h"
 #include "../include/GPUErrors.h"
 #include "../include/layers.h"
-#include "../include/network.h"
+
 
 
 int main(){
@@ -12,7 +12,7 @@ int main(){
     hidden_layers[1] = 256;
     // Create a network
     Network<float> net(input_size,  hidden_layers, output_size, 2);
-    
+
 
 
     // Add layers to the network

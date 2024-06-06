@@ -1,4 +1,8 @@
 #include "GPUErrors.h"
+#include "include.h"
+#include <thrust/device_ptr.h>
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
 template <typename T>
 class Matrix
@@ -80,6 +84,35 @@ class Linear: public Matrix<T>
         void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
         void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
         void set_weights(T *weights, T *biases);
+};
+
+template <typename T>
+class Network
+{
+    public:
+        Network(int input_size, int* hidden_size, int output_size, int num_layers);
+        ~Network();
+        int input_size;
+        int *hidden_size;
+        int output_size;
+        int num_layers;
+        thrust::host_vector<Matrix<T>*> layers;  // Change this line
+        void forward(T *input, T *output);
+        void backward(T *input, T *output);
+        void update_weights(T learning_rate);
+        void addLayer(Linear<T>* layer);
+        void addLayer(Sigmoid<T>* layer);    
+        void addLayer(RELU_layer<T>* layer);
+        void addLayer(Softmax<T>* layer);
+        void train(T *input, T *output, int epochs, T learning_rate);
+        void predict(T *input, T *output);
+        void set_input_size(int input_size);
+        void set_hidden_size(int* hidden_size);
+        void set_output_size(int output_size);
+        void set_num_layers(int num_layers);
+        int get_input_size();
+        int* get_hidden_size();
+        int get_output_size();
 };
 
 template <typename T>
