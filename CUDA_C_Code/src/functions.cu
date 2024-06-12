@@ -27,3 +27,19 @@ void ZeroMatrix(float *temp, const int ny, const int nx)
 		p += nx;
 	}
 }
+
+void InitializeVector(float* vec, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		vec[i] = ((float)rand() / (RAND_MAX + 1)*(RANGE_MAX - RANGE_MIN) + RANGE_MIN);
+	}
+}
+
+void ZeroVector(float* vec, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		vec[i] = 0.0f;
+	}
+}

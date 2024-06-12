@@ -42,4 +42,7 @@
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
+void InitializeVector(float* vec, int n);
+void ZeroVector(float* vec, int n);
+
 
