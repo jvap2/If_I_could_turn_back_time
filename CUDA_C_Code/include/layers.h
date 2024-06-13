@@ -60,6 +60,8 @@ public:
     void set_cols(int cols);
     void forward(T *input, T *output);
     void backward(T *input, T *output){};
+    void backward(T *input, T *output, int size){};
+    void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
     int get_rows();
     int get_cols();
 private:
@@ -81,6 +83,16 @@ __global__ void matrix_vector_multiply_kernel(T *A, T *B, T *C, int rows, int co
 }
 
 template <typename T>
+__global__ void matrix_vector_addition_kernel(T *A, T *B, T *C, int rows, int cols){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rows) {
+        C[row] = A[row] + B[row];
+    }
+}
+
+template <typename T>
 void Matrix<T>::forward(T *input, T *output){
         // Allocate device memory for input and output
         T *d_input, *d_output;
@@ -94,8 +106,12 @@ void Matrix<T>::forward(T *input, T *output){
             cout<<"Error in allocating memory for d_output"<<endl;
             return;
         }
-        if(!HandleCUDAError(cudaMalloc((void**)&device_data, rows * cols * sizeof(T)))){ 
+        if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){ 
             cout<<"Error in allocating memory for device_data"<<endl;
+            return;
+        }
+        if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * sizeof(T)))){
+            cout<<"Error in allocating memory for d_biases"<<endl;
             return;
         }
 
@@ -193,12 +209,10 @@ class Softmax: public Matrix<T>
         Softmax(){
             this->rows = 0;
             this->cols = 0;
-            this->d_data = NULL;
         }
         Softmax(int rows, int cols){
             this->rows = rows;
             this->cols = cols;
-            this->d_data = (T*)malloc(rows * cols * sizeof(T));
         }
         ~Softmax();
         void forward(T *input, T *output, int size){
