@@ -210,11 +210,7 @@ class Network
 {
     public:
         Network(int input_size, int* hidden_size, int output_size, int num_layers);
-        ~Network(){
-            for(int i=0; i<num_layers; i++){
-                delete[] layers[i];
-            }
-        }
+        ~Network(){};
         int input_size;
         int *hidden_size;
         int output_size;
