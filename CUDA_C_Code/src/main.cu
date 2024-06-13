@@ -25,9 +25,8 @@ int main(){
     net.addLayer(new Softmax<float>(output_size, output_size));
     // Forward pass
     net.forward(input, target);
-    for(int i = 0; i < output_size; i++){
-        std::cout << target[i] << " ";
-    }
+    // Backward pass
+    net.backward(input,target);
 
 
     // Add layers to the network
