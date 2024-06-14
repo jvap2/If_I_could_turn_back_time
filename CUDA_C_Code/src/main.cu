@@ -23,10 +23,12 @@ int main(){
     net.addLayer(new RELU_layer<float>(hidden_layers[1], hidden_layers[1]));
     net.addLayer(new Linear<float>(hidden_layers[1], output_size));
     net.addLayer(new Softmax<float>(output_size, output_size));
-    // Forward pass
-    net.forward(input, target);
-    // Backward pass
-    net.backward(input,target);
+    // // Forward pass
+    // net.forward(input, target);
+    // // Backward pass
+    // net.backward(input,target);
+
+    net.train(input, target, 10, .01);
 
 
     // Add layers to the network

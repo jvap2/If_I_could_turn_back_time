@@ -221,9 +221,7 @@ Z_pred = output.cpu().detach().numpy()
 # ax.plot_surface(x_sol, t_sol, Z_pred, label='Predicted')
 # ax.plot_surface(x_sol, t_sol, Z_true.T, label='True')
 
-# ax.set_xlabel('x')
-# ax.set_ylabel('t')
-# ax.set_zlabel('C')
+
 
 # plt.legend()
 
@@ -232,8 +230,10 @@ import matplotlib.patches as mpatches
 
 # Your plot_surface calls without the label argument
 surf1 = ax.plot_surface(x_sol, t_sol, Z_pred, cmap=cm.coolwarm)
-surf2 = ax.plot_surface(x_sol, t_sol, Z_true.T, cmap=cm.coolwarm)
-
+surf2 = ax.plot_surface(x_sol, t_sol, Z_true.T, cmap=cm.inferno)
+ax.set_xlabel('x')
+ax.set_ylabel('t')
+ax.set_zlabel('C')
 # Create a legend using proxy artists
 predicted_patch = mpatches.Patch(color=surf1.get_facecolor()[0], label='Predicted')
 true_patch = mpatches.Patch(color=surf2.get_facecolor()[0], label='True')

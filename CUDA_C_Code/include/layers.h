@@ -62,6 +62,8 @@ public:
     void backward(T *input, T *output){};
     void backward(T *input, T *output, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
+    void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){};
+    void train(T *input, T *output, int epochs, T learning_rate){};
     int get_rows();
     int get_cols();
 private:
