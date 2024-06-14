@@ -1965,6 +1965,11 @@ void Conv2D<T>::set_padding(int padding){
     this->padding = padding;
 }
 
+template <typename T>
+int Conv2D<T>::get_rows(){
+    return rows;
+}
+
 __global__ void d_Gauss_Filter(unsigned char* in, unsigned char* out,int h, int w){
 	// __shared__ unsigned char in_shared[16][16];
     int x=threadIdx.x+(blockIdx.x*blockDim.x);
@@ -2024,22 +2029,39 @@ __global__ void d_Gauss_Filter_v2(unsigned char* in, unsigned char* out,int h, i
 }
 
 template <typename T>
-__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int radius,int width,int height){
     int outCol = blockIdx.x*blockDim.x+threadIdx.x;
     int outRow = blockIdx.y*blockDim.y+threadIdx.y;
     T Pvalue=0;
-    for(int i=0;i<3;i++){
-        for(int j=0;j<3;j++){
-            int inRow = outRow+i;
-            int inCol = outCol+j;
+    for(int i=0;i<2*radius+1;i++){
+        for(int j=0;j<2*radius+1;j++){
+            int inRow = outRow-radius+i;
+            int inCol = outCol-radius+j;
             if(inRow>=0 && inRow<input_size && inCol>=0 && inCol<input_size){
-                Pvalue+=input[inRow*input_size+inCol]*weights[i*3+j];
+                Pvalue+=input[inRow*width+inCol]*weights[i*(2*radius+1)+j];
             }
         }
     }
     output[outRow*input_size+outCol]=Pvalue+biases[outRow];
 }
 
+
+template <typename T>
+__global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biases, T *d_weights, T *d_biases, int radius,int width,int height){
+    int outCol = blockIdx.x*blockDim.x+threadIdx.x;
+    int outRow = blockIdx.y*blockDim.y+threadIdx.y;
+    T Pvalue=0;
+    for(int i=0;i<2*radius+1;i++){
+        for(int j=0;j<2*radius+1;j++){
+            int inRow = outRow-radius+i;
+            int inCol = outCol-radius+j;
+            if(inRow>=0 && inRow<input_size && inCol>=0 && inCol<input_size){
+                d_weights[i*(2*radius+1)+j]+=input[inRow*width+inCol]*output[outRow*input_size+outCol];
+            }
+        }
+    }
+    d_biases[outRow]+=output[outRow*input_size+outCol];
+}
 
 
 template <typename T>
@@ -2080,9 +2102,9 @@ void Conv2D<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
     // Define grid and block dimensions
     dim3 gridDim(1, 1, 1);
     dim3 blockDim(cols, rows, 1);
-
+    int radius = get_cols()/2;
     // Launch the linear kernel
-    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+    conv2D_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, radius, input_size, input_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         return;
@@ -2121,6 +2143,7 @@ template <typename T>
 void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
+    T* d_dweights, *d_dbiases, *d_dinput;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
@@ -2137,6 +2160,19 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
         cout<<"Error in allocating memory for d_biases"<<endl;
         return;
     }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_dweights, rows * cols * sizeof(T)))){
+        cout<<"Error in allocating memory for d_dweights"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_dbiases, rows * sizeof(T)))){
+        cout<<"Error in allocating memory for d_dbiases"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_dinput, input_size * sizeof(T)))){
+        cout<<"Error in allocating memory for d_dinput"<<endl;
+        return;
+    }
+
 
     // Copy input, weights, and biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
@@ -2157,9 +2193,23 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
     dim3 blockDim(cols, rows, 1);
 
     // Launch the linear kernel
-    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+    // Compute the gradients of the weights, biases, and input
+    conv2D_backward_kernel<<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, d_dweights, d_dbiases, d_dinput, input_size, output_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
+        return;
+    }
+    // Copy the gradients from device to host
+    if (!HandleCUDAError(cudaMemcpy(dweights, d_dweights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))) {
+        cout << "Error in copying dweights from device to host" << endl;
+        return;
+    }
+    if (!HandleCUDAError(cudaMemcpy(dbiases, d_dbiases, rows * sizeof(T), cudaMemcpyDeviceToHost))) {
+        cout << "Error in copying dbiases from device to host" << endl;
+        return;
+    }
+    if (!HandleCUDAError(cudaMemcpy(dinput, d_dinput, input_size * sizeof(T), cudaMemcpyDeviceToHost))) {
+        cout << "Error in copying dinput from device to host" << endl;
         return;
     }
     // Copy the result output from device to host
