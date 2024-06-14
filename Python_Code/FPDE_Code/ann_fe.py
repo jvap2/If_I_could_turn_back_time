@@ -10,12 +10,16 @@ import time
 import pandas as pd
 import sys
 import math
+import scipy
 from scipy.integrate import quad
 
 
-x_steps = int(sys.argv[1])
-t_steps = int(sys.argv[2])
-hidden_size = int(sys.argv[3])
+# x_steps = int(sys.argv[1])
+# t_steps = int(sys.argv[2])
+# hidden_size = int(sys.argv[3])
+x_steps = 512
+t_steps = 100
+hidden_size = 256
 ## Define convection-diffusion equation as a space time (x,t) dependent PDE
 '''
 dc/dt + u dc/dx = D d^2c/dx^2, x in [0,1], t in [0,1]
@@ -46,18 +50,34 @@ t = np.linspace(t_0,t_L,t_steps)
 K = .01
 Beta = 0.2
 
+# def true_sol(x,t,Beta,K):
+#     '''
+#     Input:
+#     x: spatial coordinate
+#     t: temporal coordinate
+#     Beta: floating point value to vary order of fractional derivative
+#     K: function of x and t, which is a constant for this solution
+#     '''
+#     # arg = lambda eps: torch.exp(-K*t*torch.cos(Beta*np.pi/2))*(eps**(2-Beta))*torch.cos(x*eps)
+#     # arg = lambda eps: torch.exp(-K*t*torch.cos(torch.tensor(Beta*np.pi/2)))*(eps**(2-Beta))*torch.cos(x*eps)
+#     print(type(x))
+#     u_true= lambda ep,x,t: np.exp(-K*t*np.cos(math.pi/10)*(ep**(2-Beta)))*np.cos(x*ep)
+#     int=(1/math.pi)*(quad(u_true,0,np.inf,args=(x,t))[0])
+#     sol = torch.zeros(x.shape[0],t.shape[0])
+#     for i, x_i in x:
+#         for j, t_j in t:
+#             sol[i,j] = int(x_i,t_j)
+#     return sol.to(device)
+
+
 def true_sol(x,t,Beta,K):
-    '''
-    Input:
-    x: spatial coordinate
-    t: temporal coordinate
-    Beta: floating point value to vary order of fractional derivative
-    K: function of x and t, which is a constant for this solution
-    '''
-    arg = lambda eps: torch.exp(-K*t*torch.cos(Beta*np.pi/2))*(eps**(2-Beta))*torch.cos(x*eps)
-    sol = (1/math.pi)*quad(arg,0,np.inf)[0]
-    sol_d = torch.tensor(sol).float().to(device)
-    return sol_d
+    u_true= lambda ep,x,t: np.exp(-K*t*np.cos(math.pi/10)*(ep**(2-Beta)))*np.cos(x*ep)
+    sol = torch.zeros(x.shape[0],)
+    for i, x_i in enumerate(x):
+        int_val = (1/math.pi)*(quad(u_true,0,10e3,args=(x_i.item(),t.item()))[0])+\
+        (1/math.pi)*(quad(u_true,10e3,10e6,args=(x_i.item(),t.item()))[0])
+        sol[i] = torch.tensor(int_val)
+    return sol.to(device)
 
 def true_sol_cpu(x,t,Beta,K):
     '''
@@ -68,7 +88,7 @@ def true_sol_cpu(x,t,Beta,K):
     K: function of x and t, which is a constant for this solution
     '''
     arg = lambda eps: np.exp(-K*t*np.cos(Beta*np.pi/2))*(eps**(2-Beta))*np.cos(x*eps)
-    return (1/math.pi)*quad(arg,0,np.inf)[0]
+    return (1/math.pi)*scipy.integrate.quad(arg,0,np.inf)[0]
 
 def initial_condition(x,x_0):
     ''' Initial conditions are the dirac delta function centered at x_0'''
@@ -84,7 +104,7 @@ def boundary_conditions_gpu(t):
     return torch.zeros_like(t).to(device)
 
 class ConvectionDiffusionPDE(nn.Module):
-    def __init__(self, D, U, sigma,x_0,x_dim,hidden_size):
+    def __init__(self, D, U,x_0,x_dim,hidden_size):
         super(ConvectionDiffusionPDE, self).__init__()
         self.K = D
         self.Beta = U
@@ -105,7 +125,7 @@ class ConvectionDiffusionPDE(nn.Module):
 model = [ConvectionDiffusionPDE(K,Beta,x_0,x_steps,hidden_size).to(device) for _ in range(t_steps)]
 
 
-epochs = 1000
+epochs = 10
 
 # Set up the data
 x = torch.tensor(x).float()
@@ -133,7 +153,7 @@ for i in range(t.shape[0]):
         stop = time.time()
         time_overall += stop-start
         optimizer.zero_grad()
-        loss = model[i].loss(x_,t_[i],res,w_1,w_b1,w_b2,x_0)
+        loss = model[i].loss(x,t[i],res,w_1,w_b1,w_b2,x_0)
         loss.backward()
         optimizer.step()
         print(f'Epoch {j}, Loss {loss.item()}')
@@ -142,50 +162,50 @@ for i in range(t.shape[0]):
 output = torch.stack(output)
 print(output.shape)
 ave_time = time_overall/count
-true = true_sol_cpu(x_sol,t_sol,sigma,D,U,x_0)
+true = true_sol_cpu(x_sol,t_sol,Beta,K)
 
 
-l2_error = np.mean(np.power(output.cpu().detach().numpy() - true, 2))
-l2_error = np.sqrt(l2_error)
-print(f"L2 Error: {l2_error.item()}")
-weight_matrices = []
-for i in range(t_steps):
-    weight_matrices.append(model[i].state_dict())
+# l2_error = np.mean(np.power(output.cpu().detach().numpy() - true, 2))
+# l2_error = np.sqrt(l2_error)
+# print(f"L2 Error: {l2_error.item()}")
+# weight_matrices = []
+# for i in range(t_steps):
+#     weight_matrices.append(model[i].state_dict())
 
-## Extract weight matrices and find their condition number
-cond_first_layer = []
-cond_second_layer = []
-for i in range(t_steps):
-    for key in weight_matrices[i]:
-        if key == 'linear1.weight':
-            cond_first_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy()))
-        if key == 'linear2.weight':
-            cond_second_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy().T))
-## Find the mean and standard deviation of the condition numbers
-mean_cond_first_layer = np.mean(cond_first_layer)
-std_cond_first_layer = np.std(cond_first_layer)
-mean_cond_second_layer = np.mean(cond_second_layer)
-std_cond_second_layer = np.std(cond_second_layer)
+# ## Extract weight matrices and find their condition number
+# cond_first_layer = []
+# cond_second_layer = []
+# for i in range(t_steps):
+#     for key in weight_matrices[i]:
+#         if key == 'linear1.weight':
+#             cond_first_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy()))
+#         if key == 'linear2.weight':
+#             cond_second_layer.append(np.linalg.cond(weight_matrices[i][key].cpu().numpy().T))
+# ## Find the mean and standard deviation of the condition numbers
+# mean_cond_first_layer = np.mean(cond_first_layer)
+# std_cond_first_layer = np.std(cond_first_layer)
+# mean_cond_second_layer = np.mean(cond_second_layer)
+# std_cond_second_layer = np.std(cond_second_layer)
 
-file = 'convection_diffusion.csv'
+# file = 'convection_diffusion.csv'
 
-df = pd.read_csv(file)
-trial = df.shape[0]
-df.loc[trial-1,'L2Error'] = l2_error.item()
-df.loc[trial-1,'AverageTimeperEpoch'] = ave_time
-df.loc[trial-1,'MeanConditionNumberFirstLayer'] = mean_cond_first_layer
-df.loc[trial-1,'StdConditionNumberFirstLayer'] = std_cond_first_layer
-df.loc[trial-1,'MeanConditionNumberSecondLayer'] = mean_cond_second_layer
-df.loc[trial-1,'StdConditionNumberSecondLayer'] = std_cond_second_layer
-df.loc[trial-1,'XSteps'] = x_steps
-df.loc[trial-1,'TSteps'] = t_steps
-df.loc[trial-1,'HiddenSize'] = hidden_size
-df.loc[trial-1,'Epochs'] = epochs
-df.loc[trial-1,'D'] = D
-df.loc[trial-1,'U'] = U
-df.loc[trial-1,'Sigma'] = sigma
-df.loc[trial-1,'X_0'] = x_0
-df.to_csv(file,index=False)
+# df = pd.read_csv(file)
+# trial = df.shape[0]
+# df.loc[trial-1,'L2Error'] = l2_error.item()
+# df.loc[trial-1,'AverageTimeperEpoch'] = ave_time
+# df.loc[trial-1,'MeanConditionNumberFirstLayer'] = mean_cond_first_layer
+# df.loc[trial-1,'StdConditionNumberFirstLayer'] = std_cond_first_layer
+# df.loc[trial-1,'MeanConditionNumberSecondLayer'] = mean_cond_second_layer
+# df.loc[trial-1,'StdConditionNumberSecondLayer'] = std_cond_second_layer
+# df.loc[trial-1,'XSteps'] = x_steps
+# df.loc[trial-1,'TSteps'] = t_steps
+# df.loc[trial-1,'HiddenSize'] = hidden_size
+# df.loc[trial-1,'Epochs'] = epochs
+# df.loc[trial-1,'D'] = D
+# df.loc[trial-1,'U'] = U
+# df.loc[trial-1,'Sigma'] = sigma
+# df.loc[trial-1,'X_0'] = x_0
+# df.to_csv(file,index=False)
 
 
 
