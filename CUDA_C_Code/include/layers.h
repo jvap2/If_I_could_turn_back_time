@@ -1965,6 +1965,26 @@ void Conv2D<T>::set_padding(int padding){
     this->padding = padding;
 }
 
+__global__ void d_Gauss_Filter(unsigned char* in, unsigned char* out,int h, int w){
+	// __shared__ unsigned char in_shared[16][16];
+    int x=threadIdx.x+(blockIdx.x*blockDim.x);
+    int y=threadIdx.y+(blockIdx.y*blockDim.y);
+	int idx = y * (w-2)+x;
+    if(x < (w-2) && y<(h-2)){
+            out[idx]+=.0625*in[y*w+x];
+            out[idx]+=.125*in[y*w+x+1];
+            out[idx]+=.0625*in[y*w+x+2];
+            out[idx]+=.125*in[(y+1)*w+x];
+            out[idx]+=.25*in[(y+1)*w+x+1];
+            out[idx]+=.125*in[(y+1)*w+x+2];
+            out[idx]+=.0625*in[(y+2)*w+x];
+            out[idx]+=.125*in[(y+2)*w+x+1];
+            out[idx]+=.0625*in[(y+2)*w+x+2];
+    }
+}
+
+
+
 #define TILE_WIDTH 16
 __global__ void d_Gauss_Filter_v2(unsigned char* in, unsigned char* out,int h, int w){
 	// __shared__ unsigned char in_shared[16][16];
@@ -2002,6 +2022,24 @@ __global__ void d_Gauss_Filter_v2(unsigned char* in, unsigned char* out,int h, i
 		out[idx]+=.0625*in_s[(ty+2)][tx+2];
 	}
 }
+
+template <typename T>
+__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+    int outCol = blockIdx.x*blockDim.x+threadIdx.x;
+    int outRow = blockIdx.y*blockDim.y+threadIdx.y;
+    T Pvalue=0;
+    for(int i=0;i<3;i++){
+        for(int j=0;j<3;j++){
+            int inRow = outRow+i;
+            int inCol = outCol+j;
+            if(inRow>=0 && inRow<input_size && inCol>=0 && inCol<input_size){
+                Pvalue+=input[inRow*input_size+inCol]*weights[i*3+j];
+            }
+        }
+    }
+    output[outRow*input_size+outCol]=Pvalue+biases[outRow];
+}
+
 
 
 template <typename T>
