@@ -18,7 +18,7 @@ from scipy.integrate import quad
 # t_steps = int(sys.argv[2])
 # hidden_size = int(sys.argv[3])
 x_steps = 512
-t_steps = 100
+t_steps = 10
 hidden_size = 256
 ## Define convection-diffusion equation as a space time (x,t) dependent PDE
 '''
@@ -80,15 +80,15 @@ def true_sol(x,t,Beta,K):
     return sol.to(device)
 
 def true_sol_cpu(x,t,Beta,K):
-    '''
-    Input:
-    x: spatial coordinate
-    t: temporal coordinate
-    Beta: floating point value to vary order of fractional derivative
-    K: function of x and t, which is a constant for this solution
-    '''
-    arg = lambda eps: np.exp(-K*t*np.cos(Beta*np.pi/2))*(eps**(2-Beta))*np.cos(x*eps)
-    return (1/math.pi)*scipy.integrate.quad(arg,0,np.inf)[0]
+    u_true= lambda ep,x,t: np.exp(-K*t*np.cos(math.pi/10)*(ep**(2-Beta)))*np.cos(x*ep)
+    sol = np.zeros((x.shape[0],t.shape[0]))
+    for i, x_i in enumerate(x):
+        for j, t_j in enumerate(t):
+            int_val = (1/math.pi)*(quad(u_true,0,10e3,args=(x_i,t_j))[0]) + \
+                       (1/math.pi)*(quad(u_true,10e3,10e6,args=(x_i,t_j))[0])
+            sol[i,j] = int_val
+    return sol
+
 
 def initial_condition(x,x_0):
     ''' Initial conditions are the dirac delta function centered at x_0'''
@@ -125,7 +125,7 @@ class ConvectionDiffusionPDE(nn.Module):
 model = [ConvectionDiffusionPDE(K,Beta,x_0,x_steps,hidden_size).to(device) for _ in range(t_steps)]
 
 
-epochs = 10
+epochs = 2
 
 # Set up the data
 x = torch.tensor(x).float()
@@ -162,7 +162,7 @@ for i in range(t.shape[0]):
 output = torch.stack(output)
 print(output.shape)
 ave_time = time_overall/count
-true = true_sol_cpu(x_sol,t_sol,Beta,K)
+true = true_sol_cpu(x,t,Beta,K)
 
 
 # l2_error = np.mean(np.power(output.cpu().detach().numpy() - true, 2))
@@ -210,20 +210,34 @@ true = true_sol_cpu(x_sol,t_sol,Beta,K)
 
 
 
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
 
-# X, T = np.meshgrid(x_sol, t_sol)
-# Z_true = true
-# Z_pred = output.cpu().detach().numpy()
+X, T = np.meshgrid(x_sol, t_sol)
+Z_true = true
+Z_pred = output.cpu().detach().numpy()
 
 # ax.plot_surface(x_sol, t_sol, Z_true, label='True')
 # ax.plot_surface(x_sol, t_sol, Z_pred, label='Predicted')
+# ax.plot_surface(x_sol, t_sol, Z_true.T, label='True')
 
 # ax.set_xlabel('x')
 # ax.set_ylabel('t')
 # ax.set_zlabel('C')
 
 # plt.legend()
-# plt.savefig('convection_diffusion.png')
+
+from matplotlib import cm
+import matplotlib.patches as mpatches
+
+# Your plot_surface calls without the label argument
+surf1 = ax.plot_surface(x_sol, t_sol, Z_pred, cmap=cm.coolwarm)
+surf2 = ax.plot_surface(x_sol, t_sol, Z_true.T, cmap=cm.coolwarm)
+
+# Create a legend using proxy artists
+predicted_patch = mpatches.Patch(color=surf1.get_facecolor()[0], label='Predicted')
+true_patch = mpatches.Patch(color=surf2.get_facecolor()[0], label='True')
+plt.legend(handles=[predicted_patch, true_patch])
+
+plt.savefig('convection_diffusion.png')
 
