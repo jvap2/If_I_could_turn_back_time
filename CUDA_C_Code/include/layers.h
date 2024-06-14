@@ -294,6 +294,54 @@ class Linear: public Matrix<T>
         void set_weights(T *weights, T *biases);
 };
 
+
+
+template <typename T>
+class Conv2D: public Matrix<T>
+{
+    public:
+        Conv2D(int rows, int cols){
+            this->rows = rows;
+            this->cols = cols;
+            this->weights = (T*)malloc(rows * cols * sizeof(T));
+            this->biases = (T*)malloc(rows * sizeof(T));
+        }
+        int rows;
+        int cols;
+        T* weights;
+        T* biases;
+        ~Conv2D(){
+            free(this->weights);
+            free(this->biases);
+        }
+        void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
+        void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
+        void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
+        void set_weights(T *weights, T *biases);
+        void set_kernel_size(int kernel_size);
+        void set_weights(T *weights);
+        void set_stride(int stride);
+        void set_padding(int padding);
+};
+
+template <typename T>
+class MaxPooling2D: public Matrix<T>
+{
+    public:
+        MaxPooling2D(int rows, int cols){
+            this->rows = rows;
+            this->cols = cols;
+        }
+        int rows;
+        int cols;
+        ~MaxPooling2D();
+        void forward(T *input, T *output, int size);
+        void backward(T *input, T *output, int size);
+};
+
+
+
+
 template <typename T>
 class Network
 {
@@ -1901,9 +1949,21 @@ void Linear<T>::update_weights(T *weights, T *biases, T learning_rate, int input
 }
 
 
+template <typename T>
+void Conv2D<T>::set_weights(T* weights, T* biases){
+    this->weights;
+    this->biases;
+}
 
+template <typename T>
+void Conv2D<T>::set_stride(int stride){
+    this->stride = stride;
+}
 
-
+template <typename T>{
+void Conv2D<T>::set_padding(int padding){
+    this->padding = padding;
+}
 
 
 
