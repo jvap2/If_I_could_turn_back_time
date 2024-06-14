@@ -2029,7 +2029,7 @@ __global__ void d_Gauss_Filter_v2(unsigned char* in, unsigned char* out,int h, i
 }
 
 template <typename T>
-__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int radius,int width,int height){
+__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int radius,int width,int height, int out_width, int out_height){
     int outCol = blockIdx.x*blockDim.x+threadIdx.x;
     int outRow = blockIdx.y*blockDim.y+threadIdx.y;
     T Pvalue=0;
@@ -2037,26 +2037,25 @@ __global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int ra
         for(int j=0;j<2*radius+1;j++){
             int inRow = outRow-radius+i;
             int inCol = outCol-radius+j;
-            if(inRow>=0 && inRow<input_size && inCol>=0 && inCol<input_size){
+            if(inRow>=0 && inRow<height && inCol>=0 && inCol<width){
                 Pvalue+=input[inRow*width+inCol]*weights[i*(2*radius+1)+j];
             }
         }
     }
-    output[outRow*input_size+outCol]=Pvalue+biases[outRow];
+    output[outRow*out_width+outCol]=Pvalue+biases[outRow];
 }
 
 
 template <typename T>
-__global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biases, T *d_weights, T *d_biases, int radius,int width,int height){
+__global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biases, T *d_weights, T *d_biases, int radius,int width,int height, int out_width, int out_height){
     int outCol = blockIdx.x*blockDim.x+threadIdx.x;
     int outRow = blockIdx.y*blockDim.y+threadIdx.y;
-    T Pvalue=0;
     for(int i=0;i<2*radius+1;i++){
         for(int j=0;j<2*radius+1;j++){
             int inRow = outRow-radius+i;
             int inCol = outCol-radius+j;
-            if(inRow>=0 && inRow<input_size && inCol>=0 && inCol<input_size){
-                d_weights[i*(2*radius+1)+j]+=input[inRow*width+inCol]*output[outRow*input_size+outCol];
+            if(inRow>=0 && inRow<height && inCol>=0 && inCol<width){
+                d_weights[i*(2*radius+1)+j]+=input[inRow*width+inCol]*output[outRow*out_width+outCol];
             }
         }
     }
