@@ -43,6 +43,9 @@ public:
     int cols;
     T *weights;
     T *biases;
+    T* d_weights;
+    T* d_biases;
+    T* hidden_output;
     void matrix_multiply(T *A, T *B, T *C);
     void matrix_add(T *A, T *B, T *C);
     void matrix_subtract(T *A, T *B, T *C);
@@ -59,8 +62,8 @@ public:
     void set_rows(int rows);
     void set_cols(int cols);
     void forward(T *input, T *output);
-    void backward(T *input, T *output){};
-    void backward(T *input, T *output, int size){};
+    void backward(T * loss){};
+    void backward(T * loss, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
     void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){};
     void train(T *input, T *output, int epochs, T learning_rate){};
@@ -175,9 +178,10 @@ public:
     Sigmoid(int rows, int cols);
     int rows;
     int cols;
+    T* hidden_output;
     ~Sigmoid();
     void forward(T *input, T *output, int size);
-    void backward(T *input, T *output, int size);
+    void backward(T * loss, int size);
 };
 
 template <typename T>
@@ -187,9 +191,10 @@ public:
     RELU_layer(int rows, int cols);
     int rows;
     int cols;
+    T* hidden_output;
     ~RELU_layer();
     void forward(T *input, T *output, int size);
-    void backward(T *input, T *output, int size);
+    void backward(T *loss, int size);
 };
 
 
@@ -284,12 +289,15 @@ class Linear: public Matrix<T>
         int cols;
         T* weights;
         T* biases;
+        T* d_weights;
+        T* d_biases;
+        T* hidden_output;
         ~Linear(){
             free(this->weights);
             free(this->biases);
         }
         void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
-        void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
+        void backward(T *loss, int size);
         void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
         void set_weights(T *weights, T *biases);
 };
@@ -356,8 +364,10 @@ class Network
         float* input;
         float* output;
         float** hidden;
-        thrust::host_vector<Matrix<T>*> layers;  // Change this line
-        thrust::host_vector<Matrix<T>*> activation;  // Change this line
+        thrust::host_vector<Matrix<T>*> layers;  
+        thrust::host_vector<Matrix<T>*> activation;  
+        thrust::host_vector<Matrix<T>*> d_layers;  
+        thrust::host_vector<Matrix<T>*> d_activation;  
         void backward(T *input, T *output);
         void update_weights(T learning_rate);
         void addLayer(Linear<T> *layer){
@@ -1658,7 +1668,7 @@ __global__ void sigmoid_derivative_kernel(T *input, T *output, int size){
 
 
 template <typename T>
-void Sigmoid<T>::backward(T *input, T *output, int size){
+void Sigmoid<T>::backward(T * loss, int size){
     // Allocate device memory for input and output
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -1785,7 +1795,7 @@ __global__ void RELU_derivative_kernel(T *input, T *output, int size){
 }
 
 template <typename T>
-void RELU_layer<T>::backward(T *input, T *output, int size){
+void RELU_layer<T>::backward(T * loss, int size){
     // Allocate device memory for input and output
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -1924,21 +1934,38 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* inter, T* output, int input_size, int output_size){
+    //We need to calculate the difference in the weights due to the loss
+    //At layer l, the change in weights is:
 
-    if (index < output_size) {
+    /*delta_l*(a_(l-1))^T where
+    delta_l is a recursive definition of schur products between the weights and derivative of activation
+    a_(l-1) is the activation at layer l-1*/
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if(output_size > row && input_size > col){
+        inter[row * input_size + col] = Weights[row * input_size + col] * d_F[row*input_size + col];
+    }
+    __syncthreads();
+    if(output_size > row && input_size > col){
         T sum = 0;
-        for (int i = 0; i < input_size; i++) {
-            sum += input[i] * weights[i * output_size + index];
+        for(int i = 0; i < input_size; i++){
+            sum += inter[row * input_size + i]*loss[i*output_size + col];
         }
-        output[index] = sum + biases[index];
+    }
+    __syncthreads();
+    if(output_size > row && input_size > col){
+        loss[row]=sum;
+    }
+    __syncthreads();
+    if(output_size > row && input_size > col){
+        d_Weights[row * input_size + col] = loss[row] * output[col];
     }
 }
 
 
 template <typename T>
-void Linear<T>::backward(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+void Linear<T>::backward(T * loss, int input_size, int output_size){
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
@@ -2029,7 +2056,7 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 }
 
 template <typename T>
-void Network<T>::backward(T *input, T *output){
+void Network<T>::backward(T * loss){
     this->activation[num_activation-1]->backward(this->output, this->output);
     this->layers[num_layers-1]->backward(this->hidden[num_layers-1], this->output, this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, this->hidden_size[num_layers-1], this->output_size);
     for(int i = num_layers-2; i >= 0; i--){
@@ -2053,7 +2080,9 @@ template <typename T>
 void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
     for(int i = 0; i < epochs; i++){
         forward(input, output);
+
         backward(input, output);
+
         update_weights(learning_rate);
     }
 }
