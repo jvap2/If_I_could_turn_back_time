@@ -342,7 +342,6 @@ class MaxPooling2D: public Matrix<T>
 
 
 
-
 template <typename T>
 class Network
 {
@@ -419,6 +418,33 @@ class Bernoulli_Network: public Network<T>
         void train(T *input, T *output, int epochs, T learning_rate);
         void predict(T *input, T *output);
 };
+
+
+
+
+// Add code for Loss functions
+template <typename T>
+__global__ void Binary_Cross_Entropy(T *input, T *output, T *loss, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        loss[index] = -1 * (input[index] * log(output[index]) + (1 - input[index]) * log(1 - output[index]));
+    }
+}
+
+template <typename T>
+__global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        loss[index] = -1 * input[index] * log(output[index]);
+    }
+}
+
+
+
+
+
 
 template <typename T>
 __global__ void matrix_multiply_kernel(T *A, T *B, T *C, int rows, int cols){
