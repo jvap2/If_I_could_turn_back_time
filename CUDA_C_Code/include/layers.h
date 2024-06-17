@@ -442,6 +442,208 @@ __global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size
 }
 
 
+template <typename T>
+__global__ void Mean_Squared_Error(T *input, T *output, T *loss, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        loss[index] = 0.5 * pow(input[index] - output[index], 2);
+    }
+}
+
+template <typename T>
+class Loss
+{
+    public:
+        Loss(int size){
+            this->size = size;
+        }
+        int size;
+        ~Loss();
+        void Binary_Cross_Entropy(T *input, T *output, T *loss){
+            // Allocate device memory for input and output
+            T *d_input, *d_output, *d_loss;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_loss"<<endl;
+                return;
+            }
+
+            // Copy input from host to device
+            if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying input from host to device"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying output from host to device"<<endl;
+                return;
+            }
+
+            // Define grid and block dimensions
+            dim3 gridDim(1, 1, 1);
+            dim3 blockDim(size, 1, 1);
+
+            // Launch the Binary Cross Entropy kernel
+            Binary_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                return;
+            }
+
+            // Copy the result loss from device to host
+            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying loss from device to host"<<endl;
+                return;
+            }
+
+            // Free device memory
+            if(!HandleCUDAError(cudaFree(d_input))){
+                cout<<"Error in freeing d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_output))){
+                cout<<"Error in freeing d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_loss))){
+                cout<<"Error in freeing d_loss"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                return;
+            }
+        }
+        void Categorial_Cross_Entropy(T *input, T *output, T *loss){
+            // Allocate device memory for input and output
+            T *d_input, *d_output, *d_loss;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_loss"<<endl;
+                return;
+            }
+
+            // Copy input from host to device
+            if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying input from host to device"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying output from host to device"<<endl;
+                return;
+            }
+
+            // Define grid and block dimensions
+            dim3 gridDim(1, 1, 1);
+            dim3 blockDim(size, 1, 1);
+
+            // Launch the Categorial Cross Entropy kernel
+            Categorical_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                return;
+            }
+
+            // Copy the result loss from device to host
+            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying loss from device to host"<<endl;
+                return;
+            }
+
+            // Free device memory
+            if(!HandleCUDAError(cudaFree(d_input))){
+                cout<<"Error in freeing d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_output))){
+                cout<<"Error in freeing d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_loss))){
+                cout<<"Error in freeing d_loss"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                return;
+            }
+        }
+        void Mean_Squared_Loss(T *input, T *output, T *loss){
+            // Allocate device memory for input and output
+            T *d_input, *d_output, *d_loss;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_loss"<<endl;
+                return;
+            }
+
+            // Copy input from host to device
+            if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying input from host to device"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying output from host to device"<<endl;
+                return;
+            }
+
+            // Define grid and block dimensions
+            dim3 gridDim(1, 1, 1);
+            dim3 blockDim(size, 1, 1);
+
+            // Launch the Mean Squared Loss kernel
+            Mean_Squared_Error<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                return;
+            }
+
+            // Copy the result loss from device to host
+            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying loss from device to host"<<endl;
+                return;
+            }
+
+            // Free device memory
+            if(!HandleCUDAError(cudaFree(d_input))){
+                cout<<"Error in freeing d_input"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_output))){
+                cout<<"Error in freeing d_output"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaFree(d_loss))){
+                cout<<"Error in freeing d_loss"<<endl;
+                return;
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                return;
+            }
+        }
+};
 
 
 
