@@ -322,6 +322,7 @@ class Conv2D: public Matrix<T>
         void set_weights(T *weights);
         void set_stride(int stride);
         void set_padding(int padding);
+        int get_rows();
 };
 
 template <typename T>
@@ -403,6 +404,20 @@ class Network
                 layers[i]->forward(input, output);
             }
         }
+};
+
+
+template <typename T>
+class Bernoulli_Network: public Network<T>
+{
+    public:
+        Bernoulli_Network(int input_size, int* hidden_size, int output_size, int num_layers);
+        ~Bernoulli_Network();
+        void forward(T *input, T *output);
+        void backward(T *input, T *output);
+        void update_weights(T learning_rate);
+        void train(T *input, T *output, int epochs, T learning_rate);
+        void predict(T *input, T *output);
 };
 
 template <typename T>
