@@ -335,8 +335,8 @@ class MaxPooling2D: public Matrix<T>
         int rows;
         int cols;
         ~MaxPooling2D();
-        void forward(T *input, T *output, int size);
-        void backward(T *input, T *output, int size);
+        void forward(T *input, T *output, int size, int output_size);
+        void backward(T *input, T *output, int size, int output_size);
 };
 
 
@@ -361,6 +361,14 @@ class Network
         void backward(T *input, T *output);
         void update_weights(T learning_rate);
         void addLayer(Linear<T> *layer){
+            layers.push_back(layer);
+            num_layers++;
+        }
+        void addLayer(Conv2D<T> *layer){
+            layers.push_back(layer);
+            num_layers++;
+        }
+        void addLayer(MaxPooling2D<T> *layer){
             layers.push_back(layer);
             num_layers++;
         }
@@ -2241,3 +2249,73 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
 }
 
 
+
+// template <typename T>
+// void Conv2D<T>::update_weights(T learning_rate){
+//     this->weights = this->weights - learning_rate * this->dweights;
+//     this->biases = this->biases - learning_rate * this->dbiases;
+// }
+
+template <typename T>
+__global__ void max_pooling_kernel(T *input, T *output, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        output[index] = input[index];
+        for (int i = 0; i < size; i++) {
+            if (input[i] > output[index]) {
+                output[index] = input[i];
+            }
+        }
+    }
+}
+
+template <typename T>
+void MaxPooling2D<T>::forward(T *input, T *output, int input_size, int output_size){
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
+        cout<<"Error in allocating memory for d_input"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
+        cout<<"Error in allocating memory for d_output"<<endl;
+        return;
+    }
+
+    // Copy input from host to device
+    if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
+        cout<<"Error in copying input from host to device"<<endl;
+        return;
+    }
+
+    // Define grid and block dimensions
+    dim3 gridDim(1, 1, 1);
+    dim3 blockDim(cols, rows, 1);
+
+    // Launch the max pooling kernel
+    max_pooling_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, input_size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in synchronizing device"<<endl;
+        return;
+    }
+    // Copy the result output from device to host
+    if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
+        cout<<"Error in copying output from device to host"<<endl;
+        return;
+    }
+
+    // Free device memory
+    if(!HandleCUDAError(cudaFree(d_input))){
+        cout<<"Error in freeing d_input"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaFree(d_output))){
+        cout<<"Error in freeing d_output"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaDeviceReset())){
+        cout<<"Error in resetting device"<<endl;
+        return;
+    }
+}
