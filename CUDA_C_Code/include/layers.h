@@ -73,6 +73,32 @@ private:
     cudaError_t cudaStatus;
 };
 
+
+
+template <typename T>
+__global__ void matrix_elementwise_multiply_kernel(T *A, T *B, T *C, int rows, int cols){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rows && col < cols) {
+        C[row * cols + col] = A[row * cols + col] * B[row * cols + col];
+    }
+}
+
+template <typename T>
+__global__ void matrix_multiply(T* A, T* B, T* C, int rows, int cols, int inter_size){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(row < rows && col < cols){
+        T sum = 0;
+        for(int i = 0; i < inter_size; i++){
+            sum += A[row * cols + i] * B[i * cols + col];
+        }
+        C[row * cols + col] = sum;
+    }
+}
+
 template <typename T>
 __global__ void matrix_vector_multiply_kernel(T *A, T *B, T *C, int rows, int cols){
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -331,6 +357,9 @@ class Conv2D: public Matrix<T>
         void set_stride(int stride);
         void set_padding(int padding);
         int get_rows();
+        int get_cols(){
+            return cols;
+        }
 };
 
 template <typename T>
@@ -1662,7 +1691,7 @@ __global__ void sigmoid_derivative_kernel(T *input, T *output, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index] = input[index] * (1 - input[index]);
+        output[index*size+index] = input[index] * (1 - input[index]);
     }
 }
 
@@ -1671,17 +1700,23 @@ template <typename T>
 void Sigmoid<T>::backward(T * loss, int size){
     // Allocate device memory for input and output
     T *d_input, *d_output;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
+    T* d_loss_mat;
+    T *input = this->output;
+    if(!HandleCUDAError(cudaMalloc((void**)&d_input, size*size*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_loss_mat, size * size * sizeof(T)))){
+        cout<<"Error in allocating memory for d_loss_mat"<<endl;
         return;
     }
 
     // Copy input from host to device
-    if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_input, input, size * size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
         return;
     }
@@ -1696,8 +1731,15 @@ void Sigmoid<T>::backward(T * loss, int size){
         cout<<"Error in synchronizing device"<<endl;
         return;
     }
+
+    matrix_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss_mat, d_loss_mat, size, size, size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in synchronizing device"<<endl;
+        return;
+    }
+    
     // Copy the result output from device to host
-    if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
+    if(!HandleCUDAError(cudaMemcpy(loss, d_loss_mat, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         return;
     }
@@ -1709,6 +1751,10 @@ void Sigmoid<T>::backward(T * loss, int size){
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaFree(d_loss_mat))){
+        cout<<"Error in freeing d_loss_mat"<<endl;
         return;
     }
     if(!HandleCUDAError(cudaDeviceReset())){
@@ -1790,25 +1836,31 @@ __global__ void RELU_derivative_kernel(T *input, T *output, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index] = input[index] > 0 ? 1 : 0;
+        output[index*size+index] = input[index] > 0 ? 1 : 0;
     }
 }
 
 template <typename T>
 void RELU_layer<T>::backward(T * loss, int size){
-    // Allocate device memory for input and output
+        // Allocate device memory for input and output
     T *d_input, *d_output;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
+    T* d_loss_mat;
+    T *input = this->output;
+    if(!HandleCUDAError(cudaMalloc((void**)&d_input, size*size*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_loss_mat, size * size * sizeof(T)))){
+        cout<<"Error in allocating memory for d_loss_mat"<<endl;
         return;
     }
 
     // Copy input from host to device
-    if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_input, input, size * size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
         return;
     }
@@ -1817,14 +1869,21 @@ void RELU_layer<T>::backward(T * loss, int size){
     dim3 gridDim(1, 1, 1);
     dim3 blockDim(cols, rows, 1);
 
-    // Launch the RELU derivative kernel
+    // Launch the sigmoid derivative kernel
     RELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         return;
     }
+
+    matrix_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss_mat, d_loss_mat, size, size, size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in synchronizing device"<<endl;
+        return;
+    }
+    
     // Copy the result output from device to host
-    if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
+    if(!HandleCUDAError(cudaMemcpy(loss, d_loss_mat, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         return;
     }
@@ -1836,6 +1895,10 @@ void RELU_layer<T>::backward(T * loss, int size){
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaFree(d_loss_mat))){
+        cout<<"Error in freeing d_loss_mat"<<endl;
         return;
     }
     if(!HandleCUDAError(cudaDeviceReset())){
@@ -1934,33 +1997,40 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* inter, T* output, int input_size, int output_size){
-    //We need to calculate the difference in the weights due to the loss
-    //At layer l, the change in weights is:
+__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* inter, T* output, int input_size, int output_size, int size){
 
-    /*delta_l*(a_(l-1))^T where
-    delta_l is a recursive definition of schur products between the weights and derivative of activation
-    a_(l-1) is the activation at layer l-1*/
+    /*Calculate the weight update for the backward step
+    
+    We need to update the loss being propogated and also save the change in weights
+    This means we will need to pass in the activation from the prior layer, the weights (For W^T), and the loss from the last layer (delta)
+    */
+
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if(output_size > row && input_size > col){
-        inter[row * input_size + col] = Weights[row * input_size + col] * d_F[row*input_size + col];
-    }
-    __syncthreads();
-    if(output_size > row && input_size > col){
-        T sum = 0;
-        for(int i = 0; i < input_size; i++){
-            sum += inter[row * input_size + i]*loss[i*output_size + col];
+    //Multiply the loss by the transpose of the weights (W^T)*delta
+    T sum = 0;
+    if (row < input_size && col < output_size) {
+        for (int i = 0; i < output_size; i++) {
+            sum += Weights[i*input_size + row] * loss[i*size+col];
         }
     }
     __syncthreads();
-    if(output_size > row && input_size > col){
-        loss[row]=sum;
+    if(row < input_size && col < output_size){
+        loss[row*output_size + col] = sum;
+    }
+    //Now save the change in weights
+    T delta_sum = 0;
+    if(row < input_size && col < output_size){
+        //Multiply the loss by the activation
+        for(int i = 0; i < size; i++){
+            delta_sum += inter[row*size + i] * loss[i*output_size + col];
+        }
     }
     __syncthreads();
-    if(output_size > row && input_size > col){
-        d_Weights[row * input_size + col] = loss[row] * output[col];
+    if(row < input_size && col < output_size){
+        d_Weights[row*output_size + col] = delta_sum;
     }
+
 }
 
 
@@ -2339,7 +2409,7 @@ __global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biase
             }
         }
     }
-    d_biases[outRow]+=output[outRow*input_size+outCol];
+    d_biases[outRow]+=output[outRow*out_width+outCol];
 }
 
 
@@ -2479,15 +2549,15 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
         return;
     }
     // Copy the gradients from device to host
-    if (!HandleCUDAError(cudaMemcpy(dweights, d_dweights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))) {
+    if (!HandleCUDAError(cudaMemcpy(d_weights, d_dweights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dweights from device to host" << endl;
         return;
     }
-    if (!HandleCUDAError(cudaMemcpy(dbiases, d_dbiases, rows * sizeof(T), cudaMemcpyDeviceToHost))) {
+    if (!HandleCUDAError(cudaMemcpy(d_biases, d_dbiases, rows * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dbiases from device to host" << endl;
         return;
     }
-    if (!HandleCUDAError(cudaMemcpy(dinput, d_dinput, input_size * sizeof(T), cudaMemcpyDeviceToHost))) {
+    if (!HandleCUDAError(cudaMemcpy(d_input, d_dinput, input_size * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dinput from device to host" << endl;
         return;
     }
