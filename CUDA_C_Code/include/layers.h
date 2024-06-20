@@ -463,7 +463,7 @@ class Bernoulli_Network: public Network<T>
 
 // Add code for Loss functions
 template <typename T>
-__global__ void Binary_Cross_Entropy(T *input, T *output, T *loss, int size){
+__global__ void Binary_Cross_Entropy_Kernel(T *input, T *output, T *loss, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
@@ -530,7 +530,7 @@ class Loss
             dim3 blockDim(size, 1, 1);
 
             // Launch the Binary Cross Entropy kernel
-            Binary_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
+            Binary_Cross_Entropy_Kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
                 return;
@@ -1151,15 +1151,6 @@ void Matrix<T>::matrix_scalar_subtract(T *A, T *C, T scalar){
     }
 }
 
-template <typename T>
-__global__ void matrix_elementwise_multiply_kernel(T *A, T *B, T *C, int rows, int cols){
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (row < rows && col < cols) {
-        C[row * cols + col] = A[row * cols + col] * B[row * cols + col];
-    }
-}
 
 
 template <typename T>
@@ -1997,7 +1988,7 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* inter, T* output, int input_size, int output_size, int size){
+__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* output, int input_size, int output_size, int size){
 
     /*Calculate the weight update for the backward step
     
@@ -2035,14 +2026,16 @@ __global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d
 
 
 template <typename T>
-void Linear<T>::backward(T * loss, int input_size, int output_size){
+void Linear<T>::backward(T * loss, int input_size){
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
+    int rows = this->rows;
+    int cols = this->cols;
+    if(!HandleCUDAError(cudaMalloc((void**)&d_input, cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_output, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
         return;
     }
@@ -2050,13 +2043,13 @@ void Linear<T>::backward(T * loss, int input_size, int output_size){
         cout<<"Error in allocating memory for d_weights"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
         return;
     }
 
     // Copy input, weights, and biases from host to device
-    if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_input, loss, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
         return;
     }
@@ -2074,13 +2067,13 @@ void Linear<T>::backward(T * loss, int input_size, int output_size){
     dim3 blockDim(cols, rows, 1);
 
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         return;
     }
     // Copy the result output from device to host
-    if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
+    if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         return;
     }
@@ -2126,7 +2119,7 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 }
 
 template <typename T>
-void Network<T>::backward(T * loss){
+void Network<T>::backward(T * input, T * output){
     this->activation[num_activation-1]->backward(this->output, this->output);
     this->layers[num_layers-1]->backward(this->hidden[num_layers-1], this->output, this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, this->hidden_size[num_layers-1], this->output_size);
     for(int i = num_layers-2; i >= 0; i--){
