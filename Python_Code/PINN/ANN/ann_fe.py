@@ -13,9 +13,12 @@ from modulus.models.meta import ModelMetaData
 from modulus.models.module import Module
 from dataclasses import dataclass
 
-x_steps = int(sys.argv[1])
-t_steps = int(sys.argv[2])
-hidden_size = int(sys.argv[3])
+# x_steps = int(sys.argv[1])
+# t_steps = int(sys.argv[2])
+# hidden_size = int(sys.argv[3])
+x_steps = 100
+t_steps = 100
+hidden_size = 256
 ## Define convection-diffusion equation as a space time (x,t) dependent PDE
 '''
 dc/dt + u dc/dx = D d^2c/dx^2, x in [0,1], t in [0,1]
@@ -71,7 +74,7 @@ class MetaData(ModelMetaData):
     amp_cpu: bool = True
     amp_gpu: bool = True
 
-class ConvectionDiffusionPDE(nn.Module):
+class ConvectionDiffusionPDE(Module):
     def __init__(self, D, U, sigma,x_0,x_dim,hidden_size):
         super(ConvectionDiffusionPDE, self).__init__(meta=MetaData())
         self.D = D
