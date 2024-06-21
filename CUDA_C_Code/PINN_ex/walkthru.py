@@ -41,3 +41,10 @@ class UNet(Module):
         x = self.dec1(x)
         x = self.dec2(x)
         return self.final(x)
+    
+# Create the network
+
+model = UNet(in_channels=1, out_channels=1)
+print(model)
+
+# Output

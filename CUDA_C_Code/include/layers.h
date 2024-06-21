@@ -1683,7 +1683,7 @@ __global__ void sigmoid_derivative_kernel(T *input, T *output, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index*size+index] = input[index] * (1 - input[index]);
+        output[index] = input[index] * (1 - input[index]);
     }
 }
 
@@ -1828,7 +1828,7 @@ __global__ void RELU_derivative_kernel(T *input, T *output, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index*size+index] = input[index] > 0 ? 1 : 0;
+        output[index] = input[index] > 0 ? 1 : 0;
     }
 }
 
@@ -1989,7 +1989,7 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_F, T* output, int input_size, int output_size, int size){
+__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_biases, T* d_F, T* output, int rows, int cols){
 
     /*Calculate the weight update for the backward step
     
@@ -1997,42 +1997,63 @@ __global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d
     This means we will need to pass in the activation from the prior layer, the weights (For W^T), and the loss from the last layer (delta)
     */
 
+   /* Python code to describe:
+        x = self.cache  # Retrieve the cached input
+
+        # Compute gradient with respect to input
+        dx = np.dot(dout, self.W.T)  # Gradient of the loss w.r.t. input x, delta* W^T
+
+        # Compute gradient with respect to weights
+        dW = np.dot(x.T, dout)  # Gradient of the loss w.r.t. weights W, delta* x^T(activation of previous layer)
+
+        # Compute gradient with respect to biases
+        db = np.sum(dout, axis=0, keepdims=True)  # Gradient of the loss w.r.t. biases b
+
+        # Update weights and biases (if using a simple gradient descent step)
+        learning_rate = 0.01  # Example learning rate
+        self.W -= learning_rate * dW  # Update weights
+        self.b -= learning_rate * db  # Update biases
+
+        Rows represent the output shape, i.e. the shape of the delta function for the loss
+        Columns represent the input shape, i.e. the shape of the activation from the previous layer
+    */
+
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     //Multiply the loss by the transpose of the weights (W^T)*delta
-    T sum = 0;
-    if (row < input_size && col < output_size) {
-        for (int i = 0; i < output_size; i++) {
-            sum += Weights[i*input_size + row] * loss[i*size+col];
+    //This is the derivative of the loss with respect to the input
+    if (row < rows && col < cols) {
+        T sum = 0;
+        for (int i = 0; i < rows; i++) {
+            sum += loss[i] * Weights[i*cols+col];
         }
-    }
-    __syncthreads();
-    if(row < input_size && col < output_size){
-        loss[row*output_size + col] = sum;
-    }
-    //Now save the change in weights
-    T delta_sum = 0;
-    if(row < input_size && col < output_size){
-        //Multiply the loss by the activation
-        for(int i = 0; i < size; i++){
-            delta_sum += inter[row*size + i] * loss[i*output_size + col];
-        }
-    }
-    __syncthreads();
-    if(row < input_size && col < output_size){
-        d_Weights[row*output_size + col] = delta_sum;
+        d_F[col]=sum;
     }
 
+    //Multiply the loss by the transpose of the input (x^T)*delta
+    //This is the derivative of the loss with respect to the weights
+    //Should be an outer product between o_i and delta_j
+    if (row < rows && col < cols) {
+        d_Weights[row * cols + col] = output[row] * loss[col];
+    }
+    __syncthreads();
+    //Sum the loss to get the derivative of the loss with respect to the biases
+    if (row < rows && col < cols) {
+        //Is this right?
+        d_biases[col]=loss[col];
+    }
+    __syncthreads();
 }
 
 
 template <typename T>
 void Linear<T>::backward(T * loss, int input_size){
     // Allocate device memory for input, output, weights, and biases
-    T *d_input, *d_output, *d_weights, *d_biases;
+    T *d_loss, *d_output, *dev_weights, *dev_biases;
+    T *dd_weights, *dd_biases;
     int rows = this->rows;
     int cols = this->cols;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_input, cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_loss, cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
     }
@@ -2040,25 +2061,41 @@ void Linear<T>::backward(T * loss, int input_size){
         cout<<"Error in allocating memory for d_output"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&dev_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows  * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&dev_biases, rows  * sizeof(T)))){
+        cout<<"Error in allocating memory for d_biases"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&dd_weights, rows * cols * sizeof(T)))){
+        cout<<"Error in allocating memory for d_weights"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&dd_biases, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
         return;
     }
 
     // Copy input, weights, and biases from host to device
-    if(!HandleCUDAError(cudaMemcpy(d_input, loss, input_size * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_loss, loss, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(dev_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(dev_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
+        cout<<"Error in copying biases from host to device"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMemcpy(dd_weights,d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
+        cout<<"Error in copying weights from host to device"<<endl;
+        return;
+    }
+    if(!HandleCUDAError(cudaMemcpy(dd_biases,d_biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
         return;
     }
@@ -2066,9 +2103,9 @@ void Linear<T>::backward(T * loss, int input_size){
     // Define grid and block dimensions
     dim3 gridDim(1, 1, 1);
     dim3 blockDim(cols, rows, 1);
-
+    //__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_biases, T* d_F, T* output, int input_size, int output_size, int size)
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, rows, cols);
+    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_loss, dev_weights, dd_weights, dd_biases, d_output, d_output, input_size, cols, rows);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         return;

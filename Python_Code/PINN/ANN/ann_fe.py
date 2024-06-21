@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import time
 import pandas as pd
 import sys
-
+from modulus.models.meta import ModelMetaData
+from modulus.models.module import Module
+from dataclasses import dataclass
 
 x_steps = int(sys.argv[1])
 t_steps = int(sys.argv[2])
@@ -59,9 +61,19 @@ def boundary_condition(t):
 def boundary_conditions_gpu(t):
     return torch.zeros_like(t).to(device)
 
+
+@dataclass
+class MetaData(ModelMetaData):
+    name: str = "ConvectionDiffusionPDE"
+    # Optimization
+    jit: bool = False
+    cuda_graphs: bool = True
+    amp_cpu: bool = True
+    amp_gpu: bool = True
+
 class ConvectionDiffusionPDE(nn.Module):
     def __init__(self, D, U, sigma,x_0,x_dim,hidden_size):
-        super(ConvectionDiffusionPDE, self).__init__()
+        super(ConvectionDiffusionPDE, self).__init__(meta=MetaData())
         self.D = D
         self.U = U
         self.sigma = sigma
