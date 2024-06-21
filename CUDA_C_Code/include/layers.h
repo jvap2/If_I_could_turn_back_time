@@ -887,7 +887,6 @@ class Categorical: public Loss<T>
 
 
 
-
 template <typename T>
 __global__ void matrix_multiply_kernel(T *A, T *B, T *C, int rows, int cols){
     int row = blockIdx.y * blockDim.y + threadIdx.y;
