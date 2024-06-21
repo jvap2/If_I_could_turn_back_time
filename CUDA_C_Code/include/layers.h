@@ -318,6 +318,7 @@ class Linear: public Matrix<T>
         T* d_weights;
         T* d_biases;
         T* hidden_output;
+        T* dX;
         ~Linear(){
             free(this->weights);
             free(this->biases);
