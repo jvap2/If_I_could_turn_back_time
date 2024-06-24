@@ -61,7 +61,7 @@ public:
     void matrix_sum(T *A, T *C, int axis);
     void set_rows(int rows);
     void set_cols(int cols);
-    void forward(T *input, T *output);
+    void virtual forward(T *input, T *output);
     void backward(T * loss){};
     void backward(T * loss, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
@@ -126,6 +126,7 @@ __global__ void matrix_vector_addition_kernel(T *A, T *B, T *C, int rows, int co
 template <typename T>
 void Matrix<T>::forward(T *input, T *output){
         // Allocate device memory for input and output
+        cout<<"Matrix forward"<<endl;
         T *d_input, *d_output;
         T *d_weights;
         T* d_biases;
@@ -206,7 +207,7 @@ public:
     int cols;
     T* hidden_output;
     ~Sigmoid();
-    void forward(T *input, T *output, int size);
+    void forward(T *input, T *output) override;
     void backward(T * loss);
 };
 
@@ -219,17 +220,17 @@ public:
     int cols;
     T* hidden_output;
     ~RELU_layer();
-    void forward(T *input, T *output, int size);
+    void forward(T *input, T *output) override;
     void backward(T *loss);
 };
 
 
 template <typename T>
-__global__ void softmax_kernel(T *input, T *output, int size){
+__global__ void softmax_kernel(T *input, T *output, T reduce, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index] = exp(input[index]) / thrust::reduce(input, input + size);
+        output[index] = exp(input[index]) / reduce;
     }
 }
 
@@ -245,11 +246,12 @@ class Softmax: public Matrix<T>
         }
         Softmax(int rows, int cols){
             this->rows = rows;
-            this->cols = cols;
+            this->cols = 1;
         }
         ~Softmax();
-        void forward(T *input, T *output, int size){
+        void forward(T *input, T *output) override {
             // Allocate device memory for input and output
+            int size = rows;
             T *d_input, *d_output;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
@@ -269,9 +271,11 @@ class Softmax: public Matrix<T>
             // Define grid and block dimensions
             dim3 gridDim(1, 1, 1);
             dim3 blockDim(size, 1, 1);
-
+            T reduce = 0;
+            thrust::device_ptr<T> dev_ptr = thrust::device_pointer_cast(d_input);
+            reduce = thrust::reduce(dev_ptr, dev_ptr + size);
             // Launch the softmax kernel
-            softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+            softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output,reduce, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
                 return;
@@ -323,7 +327,7 @@ class Linear: public Matrix<T>
             free(this->weights);
             free(this->biases);
         }
-        void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
+        void forward(T *input, T *output) override;
         void backward(T * loss);
         void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
         void set_weights(T *weights, T *biases);
@@ -1845,7 +1849,7 @@ int Matrix<T>:: get_rows(){
 template <typename T>
 Sigmoid<T>::Sigmoid(int rows, int cols):Matrix<T>(rows, cols){
     this->rows = rows;
-    this->cols = cols;
+    this->cols = 1;
 }
 
 
@@ -1859,8 +1863,9 @@ __global__ void sigmoid_kernel(T *input, T *output, int size){
 }
 
 template <typename T>
-void Sigmoid<T>::forward(T *input, T *output, int size){
+void Sigmoid<T>::forward(T *input, T *output){
     // Allocate device memory for input and output
+    int size = rows;
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -1879,7 +1884,7 @@ void Sigmoid<T>::forward(T *input, T *output, int size){
 
     // Define grid and block dimensions
     dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    dim3 blockDim(size,1, 1);
 
     // Launch the sigmoid kernel
     sigmoid_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
@@ -1991,7 +1996,7 @@ void Sigmoid<T>::backward(T * loss){
 template <typename T>
 RELU_layer<T>::RELU_layer(int rows, int cols):Matrix<T>(rows, cols){
     this->rows = rows;
-    this->cols = cols;
+    this->cols = 1;
 }
 
 template <typename T>
@@ -1999,14 +2004,15 @@ __global__ void RELU_kernel(T *input, T *output, int size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size) {
-        output[index] = fmax(0, input[index]);
+        output[index] = input[index] > 0 ? input[index] : 0;
     }
 }
 
 
 template <typename T>
-void RELU_layer<T>::forward(T *input, T *output, int size){
+void RELU_layer<T>::forward(T *input, T *output){
     // Allocate device memory for input and output
+    int size = rows;
     cout<<"ReLU Layer"<<endl;
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -2149,10 +2155,12 @@ __global__ void linear_kernel(T *input, T *output, T *weights, T *biases, int in
 }
 
 template <typename T>
-void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_size, int output_size){
+void Linear<T>::forward(T *input, T *output){
     // Allocate device memory for input, output, weights, and biases
+    int input_size = cols;
+    int output_size = rows;
     cout<<"Linear Layer"<<endl;
-    T *d_input, *d_output, *d_weights, *d_biases;
+    T *d_input, *d_output, *dev_weights, *dev_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
@@ -2161,11 +2169,11 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
         cout<<"Error in allocating memory for d_output"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&dev_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&dev_biases, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
         return;
     }
@@ -2175,11 +2183,11 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
         cout<<"Error in copying input from host to device"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(dev_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(dev_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
         return;
     }
@@ -2189,7 +2197,7 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
     dim3 blockDim(cols, rows, 1);
 
     // Launch the linear kernel
-    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, input_size, output_size);
+    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, dev_weights, dev_biases, input_size, output_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         return;
@@ -2209,11 +2217,11 @@ void Linear<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
         cout<<"Error in freeing d_output"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaFree(d_weights))){
+    if(!HandleCUDAError(cudaFree(dev_weights))){
         cout<<"Error in freeing d_weights"<<endl;
         return;
     }
-    if(!HandleCUDAError(cudaFree(d_biases))){
+    if(!HandleCUDAError(cudaFree(dev_biases))){
         cout<<"Error in freeing d_biases"<<endl;
         return;
     }
@@ -2411,6 +2419,7 @@ void Network<T>::update_weights(T learning_rate){
 template <typename T>
 void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
     for(int i = 0; i < epochs; i++){
+        cout<<"Epoch: "<<i<<endl;
         forward(input, output);
 
         backward(input, output);
