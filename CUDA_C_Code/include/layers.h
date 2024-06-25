@@ -36,6 +36,7 @@
 #include <thrust/random.h>
 #include <thrust/host_vector.h>
 #include <cusolverDn.h>
+#include <cmath>
 #include "GPUErrors.h"
 
 
@@ -183,6 +184,15 @@ __global__ void matrix_elementwise_multiply_kernel(T *A, T *B, T *C, int rows, i
 }
 
 template <typename T>
+__global__ void vector_elementwise_multiply_kernel(T *A, T *B, T *C, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        C[index] = A[index] * B[index];
+    }
+}
+
+template <typename T>
 __global__ void matrix_multiply(T* A, T* B, T* C, int rows, int cols, int inter_size){
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -231,68 +241,70 @@ void Matrix<T>::forward(T *input, T *output){
         T* d_biases;
         if(!HandleCUDAError(cudaMalloc((void**)&d_input, cols * sizeof(T)))){
             cout<<"Error in allocating memory for d_input"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaMalloc((void**)&d_output, rows * sizeof(T)))) {
             cout<<"Error in allocating memory for d_output"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){ 
             cout<<"Error in allocating memory for device_data"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * sizeof(T)))){
             cout<<"Error in allocating memory for d_biases"<<endl;
-            return;
+            exit(1);
         }
 
         // Copy input from host to device
         if(!HandleCUDAError(cudaMemcpy(d_input, input, cols * sizeof(T), cudaMemcpyHostToDevice))){
             cout<<"Error in copying input from host to device"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
             cout<<"Error in copying d_data from host to device"<<endl;
-            return;
+            exit(1);
         }
 
         // Define grid and block dimensions
-        dim3 gridDim(1, 1, 1);
-        dim3 blockDim(cols, rows, 1);
 
+        int blocksize = 16;
+        dim3 blockDim(blocksize, blocksize, 1);
+
+        dim3 gridDim((cols + blockDim.x - 1) / blockDim.x, (rows + blockDim.y - 1) / blockDim.y, 1);
         // Launch the matrix multiplication kernel
         matrix_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_weights, d_input, d_output, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())){
             cout<<"Error in synchronizing device"<<endl;
-            return;
+            exit(1);
         }
         matrix_vector_addition_kernel<T><<<gridDim, blockDim>>>(d_output, d_biases, d_output, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())){
             cout<<"Error in synchronizing device"<<endl;
-            return;
+            exit(1);
         }
         // Copy the result output from device to host
         if(!HandleCUDAError(cudaMemcpy(output, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
             cout<<"Error in copying output from device to host"<<endl;
-            return;
+            exit(1);
         }
 
         // Free device memory
         if(!HandleCUDAError(cudaFree(d_input))){
             cout<<"Error in freeing d_input"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaFree(d_output))){
             cout<<"Error in freeing d_output"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaFree(d_weights))){
             cout<<"Error in freeing device_data"<<endl;
-            return;
+            exit(1);
         }
         if(!HandleCUDAError(cudaDeviceReset())){
             cout<<"Error in resetting device"<<endl;
-            return;
+            exit(1);
         }
         memcpy(output, this->hidden_output, rows * sizeof(T));
 }
@@ -351,6 +363,8 @@ class Softmax: public Matrix<T>
             this->cols = 1;
             this->input = (T*)malloc(rows * sizeof(T));
             this->hidden_output = (T*)malloc(rows * sizeof(T));
+            ZeroVector<T>(this->input, rows);
+            ZeroVector<T>(this->hidden_output, rows);
         }
         ~Softmax();
         T* input;
@@ -361,7 +375,7 @@ class Softmax: public Matrix<T>
             int size = rows;
             T *d_input, *d_output;
             if(input == NULL){
-                cout<<"Input RELU is NULL"<<endl;
+                cout<<"Input Softmax is NULL"<<endl;
                 input = (T*)malloc(size * sizeof(T));
                 if(input == NULL){
                     cout<<"Input of Softmax is NULL"<<endl;
@@ -370,50 +384,51 @@ class Softmax: public Matrix<T>
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_output"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy input from host to device
+            // Copy input from host to device
             if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemset(d_output, 0, size * sizeof(T)))){
+                cout<<"Error in setting d_output to 0"<<endl;
+                exit(1);
             }
 
             // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
-            T reduce = 0;
-            thrust::device_ptr<T> dev_ptr = thrust::device_pointer_cast(d_input);
-            reduce = thrust::reduce(dev_ptr, dev_ptr + size);
             // Launch the softmax kernel
-            softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output,reduce, size);
-            if(!HandleCUDAError(cudaDeviceSynchronize())){
-                cout<<"Error in synchronizing device"<<endl;
-                return;
-            }
+            // Corrected transformation for applying exp
+            thrust::transform(thrust::device,d_input, d_input + size, d_output, [] __device__ (T x) { return exp(x); });
 
+            // Step 3: Sum the exponentials
+            T sum = thrust::reduce(d_output, d_output + size, (T)0, thrust::plus<T>());
+
+            // Step 4: Divide each exponential by the sum
+            // Corrected transformation for dividing each element by the sum
+            thrust::transform(d_output, d_output + size, thrust::make_constant_iterator(sum), d_output, thrust::divides<T>());
             // Copy the result output from device to host
             if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying output from device to host"<<endl;
-                return;
             }
-
             // Free device memory
             if(!HandleCUDAError(cudaFree(d_input))){
                 cout<<"Error in freeing d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_output))){
                 cout<<"Error in freeing d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
             if(output == NULL){
                 cout<<"Output of Softmax is NULL"<<endl;
@@ -438,11 +453,11 @@ class Linear: public Matrix<T>
             this->d_biases = (T*)malloc(rows * sizeof(T));
             this->hidden_output = (T*)malloc(rows * sizeof(T));
             this->input = (T*)malloc(cols * sizeof(T));
-            this->dX = (T*)malloc(cols * sizeof(T));
             //Create random weights and biases
             InitializeMatrix<T>(this->weights, rows, cols);
             InitializeVector<T>(this->biases, rows);
-            ZeroVector<T>(this->hidden_output, rows);    
+            ZeroVector<T>(this->hidden_output, rows);  
+            ZeroVector<T>(this->input, cols);  
         }
         int rows;
         int cols;
@@ -452,10 +467,13 @@ class Linear: public Matrix<T>
         T* d_biases;
         T* hidden_output;
         T* input;
-        T* dX;
         ~Linear(){
             free(this->weights);
             free(this->biases);
+            free(this->d_weights);
+            free(this->d_biases);
+            free(this->hidden_output);
+            free(this->input);
         }
         void forward(T *input, T *output) override;
         void backward(T * loss) override;
@@ -609,60 +627,63 @@ class Mean_Squared_Error : public Loss<T>
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy input from host to device
             if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
-                return;
+                exit(1);
             }
 
             // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
 
             // Launch the mean squared error kernel
             Mean_Squared_Error_Kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
 
             // Free device memory
             if(!HandleCUDAError(cudaFree(d_input))){
                 cout<<"Error in freeing d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_output))){
                 cout<<"Error in freeing d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_loss))){
                 cout<<"Error in freeing d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
         }
         void backward(T* input, T* output) override { 
@@ -672,54 +693,58 @@ class Mean_Squared_Error : public Loss<T>
             T* d_out, *d_gt;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_out, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_out"<<endl;
-                return;
+                exit(1);
             }
 
 
             if(!HandleCUDAError(cudaMemcpy(d_out, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMemcpy(d_gt, output, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
-                return;
+                exit(1);
             }
 
             // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
+
 
             // Launch the mean squared error derivative kernel
             Mean_Squared_Error_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_out))){
                 cout<<"Error in freeing d_out"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_gt))){
                 cout<<"Error in freeing d_gt"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_loss))){
                 cout<<"Error in freeing d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
         }   
 };
@@ -746,41 +771,44 @@ class Binary_CrossEntropy : public Loss<T>
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy input from host to device
             if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
-                return;
+                exit(1);
             }
 
             // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
 
             // Launch the binary cross entropy kernel
             Binary_Cross_Entropy_Kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
-                return;
+                exit(1);
             }
             T* temp = (T*)malloc(size * sizeof(T));
             if(!HandleCUDAError(cudaMemcpy(temp, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
             T cost_val = 0;
             for(int i = 0; i < size; i++){
@@ -790,23 +818,23 @@ class Binary_CrossEntropy : public Loss<T>
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_input))){
                 cout<<"Error in freeing d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_output))){
                 cout<<"Error in freeing d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_loss))){
                 cout<<"Error in freeing d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
         }
         void backward(T* input, T* output) override {
@@ -817,53 +845,55 @@ class Binary_CrossEntropy : public Loss<T>
             T* d_out, *d_gt;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_out, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_out"<<endl;
-                return;
+                exit(1);
             }
 
             if(!HandleCUDAError(cudaMemcpy(d_out, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMemcpy(d_gt, output, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
-                return;
+                exit(1);
             }
 
-            // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
 
             // Launch the binary cross entropy derivative kernel
             Binary_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_out))){
                 cout<<"Error in freeing d_out"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_gt))){
                 cout<<"Error in freeing d_gt"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_loss))){
                 cout<<"Error in freeing d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
         }
 };
@@ -878,70 +908,82 @@ class Categorical: public Loss<T>
         Categorical(int size){
             this->size = size;
             this->loss = (T*)malloc(size * sizeof(T));
+            this->input = (T*)malloc(size * sizeof(T));
+            this->output = (T*)malloc(size * sizeof(T));
         }
         ~Categorical(){
             free(this->loss);
         }
         T* loss;
         int size;
+        T* input;
+        T* output;
         void forward(T *input, T *output) override{
             // Allocate device memory for input and output
             cout<<"Categorical forward"<<endl;
             T *d_input, *d_output, *d_loss;
+            if(input == NULL){
+                cout<<"Input of Categorical is NULL"<<endl;
+                exit(1);
+            }
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy input from host to device
             if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
-                return;
+                exit(1);
             }
 
             // Define grid and block dimensions
-            dim3 gridDim(1, 1, 1);
-            dim3 blockDim(size, 1, 1);
+
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
 
             // Launch the categorical cross entropy kernel
             Categorical_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
             if(!HandleCUDAError(cudaDeviceSynchronize())){
                 cout<<"Error in synchronizing device"<<endl;
-                return;
+                exit(1);
             }
 
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_input))){
                 cout<<"Error in freeing d_input"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_output))){
                 cout<<"Error in freeing d_output"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_loss))){
                 cout<<"Error in freeing d_loss"<<endl;
-                return;
+                exit(1);
             }
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
-                return;
+                exit(1);
             }
         }
 };
@@ -1030,10 +1072,10 @@ class Network
         void forward(T *input, T *output){
             layers[0]->forward(input, layers[0]->hidden_output);
             for(int i = 1; i < layers.size()-1; i++){
-                // if(layers[i-1]->hidden_output == NULL || layers[i]->hidden_output == NULL){
-                //     cout<<"gay"<<endl;
-                //     return;
-                // }
+                if(layers[i-1]->hidden_output == NULL){
+                    cout<<"gay"<<endl;
+                    exit(1);
+                }
                 layers[i]->forward(layers[i-1]->hidden_output, layers[i]->hidden_output);
             }
             //Should be the cost layer
@@ -1082,59 +1124,61 @@ void Matrix<T>::matrix_multiply(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, cols * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, cols * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix multiplication kernel
     matrix_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1156,58 +1200,60 @@ void Matrix<T>::matrix_add(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix addition kernel
     matrix_add_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1229,59 +1275,61 @@ void Matrix<T>::matrix_subtract(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix subtraction kernel
     matrix_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1303,47 +1351,49 @@ void Matrix<T>::matrix_transpose(T *A, T *C){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, cols * rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix transpose kernel
     matrix_transpose_kernel<T><<<gridDim, blockDim>>>(d_A, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, cols * rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1365,47 +1415,49 @@ void Matrix<T>::matrix_scalar_multiply(T *A, T *C, T scalar){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix scalar multiplication kernel
     matrix_scalar_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1426,44 +1478,47 @@ void Matrix<T>::matrix_scalar_add(T *A, T *C,T scalar){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix scalar addition kernel
     matrix_scalar_add_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1484,44 +1539,47 @@ void Matrix<T>::matrix_scalar_subtract(T *A, T *C, T scalar){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice);
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix scalar subtraction kernel
     matrix_scalar_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1533,59 +1591,61 @@ void Matrix<T>::matrix_elementwise_multiply(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix elementwise multiplication kernel
     matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1607,59 +1667,62 @@ void Matrix<T>::matrix_elementwise_divide(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix elementwise division kernel
     matrix_elementwise_divide_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1680,59 +1743,61 @@ void Matrix<T>::matrix_elementwise_add(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix elementwise addition kernel
     matrix_elementwise_add_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1754,59 +1819,62 @@ void Matrix<T>::matrix_elementwise_subtract(T *A, T *B, T *C){
     T *d_A, *d_B, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_B, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrices A and B from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_B, B, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying B from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = cols;
+    int output_size = rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix elementwise subtraction kernel
     matrix_elementwise_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_B))){
         cout<<"Error in freeing d_B"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1844,57 +1912,59 @@ void Matrix<T>::matrix_sum(T *A, T *C, int axis){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int input_size = (axis == 0) ? rows : cols;
+    int output_size = (axis == 0) ? cols : rows;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
 
     if (axis == 0) {
         // Launch the matrix sum along axis 0 kernel
         matrix_sum_axis0_kernel<T><<<gridDim, blockDim>>>(d_A, d_C, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())){
             cout<<"Error in synchronizing device"<<endl;
-            return;
+            exit(1);
         }
     } else if (axis == 1) {
         // Launch the matrix sum along axis 1 kernel
         matrix_sum_axis1_kernel<T><<<gridDim, blockDim>>>(d_A, d_C, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())){
             cout<<"Error in synchronizing device"<<endl;
-            return;
+            exit(1);
         }
     }
 
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1916,48 +1986,49 @@ void Matrix<T>::matrix_scalar_divide(T *A, T *C, T scalar){
     T *d_A, *d_C;
     if(!HandleCUDAError(cudaMalloc((void**)&d_A, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_C, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_C"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy matrix A from host to device
     if(!HandleCUDAError(cudaMemcpy(d_A, A, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying A from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int output_size = rows;
+    int input_size = cols;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
-
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
     // Launch the matrix scalar division kernel
     matrix_scalar_divide_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy the result matrix C from device to host
     if(!HandleCUDAError(cudaMemcpy(C, d_C, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying C from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_A))){
         cout<<"Error in freeing d_A"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_C))){
         cout<<"Error in freeing d_C"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -1989,6 +2060,8 @@ Sigmoid<T>::Sigmoid(int rows, int cols):Matrix<T>(rows, cols){
     this->cols = 1;
     this->input = (T*)malloc(rows * sizeof(T));
     this->hidden_output = (T*)malloc(rows * sizeof(T));
+    ZeroVector<T>(this->input, rows);
+    ZeroVector<T>(this->hidden_output, rows);
 }
 
 
@@ -2008,7 +2081,7 @@ void Sigmoid<T>::forward(T *input, T *output){
     T *d_input, *d_output;
     // this->input = input;
     if(input == NULL){
-        cout<<"Input RELU is NULL"<<endl;
+        cout<<"Input Sigmoid is NULL"<<endl;
         input = (T*)malloc(size * sizeof(T));
         if(input == NULL){
             cout<<"Input of RELU is NULL"<<endl;
@@ -2016,57 +2089,60 @@ void Sigmoid<T>::forward(T *input, T *output){
         }
     }
     if(output == NULL){
-        cout<<"Output of RELU is NULL"<<endl;
+        cout<<"Output of Sigmoid is NULL"<<endl;
         output = (T*)malloc(size * sizeof(T));
         if(output == NULL){
-            cout<<"Output of RELU is NULL"<<endl;
+            cout<<"Output of Sigmoid is NULL"<<endl;
             exit(1);
         }
     }
     memcpy(this->input, input, size * sizeof(T));
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(size,1, 1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(blocksPerGrid, 1, 1);
+    dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the sigmoid kernel
     sigmoid_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
     // this->hidden_output = output;
     memcpy(this->hidden_output, output, size * sizeof(T));
@@ -2093,62 +2169,65 @@ void Sigmoid<T>::backward(T * loss){
     T *input = this->output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, rows*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_loss_mat, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_loss_mat"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(rows, 1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(blocksPerGrid, 1, 1);
+    dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the sigmoid derivative kernel
     sigmoid_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, rows);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
-
-    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss_mat, d_loss_mat, rows, 1);
+    vector_elementwise_multiply_kernel<T><<<gridDim,blockDim>>>(d_output, d_loss_mat, d_loss_mat, rows);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
-    
+
+
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(loss, d_loss_mat, rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_loss_mat))){
         cout<<"Error in freeing d_loss_mat"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -2159,6 +2238,8 @@ RELU_layer<T>::RELU_layer(int rows, int cols):Matrix<T>(rows, cols){
     this->cols = 1;
     this->input = (T*)malloc(rows * sizeof(T));
     this->hidden_output = (T*)malloc(rows * sizeof(T));
+    ZeroVector(this->input, rows);
+    ZeroVector(this->hidden_output, rows);
 }
 
 template <typename T>
@@ -2197,47 +2278,50 @@ void RELU_layer<T>::forward(T *input, T *output){
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(blocksPerGrid, 1, 1);
+    dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the RELU kernel
     RELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
     // this->hidden_output = output;
     if(this->hidden_output == NULL){
@@ -2267,62 +2351,64 @@ void RELU_layer<T>::backward(T * loss){
     int size = this->rows;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_loss_mat"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
 
+    dim3 gridDim(blocksPerGrid, 1, 1);
+    dim3 blockDim(threadsPerBlock, 1, 1);
     // Launch the sigmoid derivative kernel
     RELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
 
-    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss, d_loss, size, 1);
+    vector_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss, d_loss, size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_loss))){
         cout<<"Error in freeing d_loss_mat"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -2335,7 +2421,7 @@ __global__ void linear_kernel(T *input, T *output, T *weights, T *biases, int in
     if (index < output_size) {
         T sum = 0;
         for (int i = 0; i < input_size; i++) {
-            sum += input[i] * weights[i * output_size + index];
+            sum +=  weights[index * input_size + i] * input[i];
         }
         output[index] = sum + biases[index];
     }
@@ -2356,84 +2442,85 @@ void Linear<T>::forward(T *input, T *output){
             exit(1);
         }
     }
-    if(output == NULL){
-        cout<<"Output of Linear is NULL"<<endl;
-        output = (T*)malloc(output_size * sizeof(T));
-        if(output == NULL){
-            cout<<"Output of RELU is NULL"<<endl;
-            exit(1);
-        }
-    }
     memcpy(this->input, input, input_size * sizeof(T));
     cout<<"Linear Layer"<<endl;
     T *d_input, *d_output, *dev_weights, *dev_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dev_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
-    if(!HandleCUDAError(cudaMalloc((void**)&dev_biases, rows * cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&dev_biases, rows *  sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input, weights, and biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dev_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dev_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (output_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(blocksPerGrid, 1, 1);
+    dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the linear kernel
     linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, dev_weights, dev_biases, input_size, output_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(dev_weights))){
         cout<<"Error in freeing d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(dev_biases))){
         cout<<"Error in freeing d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
+    }
+    if(output == NULL){
+        cout<<"Output of Linear is NULL"<<endl;
+        if(output == NULL){
+            cout<<"Output of Linear is NULL"<<endl;
+        }
     }
     mempcpy(this->hidden_output, output, output_size * sizeof(T));
 }
@@ -2506,87 +2593,89 @@ void Linear<T>::backward(T * loss){
     int cols = this->cols;
     if(!HandleCUDAError(cudaMalloc((void**)&d_loss, cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dev_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dev_biases, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dd_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dd_biases, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input, weights, and biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dev_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dev_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dd_weights,d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(dd_biases,d_biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
-
+    int output_size = rows;
+    int input_size = cols;
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
     //__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_biases, T* d_F, T* output, int input_size, int output_size, int size)
     // Launch the linear derivative kernel
     linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_loss, dev_weights, dd_weights, dd_biases, d_output, d_output, cols, rows);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_loss))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(dev_weights))){
         cout<<"Error in freeing d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(dev_biases))){
         cout<<"Error in freeing d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -2632,7 +2721,7 @@ void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
         cout<<"Epoch: "<<i<<endl;
         if(input == NULL || output == NULL){
             cout<<"Input or output is NULL"<<endl;
-            return;
+            exit(1);
         }
         forward(input, output);
 
@@ -2654,6 +2743,7 @@ void Network<T>::set_input_size(int input_size){
 
 template <typename T>
 void Network<T>::set_hidden_size(int* hidden_size){
+    this->hidden_size = (T*)malloc((num_layers-2) * sizeof(T));
     this->hidden_size = hidden_size;
 }
 
@@ -2707,79 +2797,81 @@ void Linear<T>::update_weights(T *weights, T *biases, T learning_rate, int input
     T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_d_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_d_biases, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_d_biases"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy weights, biases, d_weights, and d_biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_d_weights, d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying d_weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_d_biases, d_biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying d_biases from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, 1, 1);
 
     // Launch the update weights kernel
     update_weights_kernel<T><<<gridDim, blockDim>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, input_size, output_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result weights and biases from device to host
     if(!HandleCUDAError(cudaMemcpy(weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying weights from device to host"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying biases from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_weights))){
         cout<<"Error in freeing d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_biases))){
         cout<<"Error in freeing d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_d_weights))){
         cout<<"Error in freeing d_d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_d_biases))){
         cout<<"Error in freeing d_d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -2904,33 +2996,33 @@ void Conv2D<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
     T *d_input, *d_output, *d_weights, *d_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input, weights, and biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
@@ -2941,34 +3033,34 @@ void Conv2D<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
     conv2D_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, radius, input_size, input_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_weights))){
         cout<<"Error in freeing d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_biases))){
         cout<<"Error in freeing d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -2980,46 +3072,46 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
     T* d_dweights, *d_dbiases, *d_dinput;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_dweights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_dweights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_dbiases, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_dbiases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_dinput, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_dinput"<<endl;
-        return;
+        exit(1);
     }
 
 
     // Copy input, weights, and biases from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying weights from host to device"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying biases from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
@@ -3031,47 +3123,47 @@ void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_s
     conv2D_backward_kernel<<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, d_dweights, d_dbiases, d_dinput, input_size, output_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the gradients from device to host
     if (!HandleCUDAError(cudaMemcpy(d_weights, d_dweights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dweights from device to host" << endl;
-        return;
+        exit(1);
     }
     if (!HandleCUDAError(cudaMemcpy(d_biases, d_dbiases, rows * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dbiases from device to host" << endl;
-        return;
+        exit(1);
     }
     if (!HandleCUDAError(cudaMemcpy(d_input, d_dinput, input_size * sizeof(T), cudaMemcpyDeviceToHost))) {
         cout << "Error in copying dinput from device to host" << endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_weights))){
         cout<<"Error in freeing d_weights"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_biases))){
         cout<<"Error in freeing d_biases"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }
 
@@ -3103,46 +3195,48 @@ void MaxPooling2D<T>::forward(T *input, T *output, int input_size, int output_si
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaMalloc((void**)&d_output, output_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_output"<<endl;
-        return;
+        exit(1);
     }
 
     // Copy input from host to device
     if(!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice))){
         cout<<"Error in copying input from host to device"<<endl;
-        return;
+        exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
+    int block_size = 16;
+    dim3 blockDim(block_size, block_size);
+
+    dim3 gridDim((output_size + block_size - 1) / block_size, 1, 1);
 
     // Launch the max pooling kernel
     max_pooling_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, input_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
-        return;
+        exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
-        return;
+        exit(1);
     }
 
     // Free device memory
     if(!HandleCUDAError(cudaFree(d_input))){
         cout<<"Error in freeing d_input"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaFree(d_output))){
         cout<<"Error in freeing d_output"<<endl;
-        return;
+        exit(1);
     }
     if(!HandleCUDAError(cudaDeviceReset())){
         cout<<"Error in resetting device"<<endl;
-        return;
+        exit(1);
     }
 }

@@ -24,8 +24,8 @@ int main(){
     net.addLayer(new Softmax<float>(output_size, output_size));
     net.addLoss(new Categorical<float>(output_size));
 
-    net.train(input, target,10,.01);
-
+    // net.train(input, target,10,.01);
+    net.forward(input,target);
 
 
     // Add layers to the network
