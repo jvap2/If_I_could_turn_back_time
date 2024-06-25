@@ -13,7 +13,7 @@ int main(){
     // Create a network
     float* input = new float[input_size];
     float* target = new float[output_size];
-    InitializeVector(input, input_size);
+    InitializeVector<float>(input, input_size);
     ZeroVector(target, output_size);
     Network<float> net(input_size,  hidden_layers, output_size, 4);
     net.addLayer(new Linear<float>(input_size, hidden_layers[0]));

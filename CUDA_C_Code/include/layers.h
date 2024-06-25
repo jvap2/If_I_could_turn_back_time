@@ -34,7 +34,7 @@
 #include <thrust/extrema.h>
 #include <thrust/shuffle.h>
 #include <thrust/random.h>
-#include <thrust/execution_policy.h>
+#include <thrust/host_vector.h>
 #include <cusolverDn.h>
 #include "GPUErrors.h"
 
@@ -104,7 +104,7 @@ public:
         this->weights = NULL;
         this->biases = NULL;
     }
-    virtual Matrix(int rows, int cols){
+    Matrix(int rows, int cols){
         this->rows = rows;
         this->cols = cols;
         this->weights = (T*)malloc(rows * cols * sizeof(T));
@@ -112,11 +112,15 @@ public:
         this->hidden_output = (T*)malloc(rows * sizeof(T));
         this->input = (T*)malloc(cols * sizeof(T));
         //Create random weights and biases
+        InitializeMatrix<T>(this->weights, rows, cols);
+        InitializeVector<T>(this->biases, rows);
     }
 
     Matrix(int rows, int cols, T *weights, T *biases){
         this->rows = rows;
         this->cols = cols;
+        this->weights = (T*)malloc(rows * cols * sizeof(T));
+        this->biases = (T*)malloc(rows * sizeof(T));
         this->weights = weights;
         this->biases = biases;
     }
@@ -312,7 +316,7 @@ template <typename T>
 class RELU_layer: public Matrix<T>
 {
 public:
-    RELU_layer(int rows, int cols) override;
+    RELU_layer(int rows, int cols);
     int rows;
     int cols;
     T* input;
@@ -360,15 +364,7 @@ class Softmax: public Matrix<T>
                 cout<<"Input RELU is NULL"<<endl;
                 input = (T*)malloc(size * sizeof(T));
                 if(input == NULL){
-                    cout<<"Input of RELU is NULL"<<endl;
-                    exit(1);
-                }
-            }
-            if(output == NULL){
-                cout<<"Output of RELU is NULL"<<endl;
-                output = (T*)malloc(size * sizeof(T));
-                if(output == NULL){
-                    cout<<"Output of RELU is NULL"<<endl;
+                    cout<<"Input of Softmax is NULL"<<endl;
                     exit(1);
                 }
             }
@@ -419,6 +415,11 @@ class Softmax: public Matrix<T>
                 cout<<"Error in resetting device"<<endl;
                 return;
             }
+            if(output == NULL){
+                cout<<"Output of Softmax is NULL"<<endl;
+                exit(1);
+            }
+            memcpy(output, this->hidden_output, size * sizeof(T));
         }
 };
 
@@ -428,7 +429,7 @@ template <typename T>
 class Linear: public Matrix<T>
 {
     public:
-        Linear(int rows, int cols) override { 
+        Linear(int rows, int cols){ 
             this->rows = rows;
             this->cols = cols;
             this->weights = (T*)malloc(rows * cols * sizeof(T));
@@ -437,7 +438,11 @@ class Linear: public Matrix<T>
             this->d_biases = (T*)malloc(rows * sizeof(T));
             this->hidden_output = (T*)malloc(rows * sizeof(T));
             this->input = (T*)malloc(cols * sizeof(T));
-            this->dX = (T*)malloc(cols * sizeof(T));    
+            this->dX = (T*)malloc(cols * sizeof(T));
+            //Create random weights and biases
+            InitializeMatrix<T>(this->weights, rows, cols);
+            InitializeVector<T>(this->biases, rows);
+            ZeroVector<T>(this->hidden_output, rows);    
         }
         int rows;
         int cols;
