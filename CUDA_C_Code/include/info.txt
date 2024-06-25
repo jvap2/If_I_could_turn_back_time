@@ -1,1 +1,2 @@
 -It is not accessing the layers
+- Need to use the network stuff to pass in new stuff

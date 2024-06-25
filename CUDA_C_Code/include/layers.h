@@ -1,24 +1,117 @@
-#include "GPUErrors.h"
-#include "include.h"
+#pragma once
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>   
+#include <algorithm>
+#include <cstdlib>
+#include <ctime>
+#include <cmath>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <math.h>
+#include <curand.h>
+#include <curand_kernel.h>
+#include <cusparse_v2.h>
+#include <cublas_v2.h>
+#include <cublasLt.h>
 #include <thrust/device_ptr.h>
 #include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
+#include <thrust/scan.h>
+#include <thrust/execution_policy.h>
+#include <thrust/unique.h>
+#include <thrust/functional.h>
+#include <thrust/sequence.h>
+#include <thrust/inner_product.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/set_operations.h>
+#include <cmath>
+#include <thrust/sort.h>
+#include <thrust/logical.h>
+#include <thrust/functional.h>
+#include <thrust/execution_policy.h>
+#include <thrust/extrema.h>
+#include <thrust/shuffle.h>
+#include <thrust/random.h>
+#include <thrust/execution_policy.h>
+#include <cusolverDn.h>
+#include "GPUErrors.h"
+
+
+#define RANGE_MAX 0.5
+#define RANGE_MIN -0.5
+
+template <typename T>
+void InitializeMatrix(T *matrix, int ny, int nx)
+{
+	float *p = matrix;
+
+	for (int i = 0; i < ny; i++)
+	{
+		for (int j = 0; j < nx; j++)
+		{
+			p[j] = ((T)rand() / (RAND_MAX + 1)*(RANGE_MAX - RANGE_MIN) + RANGE_MIN);
+		}
+		p += nx;
+	}
+}
+
+template <typename T>
+void ZeroMatrix(T *temp, const int ny, const int nx)
+{
+	float *p = temp;
+
+	for (int i = 0; i < ny; i++)
+	{
+		for (int j = 0; j < nx; j++)
+		{
+			p[j] = 0.0f;
+		}
+		p += nx;
+	}
+}
+
+template <typename T>
+void InitializeVector(float* vec, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		vec[i] = ((T)rand() / (RAND_MAX + 1)*(RANGE_MAX - RANGE_MIN) + RANGE_MIN);
+	}
+}
+
+
+template <typename T>
+void ZeroVector(T* vec, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		vec[i] = 0.0f;
+	}
+}
+
+
 
 template <typename T>
 class Matrix
 {
 public:
+    T* input;
     Matrix(){
         this->rows = 0;
         this->cols = 0;
         this->weights = NULL;
         this->biases = NULL;
     }
-    Matrix(int rows, int cols){
+    virtual Matrix(int rows, int cols){
         this->rows = rows;
         this->cols = cols;
         this->weights = (T*)malloc(rows * cols * sizeof(T));
         this->biases = (T*)malloc(rows * sizeof(T));
+        this->hidden_output = (T*)malloc(rows * sizeof(T));
+        this->input = (T*)malloc(cols * sizeof(T));
+        //Create random weights and biases
     }
 
     Matrix(int rows, int cols, T *weights, T *biases){
@@ -62,7 +155,7 @@ public:
     void set_rows(int rows);
     void set_cols(int cols);
     void virtual forward(T *input, T *output);
-    void backward(T * loss){};
+    void virtual backward(T * loss){};
     void backward(T * loss, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
     void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){};
@@ -127,6 +220,8 @@ template <typename T>
 void Matrix<T>::forward(T *input, T *output){
         // Allocate device memory for input and output
         cout<<"Matrix forward"<<endl;
+        memcpy(this->input, input, cols * sizeof(T));
+        // this->input = input;
         T *d_input, *d_output;
         T *d_weights;
         T* d_biases;
@@ -195,6 +290,7 @@ void Matrix<T>::forward(T *input, T *output){
             cout<<"Error in resetting device"<<endl;
             return;
         }
+        memcpy(output, this->hidden_output, rows * sizeof(T));
 }
 
 
@@ -205,23 +301,25 @@ public:
     Sigmoid(int rows, int cols);
     int rows;
     int cols;
+    T* input;
     T* hidden_output;
     ~Sigmoid();
     void forward(T *input, T *output) override;
-    void backward(T * loss);
+    void backward(T * loss) override;
 };
 
 template <typename T>
 class RELU_layer: public Matrix<T>
 {
 public:
-    RELU_layer(int rows, int cols);
+    RELU_layer(int rows, int cols) override;
     int rows;
     int cols;
+    T* input;
     T* hidden_output;
     ~RELU_layer();
     void forward(T *input, T *output) override;
-    void backward(T *loss);
+    void backward(T *loss) override;
 };
 
 
@@ -247,12 +345,33 @@ class Softmax: public Matrix<T>
         Softmax(int rows, int cols){
             this->rows = rows;
             this->cols = 1;
+            this->input = (T*)malloc(rows * sizeof(T));
+            this->hidden_output = (T*)malloc(rows * sizeof(T));
         }
         ~Softmax();
+        T* input;
+        T* hidden_output;
         void forward(T *input, T *output) override {
             // Allocate device memory for input and output
+            cout<<"Softmax forward"<<endl;
             int size = rows;
             T *d_input, *d_output;
+            if(input == NULL){
+                cout<<"Input RELU is NULL"<<endl;
+                input = (T*)malloc(size * sizeof(T));
+                if(input == NULL){
+                    cout<<"Input of RELU is NULL"<<endl;
+                    exit(1);
+                }
+            }
+            if(output == NULL){
+                cout<<"Output of RELU is NULL"<<endl;
+                output = (T*)malloc(size * sizeof(T));
+                if(output == NULL){
+                    cout<<"Output of RELU is NULL"<<endl;
+                    exit(1);
+                }
+            }
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
                 return;
@@ -309,11 +428,16 @@ template <typename T>
 class Linear: public Matrix<T>
 {
     public:
-        Linear(int rows, int cols){
+        Linear(int rows, int cols) override { 
             this->rows = rows;
             this->cols = cols;
             this->weights = (T*)malloc(rows * cols * sizeof(T));
             this->biases = (T*)malloc(rows * sizeof(T));
+            this->d_weights = (T*)malloc(rows * cols * sizeof(T));
+            this->d_biases = (T*)malloc(rows * sizeof(T));
+            this->hidden_output = (T*)malloc(rows * sizeof(T));
+            this->input = (T*)malloc(cols * sizeof(T));
+            this->dX = (T*)malloc(cols * sizeof(T));    
         }
         int rows;
         int cols;
@@ -322,13 +446,14 @@ class Linear: public Matrix<T>
         T* d_weights;
         T* d_biases;
         T* hidden_output;
+        T* input;
         T* dX;
         ~Linear(){
             free(this->weights);
             free(this->biases);
         }
         void forward(T *input, T *output) override;
-        void backward(T * loss);
+        void backward(T * loss) override;
         void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
         void set_weights(T *weights, T *biases);
 };
@@ -451,9 +576,11 @@ class Loss: public Matrix<T>
         }
         int size;
         T* loss;
+        T* input;
+        T* output;
         ~Loss(){};
-        void Cost(T *input, T *output){};
-        void backward(T* input, T* output){};
+        void forward(T *input, T *output) override {};
+        void backward(T* loss) override {};
 };
 
 template <typename T>
@@ -472,7 +599,7 @@ class Mean_Squared_Error : public Loss<T>
         }
         int size;
         T* loss;
-        void Cost(T *input, T *output){
+        void forward(T *input, T *output) override {
             // Allocate device memory for input and output
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -533,8 +660,9 @@ class Mean_Squared_Error : public Loss<T>
                 return;
             }
         }
-        void backward(T* input, T* output){
+        void backward(T* input, T* output) override { 
             /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
+            cout<< "Mean Squared Error Backward"<<endl;
             T* d_loss;
             T* d_out, *d_gt;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
@@ -608,7 +736,7 @@ class Binary_CrossEntropy : public Loss<T>
         }
         T* loss;
         int size;
-        void Cost(T *input, T *output){
+        void forward(T *input, T *output){
             // Allocate device memory for input and output
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -676,9 +804,10 @@ class Binary_CrossEntropy : public Loss<T>
                 return;
             }
         }
-        void backward(T* input, T* output){
+        void backward(T* input, T* output) override {
             /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
             /*The derivative for Binary Cross Entropy is */
+            cout<<"Binary Cross Entropy Backward"<<endl;
             T* d_loss;
             T* d_out, *d_gt;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
@@ -750,8 +879,9 @@ class Categorical: public Loss<T>
         }
         T* loss;
         int size;
-        void Cost(T *input, T *output){
+        void forward(T *input, T *output) override{
             // Allocate device memory for input and output
+            cout<<"Categorical forward"<<endl;
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
@@ -893,14 +1023,16 @@ class Network
         int* get_hidden_size();
         int get_output_size();
         void forward(T *input, T *output){
-            for(int i = 0; i < layers.size(); i++){
-                layers[i]->forward(input, output);
+            layers[0]->forward(input, layers[0]->hidden_output);
+            for(int i = 1; i < layers.size()-1; i++){
+                // if(layers[i-1]->hidden_output == NULL || layers[i]->hidden_output == NULL){
+                //     cout<<"gay"<<endl;
+                //     return;
+                // }
+                layers[i]->forward(layers[i-1]->hidden_output, layers[i]->hidden_output);
             }
-        }
-        void forward(Matrix<T> input, Matrix<T> output){
-            for(int i = 0; i < layers.size(); i++){
-                layers[i]->forward(input, output);
-            }
+            //Should be the cost layer
+            layers[layers.size()-1]->forward(layers[layers.size()-1]->hidden_output, output);
         }
 };
 
@@ -1850,6 +1982,8 @@ template <typename T>
 Sigmoid<T>::Sigmoid(int rows, int cols):Matrix<T>(rows, cols){
     this->rows = rows;
     this->cols = 1;
+    this->input = (T*)malloc(rows * sizeof(T));
+    this->hidden_output = (T*)malloc(rows * sizeof(T));
 }
 
 
@@ -1867,6 +2001,24 @@ void Sigmoid<T>::forward(T *input, T *output){
     // Allocate device memory for input and output
     int size = rows;
     T *d_input, *d_output;
+    // this->input = input;
+    if(input == NULL){
+        cout<<"Input RELU is NULL"<<endl;
+        input = (T*)malloc(size * sizeof(T));
+        if(input == NULL){
+            cout<<"Input of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    if(output == NULL){
+        cout<<"Output of RELU is NULL"<<endl;
+        output = (T*)malloc(size * sizeof(T));
+        if(output == NULL){
+            cout<<"Output of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    memcpy(this->input, input, size * sizeof(T));
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         return;
@@ -1911,6 +2063,8 @@ void Sigmoid<T>::forward(T *input, T *output){
         cout<<"Error in resetting device"<<endl;
         return;
     }
+    // this->hidden_output = output;
+    memcpy(this->hidden_output, output, size * sizeof(T));
 }
 
 
@@ -1928,6 +2082,7 @@ __global__ void sigmoid_derivative_kernel(T *input, T *output, int size){
 template <typename T>
 void Sigmoid<T>::backward(T * loss){
     // Allocate device memory for input and output
+    cout<<"Sigmoid Layer"<<endl;
     T *d_input, *d_output;
     T* d_loss_mat;
     T *input = this->output;
@@ -1997,6 +2152,8 @@ template <typename T>
 RELU_layer<T>::RELU_layer(int rows, int cols):Matrix<T>(rows, cols){
     this->rows = rows;
     this->cols = 1;
+    this->input = (T*)malloc(rows * sizeof(T));
+    this->hidden_output = (T*)malloc(rows * sizeof(T));
 }
 
 template <typename T>
@@ -2014,6 +2171,24 @@ void RELU_layer<T>::forward(T *input, T *output){
     // Allocate device memory for input and output
     int size = rows;
     cout<<"ReLU Layer"<<endl;
+    // this->input = input;
+    if(input == NULL){
+        cout<<"Input RELU is NULL"<<endl;
+        input = (T*)malloc(size * sizeof(T));
+        if(input == NULL){
+            cout<<"Input of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    if(output == NULL){
+        cout<<"Output of RELU is NULL"<<endl;
+        output = (T*)malloc(size * sizeof(T));
+        if(output == NULL){
+            cout<<"Output of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    memcpy(this->input, input, size * sizeof(T));
     T *d_input, *d_output;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -2059,6 +2234,12 @@ void RELU_layer<T>::forward(T *input, T *output){
         cout<<"Error in resetting device"<<endl;
         return;
     }
+    // this->hidden_output = output;
+    if(this->hidden_output == NULL){
+        cout<<"Hidden output is NULL for ReLU"<<endl;
+        this->hidden_output = (T*)malloc(size * sizeof(T));
+    }
+    memcpy(this->hidden_output, output, size * sizeof(T));
 }
 
 
@@ -2074,9 +2255,10 @@ __global__ void RELU_derivative_kernel(T *input, T *output, int size){
 template <typename T>
 void RELU_layer<T>::backward(T * loss){
         // Allocate device memory for input and output
+    cout<<"RELU Layer"<<endl;
     T *d_input, *d_output;
     T* d_loss;
-    T *input = this->output;
+    T *input = this->hidden_output;
     int size = this->rows;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -2159,6 +2341,25 @@ void Linear<T>::forward(T *input, T *output){
     // Allocate device memory for input, output, weights, and biases
     int input_size = cols;
     int output_size = rows;
+
+    // this->input = input;
+    if(input == NULL){
+        cout<<"Input Linear is NULL"<<endl;
+        input = (T*)malloc(input_size * sizeof(T));
+        if(input == NULL){
+            cout<<"Input of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    if(output == NULL){
+        cout<<"Output of Linear is NULL"<<endl;
+        output = (T*)malloc(output_size * sizeof(T));
+        if(output == NULL){
+            cout<<"Output of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
+    memcpy(this->input, input, input_size * sizeof(T));
     cout<<"Linear Layer"<<endl;
     T *d_input, *d_output, *dev_weights, *dev_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
@@ -2229,6 +2430,7 @@ void Linear<T>::forward(T *input, T *output){
         cout<<"Error in resetting device"<<endl;
         return;
     }
+    mempcpy(this->hidden_output, output, output_size * sizeof(T));
 }
 
 template <typename T>
@@ -2292,6 +2494,7 @@ __global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d
 template <typename T>
 void Linear<T>::backward(T * loss){
     // Allocate device memory for input, output, weights, and biases
+    cout<<"Linear Layer"<<endl;
     T *d_loss, *d_output, *dev_weights, *dev_biases;
     T *dd_weights, *dd_biases;
     int rows = this->rows;
@@ -2397,6 +2600,8 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
     this->input_size = input_size;
     this->hidden_size = hidden_size;
     this->output_size = output_size;
+    this->num_layers = num_layers;
+
 }
 
 template <typename T>
@@ -2420,6 +2625,10 @@ template <typename T>
 void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
     for(int i = 0; i < epochs; i++){
         cout<<"Epoch: "<<i<<endl;
+        if(input == NULL || output == NULL){
+            cout<<"Input or output is NULL"<<endl;
+            return;
+        }
         forward(input, output);
 
         backward(input, output);
