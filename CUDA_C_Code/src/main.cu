@@ -17,15 +17,15 @@ int main(){
     ZeroVector(target, output_size);
     Network<float> net(input_size,  hidden_layers, output_size, 4);
     net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
-    net.addLayer(new RELU_layer<float>(hidden_layers[0], hidden_layers[0]));
+    net.addLayer(new RELU_layer<float>(hidden_layers[0]));
     net.addLayer(new Linear<float>(hidden_layers[0], hidden_layers[1]));
-    net.addLayer(new RELU_layer<float>(hidden_layers[1], hidden_layers[1]));
+    net.addLayer(new RELU_layer<float>(hidden_layers[1]));
     net.addLayer(new Linear<float>(hidden_layers[1], output_size));
-    net.addLayer(new Softmax<float>(output_size, output_size));
+    net.addLayer(new Softmax<float>(output_size));
     net.addLoss(new Categorical<float>(output_size));
 
-    // net.train(input, target,10,.01);
-    net.forward(input,target);
+    net.train(input, target,10,.01);
+    // net.forward(input,target);
 
 
     // Add layers to the network

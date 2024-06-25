@@ -116,6 +116,17 @@ public:
         InitializeMatrix<T>(this->weights, rows, cols);
         InitializeVector<T>(this->biases, rows);
     }
+    Matrix(int rows){
+        this->rows = rows;
+        this->cols = 1;
+        this->weights = (T*)malloc(rows * sizeof(T));
+        this->biases = (T*)malloc(rows * sizeof(T));
+        this->hidden_output = (T*)malloc(rows * sizeof(T));
+        this->input = (T*)malloc(rows * sizeof(T));
+        //Create random weights and biases
+        InitializeVector<T>(this->weights, rows);
+        InitializeVector<T>(this->biases, rows);
+    }
 
     Matrix(int rows, int cols, T *weights, T *biases){
         this->rows = rows;
@@ -314,12 +325,15 @@ template <typename T>
 class Sigmoid: public Matrix<T>
 {
 public:
-    Sigmoid(int rows, int cols);
+    Sigmoid(int rows);
     int rows;
     int cols;
     T* input;
     T* hidden_output;
-    ~Sigmoid();
+    ~Sigmoid(){
+        free(this->input);
+        free(this->hidden_output);
+    }
     void forward(T *input, T *output) override;
     void backward(T * loss) override;
 };
@@ -328,12 +342,15 @@ template <typename T>
 class RELU_layer: public Matrix<T>
 {
 public:
-    RELU_layer(int rows, int cols);
+    RELU_layer(int rows);
     int rows;
     int cols;
     T* input;
     T* hidden_output;
-    ~RELU_layer();
+    ~RELU_layer(){
+        free(this->input);
+        free(this->hidden_output);
+    }
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
 };
@@ -358,7 +375,7 @@ class Softmax: public Matrix<T>
             this->rows = 0;
             this->cols = 0;
         }
-        Softmax(int rows, int cols){
+        Softmax(int cols, int rows){
             this->rows = rows;
             this->cols = 1;
             this->input = (T*)malloc(rows * sizeof(T));
@@ -366,7 +383,18 @@ class Softmax: public Matrix<T>
             ZeroVector<T>(this->input, rows);
             ZeroVector<T>(this->hidden_output, rows);
         }
-        ~Softmax();
+        Softmax(int rows):Matrix<T>(rows){
+            this->rows = rows;
+            this->cols = 1;
+            this->input = (T*)malloc(rows * sizeof(T));
+            this->hidden_output = (T*)malloc(rows * sizeof(T));
+            ZeroVector<T>(this->input, rows);
+            ZeroVector<T>(this->hidden_output, rows);
+        }
+        ~Softmax(){
+            free(this->input);
+            free(this->hidden_output);
+        }
         T* input;
         T* hidden_output;
         void forward(T *input, T *output) override {
@@ -390,17 +418,12 @@ class Softmax: public Matrix<T>
                 cout<<"Error in allocating memory for d_output"<<endl;
                 exit(1);
             }
-
-            // Copy input from host to device
             // Copy input from host to device
             if(!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
                 exit(1);
             }
-            if(!HandleCUDAError(cudaMemset(d_output, 0, size * sizeof(T)))){
-                cout<<"Error in setting d_output to 0"<<endl;
-                exit(1);
-            }
+            thrust::fill(thrust::device, d_output, d_output + size, (T)0);
 
             // Define grid and block dimensions
             // Launch the softmax kernel
@@ -408,11 +431,11 @@ class Softmax: public Matrix<T>
             thrust::transform(thrust::device,d_input, d_input + size, d_output, [] __device__ (T x) { return exp(x); });
 
             // Step 3: Sum the exponentials
-            T sum = thrust::reduce(d_output, d_output + size, (T)0, thrust::plus<T>());
+            T sum = thrust::reduce(thrust::device, d_output, d_output + size, (T)0, thrust::plus<T>());
 
             // Step 4: Divide each exponential by the sum
             // Corrected transformation for dividing each element by the sum
-            thrust::transform(d_output, d_output + size, thrust::make_constant_iterator(sum), d_output, thrust::divides<T>());
+            thrust::transform(thrust::device, d_output, d_output + size, thrust::make_constant_iterator(sum), d_output, thrust::divides<T>());
             // Copy the result output from device to host
             if(!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying output from device to host"<<endl;
@@ -444,7 +467,7 @@ template <typename T>
 class Linear: public Matrix<T>
 {
     public:
-        Linear(int rows, int cols){ 
+        Linear(int cols, int rows):Matrix<T>(cols, rows){ 
             this->rows = rows;
             this->cols = cols;
             this->weights = (T*)malloc(rows * cols * sizeof(T));
@@ -487,7 +510,7 @@ template <typename T>
 class Conv2D: public Matrix<T>
 {
     public:
-        Conv2D(int rows, int cols){
+        Conv2D(int cols, int rows){
             this->rows = rows;
             this->cols = cols;
             this->weights = (T*)malloc(rows * cols * sizeof(T));
@@ -519,7 +542,7 @@ template <typename T>
 class MaxPooling2D: public Matrix<T>
 {
     public:
-        MaxPooling2D(int rows, int cols){
+        MaxPooling2D(int cols, int rows){
             this->rows = rows;
             this->cols = cols;
         }
@@ -602,8 +625,8 @@ class Loss: public Matrix<T>
         T* input;
         T* output;
         ~Loss(){};
-        void forward(T *input, T *output) override {};
-        void backward(T* loss) override {};
+        virtual void forward(T *input, T *output) override {};
+        virtual void backward(T* loss) override {};
 };
 
 template <typename T>
@@ -766,7 +789,7 @@ class Binary_CrossEntropy : public Loss<T>
         }
         T* loss;
         int size;
-        void forward(T *input, T *output){
+        void forward(T *input, T *output) override {
             // Allocate device memory for input and output
             T *d_input, *d_output, *d_loss;
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, size * sizeof(T)))){
@@ -913,6 +936,8 @@ class Categorical: public Loss<T>
         }
         ~Categorical(){
             free(this->loss);
+            free(this->input);
+            free(this->output);
         }
         T* loss;
         int size;
@@ -1070,6 +1095,7 @@ class Network
         int* get_hidden_size();
         int get_output_size();
         void forward(T *input, T *output){
+            cout<<"Number of layers: "<<layers.size()<<endl;
             layers[0]->forward(input, layers[0]->hidden_output);
             for(int i = 1; i < layers.size()-1; i++){
                 if(layers[i-1]->hidden_output == NULL){
@@ -1079,7 +1105,7 @@ class Network
                 layers[i]->forward(layers[i-1]->hidden_output, layers[i]->hidden_output);
             }
             //Should be the cost layer
-            layers[layers.size()-1]->forward(layers[layers.size()-1]->hidden_output, output);
+            layers[layers.size()-1]->forward(layers[layers.size()-2]->hidden_output, output);
         }
 };
 
@@ -2055,7 +2081,7 @@ int Matrix<T>:: get_rows(){
 
 
 template <typename T>
-Sigmoid<T>::Sigmoid(int rows, int cols):Matrix<T>(rows, cols){
+Sigmoid<T>::Sigmoid(int rows):Matrix<T>(rows){
     this->rows = rows;
     this->cols = 1;
     this->input = (T*)malloc(rows * sizeof(T));
@@ -2233,7 +2259,7 @@ void Sigmoid<T>::backward(T * loss){
 
 
 template <typename T>
-RELU_layer<T>::RELU_layer(int rows, int cols):Matrix<T>(rows, cols){
+RELU_layer<T>::RELU_layer(int rows):Matrix<T>(rows){
     this->rows = rows;
     this->cols = 1;
     this->input = (T*)malloc(rows * sizeof(T));
@@ -2701,7 +2727,7 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 template <typename T>
 void Network<T>::backward(T * input, T * output){
     for(int i = num_layers-1; i > 0; i--){
-        this->layers[i]->backward(output);
+        this->layers[i]->backward(loss[i]);
     }
 }
 
