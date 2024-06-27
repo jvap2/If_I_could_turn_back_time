@@ -750,7 +750,6 @@ __global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *los
     //The input is the output of the network and the output is the ground truth
     if (index < size) {
         loss[index] = -1 * input[index] / (output[index]+1e-8);
-        printf("Loss: %f\n", loss[index]);
     }
 }
 
@@ -1217,9 +1216,6 @@ class Categorical: public Loss<T>
                 cout<<"Error in resetting device"<<endl;
                 exit(1);
             }
-            for(int i = 0; i < size; i++){
-                cout<<lss[i]<<" ";
-            }
         }
 };
 
@@ -1238,7 +1234,7 @@ class Network
         int num_activation;
         int num_derv;
         float* input;
-        float* output;
+        float* prediction;
         thrust::host_vector<Matrix<T>*> layers;  
         thrust::host_vector<Matrix<T>*> activation;  
         thrust::host_vector<Matrix<T>*> d_layers;  
@@ -1324,7 +1320,7 @@ class Network
             layers[layers.size()-1]->forward(layers[layers.size()-2]->hidden_output, output);
         }
         void getOutput(T *output){
-            memcpy(output, layers[layers.size()-1]->hidden_output, layers[layers.size()-1]->rows * sizeof(T));
+            memcpy(output, prediction, layers[layers.size()-1]->rows * sizeof(T));
         }
 };
 
@@ -2686,6 +2682,9 @@ void Linear<T>::forward(T *input, T *output){
         }
     }
     memcpy(this->input, input, input_size * sizeof(T));
+    // for(int i = 0; i < input_size; i++){
+    //     cout<<input[i]<<" ";
+    // }
     T *d_input, *d_output, *dev_weights, *dev_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -2765,6 +2764,10 @@ void Linear<T>::forward(T *input, T *output){
         }
     }
     mempcpy(this->hidden_output, output, output_size * sizeof(T));
+    // cout<<"Linear output "<<endl;
+    // for(int i = 0; i < output_size; i++){
+    //     cout<<output[i]<<" ";
+    // }
 }
 
 template <typename T>
@@ -2828,11 +2831,14 @@ __global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d
 template <typename T>
 void Linear<T>::backward(T * loss){
     // Allocate device memory for input, output, weights, and biases
+    //We need to take the loss from the previous layer and calculate the derivative of the loss with respect to the input, weights, and biases
+    //Then we need to output the next loss for the layers behind this one
     T *d_loss, *d_output, *dev_weights, *dev_biases;
     T *dd_weights, *dd_biases;
+    T* d_F;
     int rows = this->rows;
     int cols = this->cols;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_loss, cols * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void**)&d_loss, rows * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
         exit(1);
     }
@@ -2854,6 +2860,10 @@ void Linear<T>::backward(T * loss){
     }
     if(!HandleCUDAError(cudaMalloc((void**)&dd_biases, rows  * sizeof(T)))){
         cout<<"Error in allocating memory for d_biases"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_F, cols  * sizeof(T)))){
+        cout<<"Error in allocating memory for d_F"<<endl;
         exit(1);
     }
 
@@ -2886,13 +2896,21 @@ void Linear<T>::backward(T * loss){
     dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
     //__global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d_biases, T* d_F, T* output, int input_size, int output_size, int size)
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_loss, dev_weights, dd_weights, dd_biases, d_output, d_output, cols, rows);
+    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_loss, dev_weights, dd_weights, dd_biases, d_F, d_output, cols, rows);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         exit(1);
     }
     // Copy the result output from device to host
     if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
+        cout<<"Error in copying output from device to host"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMemcpy(d_weights, dd_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
+        cout<<"Error in copying output from device to host"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMemcpy(d_biases, dd_biases, rows * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         exit(1);
     }
@@ -2936,6 +2954,7 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
     this->hidden_size = hidden_size;
     this->output_size = output_size;
     this->num_layers = num_layers;
+    this->prediction = (T*)malloc(output_size * sizeof(T));
 
 }
 
@@ -2943,15 +2962,13 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 template <typename T>
 void Network<T>::backward(T * input, T * output){
     for(int i=0; i<layers.size();i++){
-        // if(this->layers[i]->loss == NULL){
-        //     cout<<"Loss is NULL"<<endl;
-        // }
         if(loss[i] == NULL){
             cout<<"Loss is NULL for layer "<<i<<endl;
         }
     }
     for(int i = layers.size()-1; i > 0; i--){
         this->layers[i]->backward(loss[i]);
+        
     }
 }
 
@@ -3044,7 +3061,12 @@ void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
         backward(input, output);
 
         update_weights(learning_rate);
+        for(int j = 0; j < output_size; j++){
+            cout<<layers[layers.size()-1]->hidden_output[i]<<" ";
+        }
+        cout<<endl;
     }
+    memcpy(this->prediction, layers[layers.size()-1]->hidden_output, layers[layers.size()-1]->rows * sizeof(T));
 }
 
 template <typename T>
