@@ -1011,6 +1011,64 @@ class Categorical: public Loss<T>
                 exit(1);
             }
         }
+        void backward(T* loss) override {
+            /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
+            cout<<"Categorical Cross Entropy Backward"<<endl;
+            T* d_loss;
+            T* d_out, *d_gt;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_out, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_out"<<endl;
+                exit(1);
+            }
+
+            if(!HandleCUDAError(cudaMemcpy(d_out, input, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying input from host to device"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_gt, output, size * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying output from host to device"<<endl;
+                exit(1);
+            }
+
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
+
+            // Launch the categorical cross entropy derivative kernel
+            Categorical_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, size);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                exit(1);
+            }
+
+            // Copy the result loss from device to host
+            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying loss from device to host"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_out))){
+                cout<<"Error in freeing d_out"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_gt))){
+                cout<<"Error in freeing d_gt"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_loss))){
+                cout<<"Error in freeing d_loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                exit(1);
+            }
+        }
 };
 
 
