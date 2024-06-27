@@ -26,6 +26,13 @@ int main(){
 
     net.train(input, target,10,.01);
     // net.forward(input,target);
+    float* output = new float[output_size];
+    net.getOutput(output);
+    InitializeVector<float>(output, output_size);
+    for(int i = 0; i < output_size; i++){
+        std::cout << output[i] << " ";
+    }
+    cout<<endl;
 
 
     // Add layers to the network

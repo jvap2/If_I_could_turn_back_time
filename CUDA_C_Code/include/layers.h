@@ -43,6 +43,13 @@
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
+struct LayerMetadata {
+    int layerNumber;
+    bool isUpdateable;
+
+    LayerMetadata(int number, bool updateable) : layerNumber(number), isUpdateable(updateable) {}
+};
+
 template <typename T>
 void InitializeMatrix(T *matrix, int ny, int nx)
 {
@@ -155,6 +162,7 @@ public:
     T* d_weights;
     T* d_biases;
     T* hidden_output;
+    T* loss;
     void matrix_multiply(T *A, T *B, T *C);
     void matrix_add(T *A, T *B, T *C);
     void matrix_subtract(T *A, T *B, T *C);
@@ -174,7 +182,7 @@ public:
     void virtual backward(T * loss){};
     void backward(T * loss, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
-    void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){};
+    void update_weights(T learning_rate){};
     void train(T *input, T *output, int epochs, T learning_rate){};
     int get_rows();
     int get_cols();
@@ -500,7 +508,7 @@ class Linear: public Matrix<T>
         }
         void forward(T *input, T *output) override;
         void backward(T * loss) override;
-        void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
+        void update_weights(T learning_rate);
         void set_weights(T *weights, T *biases);
 };
 
@@ -787,7 +795,7 @@ class Binary_CrossEntropy : public Loss<T>
         ~Binary_CrossEntropy(){
             free(this->loss);
         }
-        T* loss;
+        T* lss;
         int size;
         void forward(T *input, T *output) override {
             // Allocate device memory for input and output
@@ -839,7 +847,7 @@ class Binary_CrossEntropy : public Loss<T>
             }
             cout<<"Cost: "<<cost_val<<endl;
             // Copy the result loss from device to host
-            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+            if(!HandleCUDAError(cudaMemcpy(lss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
                 exit(1);
             }
@@ -898,7 +906,7 @@ class Binary_CrossEntropy : public Loss<T>
             }
 
             // Copy the result loss from device to host
-            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+            if(!HandleCUDAError(cudaMemcpy(lss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
                 exit(1);
             }
@@ -1010,12 +1018,15 @@ class Categorical: public Loss<T>
                 cout<<"Error in resetting device"<<endl;
                 exit(1);
             }
+            memcpy(output, this->output, size * sizeof(T));
+            memcpy(input, this->input, size * sizeof(T));
         }
-        void backward(T* loss) override {
+        void backward(T* lss) override {
             /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
             cout<<"Categorical Cross Entropy Backward"<<endl;
             T* d_loss;
             T* d_out, *d_gt;
+            // T* h_loss = (T*)malloc(size * sizeof(T));
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
                 exit(1);
@@ -1052,7 +1063,11 @@ class Categorical: public Loss<T>
             }
 
             // Copy the result loss from device to host
-            if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+            if(lss == NULL){
+                cout<<"Loss of Categorical is NULL and youre gay"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(lss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
                 exit(1);
             }
@@ -1088,6 +1103,7 @@ class Network
         int output_size;
         int num_layers;
         int num_activation;
+        int num_derv;
         float* input;
         float* output;
         thrust::host_vector<Matrix<T>*> layers;  
@@ -1096,6 +1112,7 @@ class Network
         thrust::host_vector<Matrix<T>*> d_activation;
         thrust::host_vector<float*> loss;
         thrust::host_vector<float*> hidden;
+        thrust::host_vector<LayerMetadata> layerMetadata;
         void backward(T *input, T *output);
         void update_weights(T learning_rate);
         void addLayer(Linear<T> *layer){
@@ -1103,6 +1120,8 @@ class Network
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
+            num_derv++;
+            layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
         }
         void addLayer(Conv2D<T> *layer){
             layers.push_back(layer);
@@ -1135,16 +1154,19 @@ class Network
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
         }
-        void addLoss(Binary_CrossEntropy<T>* loss){
-            layers.push_back(loss);
+        void addLoss(Binary_CrossEntropy<T>* layer){
+            layers.push_back(layer);
+            loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
         }
-        void addLoss(Mean_Squared_Error<T>* loss){
-            layers.push_back(loss);
+        void addLoss(Mean_Squared_Error<T>* layer){
+            layers.push_back(layer);
+            loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
         }
-        void addLoss(Categorical<T>* loss){
-            layers.push_back(loss);
+        void addLoss(Categorical<T>* layer){
+            layers.push_back(layer);
+            loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
         }
         void train(T *input, T *output, int epochs, T learning_rate);
@@ -1157,7 +1179,6 @@ class Network
         int* get_hidden_size();
         int get_output_size();
         void forward(T *input, T *output){
-            cout<<"Number of layers: "<<layers.size()<<endl;
             layers[0]->forward(input, layers[0]->hidden_output);
             for(int i = 1; i < layers.size()-1; i++){
                 if(layers[i-1]->hidden_output == NULL){
@@ -1168,6 +1189,9 @@ class Network
             }
             //Should be the cost layer
             layers[layers.size()-1]->forward(layers[layers.size()-2]->hidden_output, output);
+        }
+        void getOutput(T *output){
+            memcpy(output, layers[layers.size()-1]->hidden_output, layers[layers.size()-1]->rows * sizeof(T));
         }
 };
 
@@ -2789,20 +2813,44 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 
 template <typename T>
 void Network<T>::backward(T * input, T * output){
+    for(int i=0; i<layers.size();i++){
+        // if(this->layers[i]->loss == NULL){
+        //     cout<<"Loss is NULL"<<endl;
+        // }
+        if(loss[i] == NULL){
+            cout<<"Loss is NULL for layer "<<i<<endl;
+        }
+    }
     for(int i = layers.size()-1; i > 0; i--){
-        cout<<"Layer: "<<i<<endl;
         this->layers[i]->backward(loss[i]);
     }
 }
 
+// template <typename T>
+// void Network<T>::update_weights(T learning_rate){
+//     // this->layers[0]->update_weights(this->layers[0]->weights, this->layers[0]->biases, learning_rate, this->input_size, this->hidden_size[0]);
+//     // for(int i = 1; i < num_layers-1; i++){
+//     //     this->layers[i]->update_weights(this->layers[i]->weights, this->layers[i]->biases, learning_rate, this->hidden_size[i-1], this->hidden_size[i]);
+//     // }
+//     // this->layers[num_layers-1]->update_weights(this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, learning_rate, this->hidden_size[num_layers-1], this->output_size);
+//     for(int i =; i++){
+//         this->layers[i]->update_weights(learning_rate);
+//     }
+// }
+
 template <typename T>
 void Network<T>::update_weights(T learning_rate){
-    this->layers[0]->update_weights(this->layers[0]->weights, this->layers[0]->biases, learning_rate, this->input_size, this->hidden_size[0]);
-    for(int i = 1; i < num_layers-1; i++){
-        this->layers[i]->update_weights(this->layers[i]->weights, this->layers[i]->biases, learning_rate, this->hidden_size[i-1], this->hidden_size[i]);
+    // Iterate over each entry in the layerMetadata vector
+    for(int i = 0; i < layerMetadata.size(); i++){
+        // Check if the current layer is marked as updateable
+        if(layerMetadata[i].isUpdateable){
+            // Call the update_weights method on the updateable layer
+            // Assuming layers are stored in a vector and can be accessed by index
+            this->layers[layerMetadata[i].layerNumber]->update_weights(learning_rate);
+        }
     }
-    this->layers[num_layers-1]->update_weights(this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, learning_rate, this->hidden_size[num_layers-1], this->output_size);
 }
+
 
 template <typename T>
 void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
@@ -2877,9 +2925,11 @@ __global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_
 
 
 template <typename T>
-void Linear<T>::update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size){
+void Linear<T>::update_weights(T learning_rate){
     // Allocate device memory for weights, biases, d_weights, and d_biases
     T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
+    int input_size = cols;
+    int output_size = rows;
     if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
         cout<<"Error in allocating memory for d_weights"<<endl;
         exit(1);
