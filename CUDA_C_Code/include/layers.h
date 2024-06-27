@@ -1024,6 +1024,10 @@ class Categorical: public Loss<T>
                 cout<<"Error in allocating memory for d_out"<<endl;
                 exit(1);
             }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_gt, size * sizeof(T)))){
+                cout<<"Error in allocating memory for d_gt"<<endl;
+                exit(1);
+            }
 
             if(!HandleCUDAError(cudaMemcpy(d_out, input, size * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device"<<endl;
@@ -2782,9 +2786,11 @@ Network<T>::Network(int input_size, int* hidden_size, int output_size, int num_l
 
 }
 
+
 template <typename T>
 void Network<T>::backward(T * input, T * output){
-    for(int i = num_layers-1; i > 0; i--){
+    for(int i = layers.size()-1; i > 0; i--){
+        cout<<"Layer: "<<i<<endl;
         this->layers[i]->backward(loss[i]);
     }
 }
@@ -2798,15 +2804,10 @@ void Network<T>::update_weights(T learning_rate){
     this->layers[num_layers-1]->update_weights(this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, learning_rate, this->hidden_size[num_layers-1], this->output_size);
 }
 
-
 template <typename T>
 void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
     for(int i = 0; i < epochs; i++){
         cout<<"Epoch: "<<i<<endl;
-        if(input == NULL || output == NULL){
-            cout<<"Input or output is NULL"<<endl;
-            exit(1);
-        }
         forward(input, output);
 
         backward(input, output);
