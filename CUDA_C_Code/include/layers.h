@@ -43,6 +43,39 @@
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
+void Read_Swedish_CSV(std::string filename, float *data,float* Y, int rows, int cols){
+    std::ifstream
+    file(filename);
+    std::string line;
+    int row = 0;
+    while (std::getline(file, line))
+    {
+        if (row == 0)
+        {
+            row++;
+            continue;
+        }
+        std::stringstream
+        lineStream(line);
+        std::string
+        cell;
+        int col = 0;
+        while (std::getline(lineStream, cell, ','))
+        {
+            if(col==0){
+                data[row-1]=std::stof(cell);
+                col++;
+            }
+            else if(col==1){
+                Y[row-1]=std::stof(cell);
+                col++;
+            }
+        }
+        row++;
+        col=0;
+    }
+}
+
 struct LayerMetadata {
     int layerNumber;
     bool isUpdateable;
@@ -182,7 +215,7 @@ public:
     void virtual backward(T * loss){};
     void backward(T * loss, int size){};
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size){};
-    void update_weights(T learning_rate){};
+    virtual void update_weights(T learning_rate){cout<<"Hello"<<endl;};
     void train(T *input, T *output, int epochs, T learning_rate){};
     int get_rows();
     int get_cols();
@@ -407,7 +440,6 @@ class Softmax: public Matrix<T>
         T* hidden_output;
         void forward(T *input, T *output) override {
             // Allocate device memory for input and output
-            cout<<"Softmax forward"<<endl;
             int size = rows;
             T *d_input, *d_output;
             if(input == NULL){
@@ -470,6 +502,19 @@ class Softmax: public Matrix<T>
 };
 
 
+template <typename T>
+__global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < output_size) {
+        for (int i = 0; i < input_size; i++) {
+            weights[i * output_size + index] -= learning_rate * d_weights[i * output_size + index];
+        }
+        biases[index] -= learning_rate * d_biases[index];
+    }
+}
+
+
 
 template <typename T>
 class Linear: public Matrix<T>
@@ -508,7 +553,97 @@ class Linear: public Matrix<T>
         }
         void forward(T *input, T *output) override;
         void backward(T * loss) override;
-        void update_weights(T learning_rate);
+        void update_weights(T learning_rate) override {
+            // Allocate device memory for weights, biases, d_weights, and d_biases
+            // cout<<"Update Weights"<<endl;
+            // for(int i = 0; i < rows; i++){
+            //     for(int j = 0; j < cols; j++){
+            //         cout<< d_weights[i * cols + j]<<" ";
+            //     }
+            //     cout<<endl;
+            // }
+            T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
+            int input_size = cols;
+            int output_size = rows;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
+                cout<<"Error in allocating memory for d_weights"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * sizeof(T)))){
+                cout<<"Error in allocating memory for d_biases"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_d_weights, rows * cols * sizeof(T)))){
+                cout<<"Error in allocating memory for d_d_weights"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_d_biases, rows * sizeof(T)))){
+                cout<<"Error in allocating memory for d_d_biases"<<endl;
+                exit(1);
+            }
+
+            // Copy weights, biases, d_weights, and d_biases from host to device
+            if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying weights from host to device"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying biases from host to device"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_d_weights, d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying d_weights from host to device"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_d_biases, d_biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying d_biases from host to device"<<endl;
+                exit(1);
+            }
+
+            // Define grid and block dimensions
+            int block_size = 16;
+            dim3 blockDim(block_size, block_size);
+
+            dim3 gridDim((output_size + block_size - 1) / block_size, 1, 1);
+
+            // Launch the update weights kernel
+            update_weights_kernel<T><<<gridDim, blockDim>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, input_size, output_size);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                exit(1);
+            }
+            // Copy the result weights and biases from device to host
+            if(!HandleCUDAError(cudaMemcpy(weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying weights from device to host"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying biases from device to host"<<endl;
+                exit(1);
+            }
+
+            // Free device memory
+            if(!HandleCUDAError(cudaFree(d_weights))){
+                cout<<"Error in freeing d_weights"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_biases))){
+                cout<<"Error in freeing d_biases"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_d_weights))){
+                cout<<"Error in freeing d_d_weights"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_d_biases))){
+                cout<<"Error in freeing d_d_biases"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                exit(1);
+            }
+        }
         void set_weights(T *weights, T *biases);
 };
 
@@ -614,7 +749,8 @@ __global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *los
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     //The input is the output of the network and the output is the ground truth
     if (index < size) {
-        loss[index] = -1 * input[index] / output[index];
+        loss[index] = -1 * input[index] / (output[index]+1e-8);
+        printf("Loss: %f\n", loss[index]);
     }
 }
 
@@ -953,7 +1089,6 @@ class Categorical: public Loss<T>
         T* output;
         void forward(T *input, T *output) override{
             // Allocate device memory for input and output
-            cout<<"Categorical forward"<<endl;
             T *d_input, *d_output, *d_loss;
             if(input == NULL){
                 cout<<"Input of Categorical is NULL"<<endl;
@@ -1023,7 +1158,6 @@ class Categorical: public Loss<T>
         }
         void backward(T* lss) override {
             /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
-            cout<<"Categorical Cross Entropy Backward"<<endl;
             T* d_loss;
             T* d_out, *d_gt;
             // T* h_loss = (T*)malloc(size * sizeof(T));
@@ -1063,10 +1197,6 @@ class Categorical: public Loss<T>
             }
 
             // Copy the result loss from device to host
-            if(lss == NULL){
-                cout<<"Loss of Categorical is NULL and youre gay"<<endl;
-                exit(1);
-            }
             if(!HandleCUDAError(cudaMemcpy(lss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
                 exit(1);
@@ -1086,6 +1216,9 @@ class Categorical: public Loss<T>
             if(!HandleCUDAError(cudaDeviceReset())){
                 cout<<"Error in resetting device"<<endl;
                 exit(1);
+            }
+            for(int i = 0; i < size; i++){
+                cout<<lss[i]<<" ";
             }
         }
 };
@@ -1119,9 +1252,9 @@ class Network
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
+            layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
             num_layers++;
             num_derv++;
-            layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
         }
         void addLayer(Conv2D<T> *layer){
             layers.push_back(layer);
@@ -2368,7 +2501,6 @@ template <typename T>
 void RELU_layer<T>::forward(T *input, T *output){
     // Allocate device memory for input and output
     int size = rows;
-    cout<<"ReLU Layer"<<endl;
     // this->input = input;
     if(input == NULL){
         cout<<"Input RELU is NULL"<<endl;
@@ -2456,7 +2588,6 @@ __global__ void RELU_derivative_kernel(T *input, T *output, int size){
 template <typename T>
 void RELU_layer<T>::backward(T * loss){
         // Allocate device memory for input and output
-    cout<<"RELU Layer"<<endl;
     T *d_input, *d_output;
     T* d_loss;
     T *input = this->hidden_output;
@@ -2555,7 +2686,6 @@ void Linear<T>::forward(T *input, T *output){
         }
     }
     memcpy(this->input, input, input_size * sizeof(T));
-    cout<<"Linear Layer"<<endl;
     T *d_input, *d_output, *dev_weights, *dev_biases;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, input_size * sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -2698,7 +2828,6 @@ __global__ void linear_derivative_kernel(T* loss, T* Weights, T* d_Weights, T* d
 template <typename T>
 void Linear<T>::backward(T * loss){
     // Allocate device memory for input, output, weights, and biases
-    cout<<"Linear Layer"<<endl;
     T *d_loss, *d_output, *dev_weights, *dev_biases;
     T *dd_weights, *dd_biases;
     int rows = this->rows;
@@ -2826,43 +2955,6 @@ void Network<T>::backward(T * input, T * output){
     }
 }
 
-// template <typename T>
-// void Network<T>::update_weights(T learning_rate){
-//     // this->layers[0]->update_weights(this->layers[0]->weights, this->layers[0]->biases, learning_rate, this->input_size, this->hidden_size[0]);
-//     // for(int i = 1; i < num_layers-1; i++){
-//     //     this->layers[i]->update_weights(this->layers[i]->weights, this->layers[i]->biases, learning_rate, this->hidden_size[i-1], this->hidden_size[i]);
-//     // }
-//     // this->layers[num_layers-1]->update_weights(this->layers[num_layers-1]->weights, this->layers[num_layers-1]->biases, learning_rate, this->hidden_size[num_layers-1], this->output_size);
-//     for(int i =; i++){
-//         this->layers[i]->update_weights(learning_rate);
-//     }
-// }
-
-template <typename T>
-void Network<T>::update_weights(T learning_rate){
-    // Iterate over each entry in the layerMetadata vector
-    for(int i = 0; i < layerMetadata.size(); i++){
-        // Check if the current layer is marked as updateable
-        if(layerMetadata[i].isUpdateable){
-            // Call the update_weights method on the updateable layer
-            // Assuming layers are stored in a vector and can be accessed by index
-            this->layers[layerMetadata[i].layerNumber]->update_weights(learning_rate);
-        }
-    }
-}
-
-
-template <typename T>
-void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
-    for(int i = 0; i < epochs; i++){
-        cout<<"Epoch: "<<i<<endl;
-        forward(input, output);
-
-        backward(input, output);
-
-        update_weights(learning_rate);
-    }
-}
 
 template <typename T>
 void Network<T>::predict(T *input, T *output){
@@ -2911,105 +3003,49 @@ int Network<T>::get_output_size(){
 
 
 
-template <typename T>
-__global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size){
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < output_size) {
-        for (int i = 0; i < input_size; i++) {
-            weights[i * output_size + index] -= learning_rate * d_weights[i * output_size + index];
+
+
+template <typename T>
+void Network<T>::update_weights(T learning_rate){
+    // Ensure layers vector is not empty and is properly initialized
+    if(this->layers.empty()) {
+        std::cerr << "Error: Layers vector is empty.\n";
+        return;
+    }
+
+    // Iterate over each entry in the layerMetadata vector
+    for(int i = 0; i < layerMetadata.size(); i++){
+        // Validate layerNumber is within bounds
+        if(layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size()) {
+            // Check if the layer pointer is not null
+            if(this->layers[layerMetadata[i].layerNumber] != nullptr) {
+                // Check if the current layer is marked as updateable
+                if(layerMetadata[i].isUpdateable){
+                    // Call the update_weights method on the updateable layer
+                    this->layers[layerMetadata[i].layerNumber]->update_weights(learning_rate);
+                }
+            } else {
+                std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+            }
+        } else {
+            std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
         }
-        biases[index] -= learning_rate * d_biases[index];
     }
 }
 
 
 template <typename T>
-void Linear<T>::update_weights(T learning_rate){
-    // Allocate device memory for weights, biases, d_weights, and d_biases
-    T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
-    int input_size = cols;
-    int output_size = rows;
-    if(!HandleCUDAError(cudaMalloc((void**)&d_weights, rows * cols * sizeof(T)))){
-        cout<<"Error in allocating memory for d_weights"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_biases, rows * sizeof(T)))){
-        cout<<"Error in allocating memory for d_biases"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_d_weights, rows * cols * sizeof(T)))){
-        cout<<"Error in allocating memory for d_d_weights"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMalloc((void**)&d_d_biases, rows * sizeof(T)))){
-        cout<<"Error in allocating memory for d_d_biases"<<endl;
-        exit(1);
-    }
+void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
+    for(int i = 0; i < epochs; i++){
+        cout<<"Epoch: "<<i<<endl;
+        forward(input, output);
 
-    // Copy weights, biases, d_weights, and d_biases from host to device
-    if(!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
-        cout<<"Error in copying weights from host to device"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
-        cout<<"Error in copying biases from host to device"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMemcpy(d_d_weights, d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))){
-        cout<<"Error in copying d_weights from host to device"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMemcpy(d_d_biases, d_biases, rows * sizeof(T), cudaMemcpyHostToDevice))){
-        cout<<"Error in copying d_biases from host to device"<<endl;
-        exit(1);
-    }
+        backward(input, output);
 
-    // Define grid and block dimensions
-    int block_size = 16;
-    dim3 blockDim(block_size, block_size);
-
-    dim3 gridDim((output_size + block_size - 1) / block_size, 1, 1);
-
-    // Launch the update weights kernel
-    update_weights_kernel<T><<<gridDim, blockDim>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, input_size, output_size);
-    if(!HandleCUDAError(cudaDeviceSynchronize())){
-        cout<<"Error in synchronizing device"<<endl;
-        exit(1);
-    }
-    // Copy the result weights and biases from device to host
-    if(!HandleCUDAError(cudaMemcpy(weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
-        cout<<"Error in copying weights from device to host"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaMemcpy(biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost))){
-        cout<<"Error in copying biases from device to host"<<endl;
-        exit(1);
-    }
-
-    // Free device memory
-    if(!HandleCUDAError(cudaFree(d_weights))){
-        cout<<"Error in freeing d_weights"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaFree(d_biases))){
-        cout<<"Error in freeing d_biases"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaFree(d_d_weights))){
-        cout<<"Error in freeing d_d_weights"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaFree(d_d_biases))){
-        cout<<"Error in freeing d_d_biases"<<endl;
-        exit(1);
-    }
-    if(!HandleCUDAError(cudaDeviceReset())){
-        cout<<"Error in resetting device"<<endl;
-        exit(1);
+        update_weights(learning_rate);
     }
 }
-
 
 template <typename T>
 void Conv2D<T>::set_weights(T* weights, T* biases){

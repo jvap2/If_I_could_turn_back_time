@@ -2,3 +2,4 @@
 
 make clean
 make
+./bin/IMM

@@ -14,8 +14,8 @@ int main(){
     float* input = new float[input_size];
     float* target = new float[output_size];
     InitializeVector<float>(input, input_size);
-    ZeroVector(target, output_size);
-    Network<float> net(input_size,  hidden_layers, output_size, 4);
+    InitializeVector<float>(target, output_size);
+    Network<float> net(input_size,  hidden_layers, output_size, 0);
     net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
     net.addLayer(new RELU_layer<float>(hidden_layers[0]));
     net.addLayer(new Linear<float>(hidden_layers[0], hidden_layers[1]));
@@ -27,10 +27,18 @@ int main(){
     net.train(input, target,10,.01);
     // net.forward(input,target);
     float* output = new float[output_size];
-    net.getOutput(output);
     InitializeVector<float>(output, output_size);
     for(int i = 0; i < output_size; i++){
         std::cout << output[i] << " ";
+    }
+    cout<<endl;
+    net.getOutput(output);
+    for(int i = 0; i < output_size; i++){
+        std::cout << output[i] << " ";
+    }
+    cout<<endl;
+    for(int i = 0; i < output_size; i++){
+        std::cout << target[i] << " ";
     }
     cout<<endl;
 
