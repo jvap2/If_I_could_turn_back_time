@@ -196,6 +196,7 @@ public:
     T* d_biases;
     T* hidden_output;
     T* loss;
+    T* next_loss;
     void matrix_multiply(T *A, T *B, T *C);
     void matrix_add(T *A, T *B, T *C);
     void matrix_subtract(T *A, T *B, T *C);
@@ -371,6 +372,8 @@ public:
     int cols;
     T* input;
     T* hidden_output;
+    T* loss;
+    T* next_loss;
     ~Sigmoid(){
         free(this->input);
         free(this->hidden_output);
@@ -388,6 +391,7 @@ public:
     int cols;
     T* input;
     T* hidden_output;
+    T* next_loss;
     ~RELU_layer(){
         free(this->input);
         free(this->hidden_output);
@@ -403,6 +407,20 @@ __global__ void softmax_kernel(T *input, T *output, T reduce, int size){
 
     if (index < size) {
         output[index] = exp(input[index]) / reduce;
+    }
+}
+
+template <typename T>
+__global__ void softmax_derivative_kernel(T *input, T *output, int size){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if(row<size && col<size){
+        if(row==col){
+            output[row * size + col] = input[row] * (1 - input[col]);
+        }
+        else{
+            output[row * size + col] = -1 * input[row] * input[col];
+        }
     }
 }
 
@@ -438,6 +456,8 @@ class Softmax: public Matrix<T>
         }
         T* input;
         T* hidden_output;
+        T* loss;
+        T* next_loss;
         void forward(T *input, T *output) override {
             // Allocate device memory for input and output
             int size = rows;
@@ -499,6 +519,69 @@ class Softmax: public Matrix<T>
             }
             memcpy(output, this->hidden_output, size * sizeof(T));
         }
+        void backward(T* loss){
+            cout<<"Softmax Backward"<<endl;
+            T* d_loss;
+            T* d_temp_loss;
+            T* d_out;
+            if(!HandleCUDAError(cudaMalloc((void**)&d_loss, rows * sizeof(T)))){
+                cout<<"Error in allocating memory for d_loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_out, rows * sizeof(T)))){
+                cout<<"Error in allocating memory for d_out"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMalloc((void**)&d_temp_loss, rows * rows * sizeof(T)))){
+                cout<<"Error in allocating memory for d_temp_loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_out, hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying input from host to device"<<endl;
+                exit(1);
+            }
+            // Define grid and block dimensions
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+
+            dim3 gridDim(blocksPerGrid, 1, 1);
+            dim3 blockDim(threadsPerBlock, 1, 1);
+
+            int twodthreadsPerBlock = 16;
+            dim3 twodblockDim(twodthreadsPerBlock, twodthreadsPerBlock, 1);
+
+            dim3 twodgridDim((rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, (rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, 1);
+
+            // Launch the softmax derivative kernel
+            softmax_derivative_kernel<T><<<twodgridDim, twodblockDim>>>(d_out, d_temp_loss, rows);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                exit(1);
+            }
+            matrix_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows);
+            if(!HandleCUDAError(cudaDeviceSynchronize())){
+                cout<<"Error in synchronizing device"<<endl;
+                exit(1);
+            }
+
+            // Copy the result loss from device to host
+            if(!HandleCUDAError(cudaMemcpy(next_loss, d_loss, rows * sizeof(T), cudaMemcpyDeviceToHost))){
+                cout<<"Error in copying loss from device to host"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_out))){
+                cout<<"Error in freeing d_out"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaFree(d_loss))){
+                cout<<"Error in freeing d_loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaDeviceReset())){
+                cout<<"Error in resetting device"<<endl;
+                exit(1);
+            }
+        }
 };
 
 
@@ -534,6 +617,7 @@ class Linear: public Matrix<T>
             InitializeVector<T>(this->biases, rows);
             ZeroVector<T>(this->hidden_output, rows);  
             ZeroVector<T>(this->input, cols);  
+            this->next_loss = (T*)malloc(cols * sizeof(T));
         }
         int rows;
         int cols;
@@ -543,6 +627,7 @@ class Linear: public Matrix<T>
         T* d_biases;
         T* hidden_output;
         T* input;
+        T* next_loss;
         ~Linear(){
             free(this->weights);
             free(this->biases);
@@ -2479,6 +2564,7 @@ RELU_layer<T>::RELU_layer(int rows):Matrix<T>(rows){
     this->cols = 1;
     this->input = (T*)malloc(rows * sizeof(T));
     this->hidden_output = (T*)malloc(rows * sizeof(T));
+    this->next_loss = (T*)malloc(rows * sizeof(T));
     ZeroVector(this->input, rows);
     ZeroVector(this->hidden_output, rows);
 }
@@ -2627,7 +2713,7 @@ void RELU_layer<T>::backward(T * loss){
     }
     
     // Copy the result output from device to host
-    if(!HandleCUDAError(cudaMemcpy(loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
+    if(!HandleCUDAError(cudaMemcpy(next_loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         exit(1);
     }
@@ -2902,15 +2988,19 @@ void Linear<T>::backward(T * loss){
         exit(1);
     }
     // Copy the result output from device to host
-    if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
-        cout<<"Error in copying output from device to host"<<endl;
-        exit(1);
-    }
+    // if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
+    //     cout<<"Error in copying output from device to host"<<endl;
+    //     exit(1);
+    // }
     if(!HandleCUDAError(cudaMemcpy(d_weights, dd_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         exit(1);
     }
     if(!HandleCUDAError(cudaMemcpy(d_biases, dd_biases, rows * sizeof(T), cudaMemcpyDeviceToHost))){
+        cout<<"Error in copying output from device to host"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMemcpy(next_loss, d_F, cols * sizeof(T), cudaMemcpyDeviceToHost))){
         cout<<"Error in copying output from device to host"<<endl;
         exit(1);
     }
@@ -2968,6 +3058,9 @@ void Network<T>::backward(T * input, T * output){
     }
     for(int i = layers.size()-1; i > 0; i--){
         this->layers[i]->backward(loss[i]);
+        if(i>1){
+            loss[i-1]=this->layers[i]->next_loss;
+        }
         
     }
 }
