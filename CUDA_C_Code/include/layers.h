@@ -1266,6 +1266,11 @@ class Categorical: public Loss<T>
             T* d_loss;
             T* d_out, *d_gt;
             // T* h_loss = (T*)malloc(size * sizeof(T));
+            cout<<"Categorical Backward"<<endl;
+            if(lss == NULL){
+                cout<<"Loss of Categorical is NULL"<<endl;
+                exit(1);
+            }
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
                 exit(1);
@@ -1304,6 +1309,10 @@ class Categorical: public Loss<T>
             // Copy the result loss from device to host
             if(!HandleCUDAError(cudaMemcpy(next_loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost))){
                 cout<<"Error in copying loss from device to host"<<endl;
+                exit(1);
+            }
+            if(next_loss == NULL){
+                cout<<"Next Loss of Categorical is NULL"<<endl;
                 exit(1);
             }
             if(!HandleCUDAError(cudaFree(d_out))){
@@ -3096,12 +3105,25 @@ void Network<T>::backward(T * input, T * output){
             cout<<"Loss is NULL for layer "<<i<<endl;
         }
     }
+    cout<<"Backward"<<endl;
     for(int i = layers.size()-1; i > 0; i--){
         this->layers[i]->backward(loss[i]);
         if(i>1){
-            if(this->layers[i]->next_loss == NULL){
+            cout<<"I is greater than 1"<<endl;
+            if(this->layers[i]->loss == NULL){
                 cout<<"Next loss is NULL for layer "<<i<<endl;
+                exit(1);
+            } 
+            else {
+                for(int j = 0; j < layers[i]->rows; j++){
+                    cout<<layers[i]->loss[j]<<" ";
+                }
+                cout<<endl;
             }
+            // if(this->layers[i]->next_loss == NULL){
+            //     cout<<"Next loss is NULL for layer "<<i<<endl;
+            //     exit(1);
+            // }
             loss[i-1]=this->layers[i]->next_loss;
         }
         
