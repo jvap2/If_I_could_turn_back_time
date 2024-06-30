@@ -528,6 +528,10 @@ class Softmax: public Matrix<T>
             T* d_loss;
             T* d_temp_loss;
             T* d_out;
+            if(loss == NULL){
+                cout<<"Loss of Softmax is NULL"<<endl;
+                exit(1);
+            }
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, rows * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
                 exit(1);
@@ -542,6 +546,10 @@ class Softmax: public Matrix<T>
             }
             if(!HandleCUDAError(cudaMemcpy(d_out, hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device, Softmax loss"<<endl;
+                exit(1);
+            }
+            if(!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * sizeof(T), cudaMemcpyHostToDevice))){
+                cout<<"Error in copying loss from host to device, Softmax loss"<<endl;
                 exit(1);
             }
             // Define grid and block dimensions
@@ -2724,6 +2732,10 @@ void RELU_layer<T>::backward(T * loss){
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in synchronizing device"<<endl;
         exit(1);
+    }
+    if(next_loss == NULL){
+        cout<<"Next loss is NULL for ReLU"<<endl;
+        next_loss = (T*)malloc(size * sizeof(T));
     }
     
     // Copy the result output from device to host

@@ -19,8 +19,8 @@ int main(){
     net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
     net.addLayer(new RELU_layer<float>(hidden_layers[0]));
     net.addLayer(new Linear<float>(hidden_layers[0], hidden_layers[1]));
-    net.addLayer(new RELU_layer<float>(hidden_layers[1]));
-    net.addLayer(new Linear<float>(hidden_layers[1], output_size));
+    net.addLayer(new RELU_layer<float>(hidden_layers[1])); //NULL layer for backprop
+    net.addLayer(new Linear<float>(hidden_layers[1], output_size)); //NULL layer for backprop
     net.addLayer(new Softmax<float>(output_size));
     net.addLoss(new Categorical<float>(output_size));
 
