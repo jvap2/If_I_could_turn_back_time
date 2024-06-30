@@ -4,7 +4,7 @@ from scipy.fft import fft, fftfreq
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+from modulus.models.layers.fourier_layers import FourierLayer 
 np.random.seed(0)
 torch.manual_seed(0)
 
@@ -37,15 +37,19 @@ test_ffts = torch.tensor(test_ffts, dtype=torch.float32)
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
-        self.fc1 = nn.Linear(2000, 512)
-        self.fc2 = nn.Linear(512, 512)
-        self.fc3 = nn.Linear(512, 2000)
+        self.fc1 = nn.Linear(2000, 1024)
+        self.fc2 = nn.Linear(1024, 1024)
+        self.fc3 = nn.Linear(1024, 1024)
+        self.fourier = FourierLayer(1024, ["gaussian", 1, 1024])
+        self.fc4 = nn.Linear(2048, 2000)
         self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fourier(x))  # Fourier transformation
+        x = self.fc4(x)
         return x
 
 model = ANN()
@@ -53,7 +57,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.MSELoss()
 
 # Training loop
-for epoch in range(1000):
+for epoch in range(2000):
     model.train()
     optimizer.zero_grad()
     outputs = model(train_ffts)
