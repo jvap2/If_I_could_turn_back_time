@@ -23,6 +23,7 @@ int main(){
     net.addLayer(new Linear<float>(hidden_layers[1], output_size)); //NULL layer for backprop
     net.addLayer(new Softmax<float>(output_size));
     net.addLoss(new Categorical<float>(output_size));
+    //Print out the size of the categorical layer
 
     net.train(input, target,10,.01);
     // net.forward(input,target);

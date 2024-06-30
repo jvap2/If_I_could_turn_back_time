@@ -1174,9 +1174,13 @@ class Categorical: public Loss<T>
     public:
         Categorical(){
             this->size = 0;
+            this->rows = 0;
         }
         Categorical(int size){
             this->size = size;
+            this->rows = size;
+            cout<<"Size: "<<size<<endl;
+            cout<<"Rows: "<<rows<<endl;
             this->loss = (T*)malloc(size * sizeof(T));
             this->input = (T*)malloc(size * sizeof(T));
             this->output = (T*)malloc(size * sizeof(T));
@@ -1188,6 +1192,7 @@ class Categorical: public Loss<T>
             free(this->output);
         }
         T* loss;
+        int rows;
         int size;
         T* input;
         T* output;
@@ -1271,6 +1276,8 @@ class Categorical: public Loss<T>
                 cout<<"Loss of Categorical is NULL"<<endl;
                 exit(1);
             }
+            cout<<"Size: "<<size<<endl;
+            cout<<"Rows: "<<rows<<endl;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, size * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
                 exit(1);
@@ -1366,6 +1373,8 @@ class Network
             layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
             num_layers++;
             num_derv++;
+            cout<<"Rows: "<<layer->rows<<endl;
+            cout<<"Cols: "<<layer->cols<<endl;
         }
         void addLayer(Conv2D<T> *layer){
             layers.push_back(layer);
@@ -1384,6 +1393,7 @@ class Network
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
+            cout<<"Rows: "<<layer->rows<<endl;
 
         }   
         void addLayer(RELU_layer<T>* layer){
@@ -1391,12 +1401,14 @@ class Network
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
+            cout<<"Rows: "<<layer->rows<<endl;
         }
         void addLayer(Softmax<T>* layer){
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
+            cout<<"Rows: "<<layer->rows<<endl;
         }
         void addLoss(Binary_CrossEntropy<T>* layer){
             layers.push_back(layer);
@@ -1412,6 +1424,7 @@ class Network
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
+            cout<<"Rows: "<<layer->rows<<endl;
         }
         void train(T *input, T *output, int epochs, T learning_rate);
         void predict(T *input, T *output);
@@ -3104,17 +3117,21 @@ void Network<T>::backward(T * input, T * output){
         if(loss[i] == NULL){
             cout<<"Loss is NULL for layer "<<i<<endl;
         }
+        cout<<this->layers[i]->rows<<endl;
     }
     cout<<"Backward"<<endl;
     for(int i = layers.size()-1; i > 0; i--){
         this->layers[i]->backward(loss[i]);
         if(i>1){
             cout<<"I is greater than 1"<<endl;
+            cout<<"No. Rows = "<<layers[i]->rows<<endl;
             if(this->layers[i]->loss == NULL){
-                cout<<"Next loss is NULL for layer "<<i<<endl;
+                cout<<"loss is NULL for layer "<<i<<endl;
                 exit(1);
             } 
             else {
+                cout<<"Next loss is not NULL for layer "<<i<<endl;
+                cout<<"No. Rows = "<<layers[i]->rows<<endl;
                 for(int j = 0; j < layers[i]->rows; j++){
                     cout<<layers[i]->loss[j]<<" ";
                 }
