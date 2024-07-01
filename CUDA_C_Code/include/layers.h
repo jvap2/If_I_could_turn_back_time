@@ -47,7 +47,7 @@
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
-void Read_Weather_Data(float** data, float** output, int rows, int cols){
+void Read_Weather_Data(float** data, float** output){
     std::ifstream file(WEATHER_DATA);
     std::string line;
     int row = 0;
@@ -58,13 +58,18 @@ void Read_Weather_Data(float** data, float** output, int rows, int cols){
     while(std::getline(file, line)){
         std::stringstream ss(line);
         std::string value;
+        if(row == 0){
+            row++;
+            continue;
+        }
         while(std::getline(ss, value, ',')){
             if(col<col_max){
+                cout<<value<<endl;
                 data[row][col] = std::stof(value);
             }
             else{
                 int temp = std::stoi(value);
-                output[row][temp] = 1;
+                output[row][temp] = 1.0f;
             }
         }
         col = 0;
@@ -3178,7 +3183,7 @@ template <typename T>
 void Network<T>::train(T** input, T** output, int epochs,T learning_rate, int size, int batch_size){
     //Find a random list of indices for the batch size
     // Create a thrust vector of indices
-    thrsut::host_vector<int> indices(batch_size);
+    thrust::host_vector<int> indices(batch_size);
     // Fill the vector with random_indices
     for(int i = 0; i < batch_size; i++){
         indices[i] = rand() % size;

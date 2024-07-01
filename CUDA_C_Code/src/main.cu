@@ -15,10 +15,10 @@ int main(){
     float** input = new float*[WEATHER_SIZE];
     float** target = new float*[WEATHER_SIZE];
     for(int i = 0; i < input_size; i++){
-        input[i] = new float[input_size];
-        target[i] = new float[output_size];
+        input[i] = new float[input_size]{};
+        target[i] = new float[output_size]{};
     }
-
+    Read_Weather_Data(input, target);
     Network<float> net(input_size,  hidden_layers, output_size, 0);
     net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
     net.addLayer(new RELU_layer<float>(hidden_layers[0]));
@@ -30,32 +30,6 @@ int main(){
     //Print out the size of the categorical layer
 
     net.train(input, target, 15, .001, WEATHER_SIZE, batch_size);
-    // net.forward(input,target);
-    float* output = new float[output_size];
-    InitializeVector<float>(output, output_size);
-    cout<<endl;
-    for(int i=0; i<output_size; i++){
-        std::cout << output[i] << " ";
-    }
-    cout<<endl;
-    net.getOutput(output);
-    for(int i = 0; i < output_size; i++){
-        std::cout << output[i] << " ";
-    }
-    cout<<endl;
-    for(int i = 0; i < output_size; i++){
-        std::cout << target[i] << " ";
-    }
-    cout<<endl;
-
-
-    // Add layers to the network
-    
-
-
-
-
-
 
 
     return 0;

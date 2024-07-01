@@ -17,7 +17,7 @@ print(df["Cloud Cover"].value_counts())
 # Change the Season column
 df_season = df["Season"]
 print(df_season.value_counts())
-season_dict = {"winter": 1, "spring": 2, "summer": 3, "fall": 4}
+season_dict = {"Winter": 1, "Spring": 2, "Summer": 3, "Autumn": 4}
 df = df.with_columns(df["Season"].map_dict(season_dict))
 print(df["Season"].value_counts())
 
