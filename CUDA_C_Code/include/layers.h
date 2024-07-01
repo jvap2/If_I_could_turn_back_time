@@ -40,39 +40,35 @@
 #include "GPUErrors.h"
 
 
+#define WEATHER_DATA "../data/weather/weather_classification_data_cleaned.csv"
+#define WEATHER_INPUT_SIZE 10
+#define WEATHER_OUTPUT_SIZE 4
+#define WEATHER_SIZE 13200
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 
-void Read_Swedish_CSV(std::string filename, float *data,float* Y, int rows, int cols){
-    std::ifstream
-    file(filename);
+void Read_Weather_Data(float** data, float** output, int rows, int cols){
+    std::ifstream file(WEATHER_DATA);
     std::string line;
     int row = 0;
-    while (std::getline(file, line))
-    {
-        if (row == 0)
-        {
-            row++;
-            continue;
-        }
-        std::stringstream
-        lineStream(line);
-        std::string
-        cell;
-        int col = 0;
-        while (std::getline(lineStream, cell, ','))
-        {
-            if(col==0){
-                data[row-1]=std::stof(cell);
-                col++;
+    int col = 0;
+    int col_max =10;
+    int classes = 4;
+
+    while(std::getline(file, line)){
+        std::stringstream ss(line);
+        std::string value;
+        while(std::getline(ss, value, ',')){
+            if(col<col_max){
+                data[row][col] = std::stof(value);
             }
-            else if(col==1){
-                Y[row-1]=std::stof(cell);
-                col++;
+            else{
+                int temp = std::stoi(value);
+                output[row][temp] = 1;
             }
         }
+        col = 0;
         row++;
-        col=0;
     }
 }
 
@@ -1420,6 +1416,7 @@ class Network
             num_layers++;
         }
         void train(T *input, T *output, int epochs, T learning_rate);
+        void train(T** input, T** output, int epochs,T learning_rate, int size, int batch_size);
         void predict(T *input, T *output);
         void set_input_size(int input_size);
         void set_hidden_size(int* hidden_size);
@@ -3174,6 +3171,30 @@ void Network<T>::train(T *input, T *output, int epochs, T learning_rate){
     }
     cout<<endl;
     memcpy(this->prediction, layers[layers.size()-1]->hidden_output, output_size * sizeof(T));
+}
+
+
+template <typename T>
+void Network<T>::train(T** input, T** output, int epochs,T learning_rate, int size, int batch_size){
+    //Find a random list of indices for the batch size
+    // Create a thrust vector of indices
+    thrsut::host_vector<int> indices(batch_size);
+    // Fill the vector with random_indices
+    for(int i = 0; i < batch_size; i++){
+        indices[i] = rand() % size;
+    }
+    // Iterate through the indices and train the network
+    for(int i = 0; i < epochs; i++){
+        cout<<"Epoch: "<<i<<endl;
+        for(int j = 0; j < batch_size; j++){
+            forward(input[indices[j]], output[indices[j]]);
+            backward(input[indices[j]], output[indices[j]]);
+            update_weights(learning_rate);
+        }
+        cout<<endl;
+    }
+
+
 }
 
 template <typename T>
