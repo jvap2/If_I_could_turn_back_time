@@ -64,11 +64,11 @@ void Read_Weather_Data(float** data, float** output){
         }
         while(std::getline(ss, value, ',')){
             if(col<col_max){
-                cout<<value<<endl;
                 data[row][col] = std::stof(value);
             }
             else{
                 int temp = std::stoi(value);
+                cout<<temp<<endl;
                 output[row][temp] = 1.0f;
             }
         }
