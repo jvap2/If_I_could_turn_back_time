@@ -28,15 +28,20 @@ int main(){
     net.train(input, target,10,.01);
     // net.forward(input,target);
     float* output = new float[output_size];
+    InitializeVector<float>(output, output_size);
+    cout<<endl;
+    for(int i=0; i<output_size; i++){
+        std::cout << output[i] << " ";
+    }
     cout<<endl;
     net.getOutput(output);
     for(int i = 0; i < output_size; i++){
         std::cout << output[i] << " ";
     }
     cout<<endl;
-    // for(int i = 0; i < output_size; i++){
-    //     std::cout << target[i] << " ";
-    // }
+    for(int i = 0; i < output_size; i++){
+        std::cout << target[i] << " ";
+    }
     cout<<endl;
 
 
