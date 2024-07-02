@@ -46,34 +46,67 @@
 #define WEATHER_SIZE 13200
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
+#define TRAIN .9
+#define TEST .1
 
 void Read_Weather_Data(float** data, float** output){
     std::ifstream file(WEATHER_DATA);
     std::string line;
     int row = 0;
     int col = 0;
-    int col_max =10;
+    int col_max = 10;
     int classes = 4;
 
-    while(std::getline(file, line)){
+    while(std::getline(file, line)) {
         std::stringstream ss(line);
         std::string value;
-        if(row == 0){
+        if(row == 0) {
+            // Skip header or initial row if necessary
             row++;
             continue;
         }
-        while(std::getline(ss, value, ',')){
-            if(col<col_max){
-                data[row][col] = std::stof(value);
+        while(std::getline(ss, value, ',')) {
+            try {
+                if(col < col_max) {
+                    // Convert string to float safely
+                    data[row-1][col] = std::stof(value);
+                } else {
+                    // Convert string to int safely and update output array
+                    int temp = std::stoi(value);
+                    for(int i = 0; i < classes; i++) {
+                        output[row-1][i] = (i == temp) ? 1.0f : 0.0f;
+                    }
+                }
+            } catch(const std::exception& e) {
+                // Handle or log conversion error
+                std::cerr << "Conversion error: " << e.what() << '\n';
+                // Consider setting a default value or skipping this value
             }
-            else{
-                int temp = std::stoi(value);
-                cout<<temp<<endl;
-                output[row][temp] = 1.0f;
-            }
+            col++;
         }
         col = 0;
         row++;
+    }
+}
+
+void Train_Split_Test(float** data, float** output, float** train_data, float** train_output, float** test_data, float** test_output, int size){
+    int training_size = (int)WEATHER_SIZE*TRAIN;
+    int test_size = WEATHER_SIZE-training_size;
+    for(int i = 0; i < training_size; i++){
+        for(int j = 0; j < WEATHER_INPUT_SIZE; j++){
+            train_data[i][j] = data[i][j];
+        }
+        for(int j = 0; j < WEATHER_OUTPUT_SIZE; j++){
+            train_output[i][j] = output[i][j];
+        }
+    }
+    for(int i = training_size; i < size; i++){
+        for(int j = 0; j < WEATHER_INPUT_SIZE; j++){
+            test_data[i-training_size][j] = data[i][j];
+        }
+        for(int j = 0; j < WEATHER_OUTPUT_SIZE; j++){
+            test_output[i-training_size][j] = output[i][j];
+        }
     }
 }
 
@@ -160,7 +193,7 @@ public:
         InitializeMatrix<T>(this->weights, rows, cols);
         InitializeVector<T>(this->biases, rows);
         this->name = "full matrix";
-        this->next_loss = (T*)malloc(rows * sizeof(T));
+        this->next_loss = (T*)malloc(cols * sizeof(T));
         this->d_biases = (T*)malloc(rows * sizeof(T));
         this->d_weights = (T*)malloc(rows * cols * sizeof(T));
     }
@@ -193,6 +226,7 @@ public:
     virtual ~Matrix(){
         free(this->weights);
         free(this->biases);
+        cout<<"Matrix Destructor"<<endl;
     }
     void randomize(){
         for(int i=0; i<rows*cols; i++){
@@ -641,7 +675,6 @@ class Linear: public Matrix<T>
             InitializeVector<T>(this->biases, rows);
             ZeroVector<T>(this->hidden_output, rows);  
             ZeroVector<T>(this->input, cols);  
-            // this->next_loss = (T*)malloc(cols * sizeof(T));
             this->name = "linear";
         }
         ~Linear() override {
@@ -651,6 +684,7 @@ class Linear: public Matrix<T>
             free(this->d_biases);
             free(this->hidden_output);
             free(this->input);
+            cout<<"Linear Destructor"<<endl;
         }
         void forward(T *input, T *output) override;
         void backward(T * loss) override;
@@ -1186,29 +1220,31 @@ class Categorical: public Loss<T>
             this->rows = size;
             this->loss = (T*)malloc(size * sizeof(T));
             this->input = (T*)malloc(size * sizeof(T));
-            this->output = (T*)malloc(size * sizeof(T));
+            this->hidden_output = (T*)malloc(size * sizeof(T));
             this->next_loss = (T*)malloc(size * sizeof(T));
             this->name = "categorical";
         }
         ~Categorical() override {
             free(this->loss);
             free(this->input);
-            free(this->output);
+            free(this->hidden_output);
             free(this->next_loss);
         }
-        T* loss;
-        int rows;
-        T* input;
-        T* output;
-        // T* next_loss;
-        string name;
         void forward(T *input, T *output) override{
             // Allocate device memory for input and output
             T *d_input, *d_output, *d_loss;
-            if(input == NULL){
-                cout<<"Input of Categorical is NULL"<<endl;
-                exit(1);
-            } 
+            int rows = this->rows;
+            // if(input == NULL){
+            //     cout<<"Input of Categorical is NULL"<<endl;
+            //     exit(1);
+            // } 
+
+            // if(output == NULL){
+            //     cout<<"Output of Categorical is NULL"<<endl;
+            //     exit(1);
+            // } else{
+            //     cout<<"Output of Categorical is not NULL"<<endl;
+            // }
             if(!HandleCUDAError(cudaMalloc((void**)&d_input, rows * sizeof(T)))){
                 cout<<"Error in allocating memory for d_input"<<endl;
                 exit(1);
@@ -1227,6 +1263,8 @@ class Categorical: public Loss<T>
                 cout<<"Error in copying input from host to device, Categorical"<<endl;
                 exit(1);
             }
+            // cout<<sizeof(output)<<endl;
+            // cout<<rows*sizeof(T)<<endl;
             if(!HandleCUDAError(cudaMemcpy(d_output, output, rows * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
                 exit(1);
@@ -1268,13 +1306,13 @@ class Categorical: public Loss<T>
                 cout<<"Error in resetting device"<<endl;
                 exit(1);
             }
-            memcpy(output, this->output, rows * sizeof(T));
-            memcpy(input, this->input, rows * sizeof(T));
+            memcpy(this->hidden_output, input, rows * sizeof(T));
         }
         void backward(T* lss) override {
             /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
             T* d_loss;
             T* d_out, *d_gt;
+            int rows = this->rows;
             if(!HandleCUDAError(cudaMalloc((void**)&d_loss, rows * sizeof(T)))){
                 cout<<"Error in allocating memory for d_loss"<<endl;
                 exit(1);
@@ -1288,11 +1326,11 @@ class Categorical: public Loss<T>
                 exit(1);
             }
 
-            if(!HandleCUDAError(cudaMemcpy(d_out, input, rows * sizeof(T), cudaMemcpyHostToDevice))){
+            if(!HandleCUDAError(cudaMemcpy(d_out, this->input, rows * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying input from host to device, Categorical Loss"<<endl;
                 exit(1);
             }
-            if(!HandleCUDAError(cudaMemcpy(d_gt, output, rows * sizeof(T), cudaMemcpyHostToDevice))){
+            if(!HandleCUDAError(cudaMemcpy(d_gt, this->hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice))){
                 cout<<"Error in copying output from host to device"<<endl;
                 exit(1);
             }
@@ -1351,24 +1389,44 @@ class Network
         float* prediction;
         thrust::host_vector<Matrix<T>*> layers;  
         thrust::host_vector<Matrix<T>*> activation;  
-        thrust::host_vector<Matrix<T>*> d_layers;  
-        thrust::host_vector<Matrix<T>*> d_activation;
         thrust::host_vector<float*> loss;
         thrust::host_vector<float*> hidden;
         thrust::host_vector<LayerMetadata> layerMetadata;
         void backward(T * input, T * output){
-            for(int i = layers.size()-1; i > 0; i--){
-                this->layers[i]->backward(loss[i]);
-                if(i>1){
-                    loss[i-1]=this->layers[i]->next_loss;
+            for(int i = 0; i<layers.size();i++){
+                // cout<<layers[i]->name<<endl;
+                // cout<<layers[i]->rows<<endl;
+                // if(layers[i]==NULL){
+                //     cout<<"Layer is NULL"<<endl;
+                // } else {
+                //     cout<<"Layer is not NULL"<<endl;
+                // }
+            }
+            for(int i = layers.size()-1; i >= 0; i--){
+                if(i < layers.size()) { // Ensure i is within bounds
+                    // if(layers[i] == NULL) {
+                    //     cout << "Layer " << i << " is unexpectedly NULL" << endl;
+                    //     continue; // Skip this iteration to avoid segmentation fault
+                    // } else {
+                    //     cout << "Layer " << i << " is not NULL" << endl;
+                    //     // Additional debugging output
+                    //     cout << "Processing layer: " << layers[i]->name << endl;
+                    // }
+                    layers[i]->backward(loss[i]);
+                    // Additional checks and output as needed
+                } else {
+                    cout << "Index " << i << " out of bounds for layers vector." << endl;
                 }
-                
             }
         }
         void update_weights(T learning_rate);
         void addLayer(Linear<T> *layer){
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
+            layer->name = "saved linear";
+            if(layer->next_loss==NULL){
+                layer->next_loss = (T*)malloc(layer->cols * sizeof(T));
+            }
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
             num_layers++;
@@ -1390,11 +1448,18 @@ class Network
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
+            if(layer->next_loss==NULL){
+                layer->next_loss = (T*)malloc(layer->rows * sizeof(T));
+            }
             num_layers++;
 
         }   
         void addLayer(RELU_layer<T>* layer){
             layers.push_back(layer);
+            layer->name = "saved RELU";
+            if(layer->next_loss==NULL){
+                layer->next_loss = (T*)malloc(layer->rows * sizeof(T));
+            }
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
@@ -1402,6 +1467,10 @@ class Network
         void addLayer(Softmax<T>* layer){
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
+            layer->name = "saved softmax";
+            if(layer->next_loss==NULL){
+                layer->next_loss = (T*)malloc(layer->rows * sizeof(T));
+            }
             hidden.push_back((T*)malloc(layer->rows * sizeof(T)));
             num_layers++;
         }
@@ -1418,11 +1487,16 @@ class Network
         void addLoss(Categorical<T>* layer){
             layers.push_back(layer);
             loss.push_back((T*)malloc(layer->rows * sizeof(T)));
+            layer->name = "saved categorical";
+            if(layer->next_loss==NULL){
+                layer->next_loss = (T*)malloc(layer->rows * sizeof(T));
+            }
             num_layers++;
         }
         void train(T *input, T *output, int epochs, T learning_rate);
         void train(T** input, T** output, int epochs,T learning_rate, int size, int batch_size);
         void predict(T *input, T *output);
+        void predict(T** input, T** output, int size);
         void set_input_size(int input_size);
         void set_hidden_size(int* hidden_size);
         void set_output_size(int output_size);
@@ -1431,6 +1505,10 @@ class Network
         int* get_hidden_size();
         int get_output_size();
         void forward(T *input, T *output){
+            // for(int i = 0; i<layers.size();i++){
+            //     cout<<this->layers[i]->name<<endl;
+            //     cout<<this->layers[i]->rows<<endl;
+            // }
             layers[0]->forward(input, layers[0]->hidden_output);
             for(int i = 1; i < layers.size()-1; i++){
                 layers[i]->forward(layers[i-1]->hidden_output, layers[i]->hidden_output);
@@ -2688,6 +2766,17 @@ void RELU_layer<T>::backward(T * loss){
     T *d_input, *d_output;
     T* d_loss;
     T *input = this->hidden_output;
+    // cout<<"RELU Backward"<<endl;
+    // if(loss == NULL){
+    //     cout<<"Loss is NULL for ReLU"<<endl;
+    // } else{
+    //     cout<<"Loss is not NULL for ReLU"<<endl;
+    // }
+    // if(this->next_loss == NULL){
+    //     cout<<"Next loss is NULL for ReLU"<<endl;
+    // } else{
+    //     cout<<"Next loss is not NULL for ReLU"<<endl;
+    // }
     int size = this->rows;
     if(!HandleCUDAError(cudaMalloc((void**)&d_input, size*sizeof(T)))){
         cout<<"Error in allocating memory for d_input"<<endl;
@@ -2937,6 +3026,7 @@ void Linear<T>::backward(T * loss){
     T *d_loss, *d_output, *dev_weights, *dev_biases;
     T *dd_weights, *dd_biases;
     T* d_F;
+    // cout<<"Linear Backwards"<<endl;
     int rows = this->rows;
     int cols = this->cols;
     if(!HandleCUDAError(cudaMalloc((void**)&d_loss, rows * sizeof(T)))){
@@ -3087,6 +3177,44 @@ void Network<T>::predict(T *input, T *output){
 }
 
 template <typename T>
+void Network<T>::predict(T** input, T** output, int size){
+    float* prediction = (float*)malloc(output_size * sizeof(float));
+    float sum = 0;
+    for(int i = 0; i < 100; i++){
+        forward(input[i], output[i]);
+        //take the hidden output, and measure accuracy
+        prediction = layers[layers.size()-1]->hidden_output;
+        for(int j = 0; j < output_size; j++){
+            cout<<prediction[j]<<" ";
+            cout<<output[i][j]<<" ";
+        }
+        //Find the max value in the prediction
+        int max_index = 0;
+        for(int j = 0; j < output_size; j++){
+            if(prediction[j] > prediction[max_index]){
+                max_index = j;
+            }
+        }
+        //Find the max value in the output
+        int max_index_output = 0;
+        for(int j = 0; j < output_size; j++){
+            if(output[i][j] > output[i][max_index_output]){
+                max_index_output = j;
+            }
+        }
+        //check if the max index is the same as the max index output
+        if(max_index == max_index_output){
+            sum++;
+            cout<<"Correct Prediction for input "<<i<<endl;
+        } else{
+            cout<<"Incorrect Prediction for input "<<i<<endl;
+        }
+    }
+    float accuracy = sum/size;
+    cout<<"Accuracy: "<<accuracy<<endl;
+}
+
+template <typename T>
 void Network<T>::set_input_size(int input_size){
     this->input_size = input_size;
 }
@@ -3185,17 +3313,44 @@ void Network<T>::train(T** input, T** output, int epochs,T learning_rate, int si
     // Create a thrust vector of indices
     thrust::host_vector<int> indices(batch_size);
     // Fill the vector with random_indices
-    for(int i = 0; i < batch_size; i++){
-        indices[i] = rand() % size;
-    }
     // Iterate through the indices and train the network
+    int pred_idx = 0;
+    int gt_idx = 0;
+    int sum = 0;
     for(int i = 0; i < epochs; i++){
+        for(int k = 0; k < batch_size; k++){
+            indices[k] = rand() % size;
+        }
+        sum = 0;
         cout<<"Epoch: "<<i<<endl;
         for(int j = 0; j < batch_size; j++){
+            cout<<"Batch: "<<j<<endl;
             forward(input[indices[j]], output[indices[j]]);
+            cout<<"Prediction: "<<endl;
+            for(int k = 0; k < output_size; k++){
+                cout<<layers[layers.size()-1]->hidden_output[k]<<" ";
+            }
+            cout<<endl;
+            cout<<"Ground Truth: ";
+            for(int k = 0; k < output_size; k++){
+                cout<<output[indices[j]][k]<<" ";
+            }
+            cout<<endl;
             backward(input[indices[j]], output[indices[j]]);
             update_weights(learning_rate);
+            for(int k = 0; k < output_size; k++){
+                if(layers[layers.size()-1]->hidden_output[k] > layers[layers.size()-1]->hidden_output[pred_idx]){
+                    pred_idx = k;
+                }
+                if(output[indices[j]][k] > output[indices[j]][gt_idx]){
+                    gt_idx = k;
+                }
+            }
+            if(pred_idx == gt_idx){
+                sum++;
+            }
         }
+        cout<<"Accuracy: "<<sum/batch_size<<endl;
         cout<<endl;
     }
 

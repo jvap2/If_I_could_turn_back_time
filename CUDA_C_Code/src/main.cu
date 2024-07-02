@@ -6,30 +6,47 @@
 int main(){
     int input_size = WEATHER_INPUT_SIZE;
     int output_size = WEATHER_OUTPUT_SIZE;
+    int training_size = (int)WEATHER_SIZE*TRAIN;
+    int test_size = WEATHER_SIZE-training_size;
     int num_layers = 4;
     int* hidden_layers = new int[num_layers-2];
-    hidden_layers[0] = 512;
-    hidden_layers[1] = 256;
-    int batch_size = 64;
+    hidden_layers[0] = 256;
+    hidden_layers[1] = 128;
+    int batch_size = 32;
     // Create a network
     float** input = new float*[WEATHER_SIZE];
     float** target = new float*[WEATHER_SIZE];
-    for(int i = 0; i < input_size; i++){
+    for(int i = 0; i < WEATHER_SIZE; i++){
         input[i] = new float[input_size]{};
         target[i] = new float[output_size]{};
     }
+    float** test_input = new float*[test_size];
+    float** test_target = new float*[test_size];
+    for(int i = 0; i < test_size; i++){
+        test_input[i] = new float[input_size]{};
+        test_target[i] = new float[output_size]{};
+    }
+    float** train_input = new float*[training_size];
+    float** train_target = new float*[training_size];
+    for(int i = 0; i < training_size; i++){
+        train_input[i] = new float[input_size]{};
+        train_target[i] = new float[output_size]{};
+    }
     Read_Weather_Data(input, target);
+    Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
     Network<float> net(input_size,  hidden_layers, output_size, 0);
-    net.addLayer(new Linear<float>(input_size, hidden_layers[0]));
-    net.addLayer(new RELU_layer<float>(hidden_layers[0]));
-    net.addLayer(new Linear<float>(hidden_layers[0], hidden_layers[1]));
-    net.addLayer(new RELU_layer<float>(hidden_layers[1])); //NULL layer for backprop
-    net.addLayer(new Linear<float>(hidden_layers[1], output_size)); //NULL layer for backprop
+    net.addLayer(new Linear<float>(input_size, 256));
+    net.addLayer(new RELU_layer<float>(256));
+    net.addLayer(new Linear<float>(256, 128));
+    net.addLayer(new RELU_layer<float>(128)); //NULL layer for backprop
+    net.addLayer(new Linear<float>(128, output_size)); //NULL layer for backprop
     net.addLayer(new Softmax<float>(output_size));
     net.addLoss(new Categorical<float>(output_size));
     //Print out the size of the categorical layer
 
-    net.train(input, target, 15, .001, WEATHER_SIZE, batch_size);
+    net.train(train_input, train_target, 5, .001, training_size, batch_size);
+
+    net.predict(test_input,test_target, test_size);
 
 
     return 0;
