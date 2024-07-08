@@ -10,8 +10,8 @@ int main(){
     int test_size = WEATHER_SIZE-training_size;
     int num_layers = 4;
     int* hidden_layers = new int[num_layers-2];
-    hidden_layers[0] = 256;
-    hidden_layers[1] = 128;
+    hidden_layers[0] = 16;
+    hidden_layers[1] = 8;
     int batch_size = 32;
     // Create a network
     float** input = new float*[WEATHER_SIZE];
@@ -44,7 +44,7 @@ int main(){
     net.addLoss(new Categorical<float>(output_size));
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 5, .001, training_size, batch_size);
+    net.train(train_input, train_target, 5, .01, training_size, batch_size);
 
     net.predict(test_input,test_target, test_size);
 
