@@ -29,9 +29,13 @@ class Sigmoid:
 
 
 class Linear:
-    def __init__(self, input_dim, output_dim):
-        self.W = np.random.randn(input_dim, output_dim) * 0.01  # Initialize weights
-        self.b = np.zeros((1, output_dim))  # Initialize biases
+    def __init__(self, input_dim, output_dim, W=None, b=None):
+        if W is None:
+            W = np.random.randn(input_dim, output_dim) * 0.01
+        if b is None:
+            b = np.zeros((1, output_dim))
+        self.W = W
+        self.b = b
         self.cache = None  # To store the input x for backward pass
 
     def forward(self, x):
@@ -130,7 +134,18 @@ class Conv2D:
 
         return dx, dW, db  # Return the gradients
 
+class Softmax:
+    def __init__(self):
+        self.cache = None
 
+    def forward(self, x):
+        exps = np.exp(x - np.max(x, axis=-1, keepdims=True))
+        softmax = exps / np.sum(exps, axis=-1, keepdims=True)
+        self.cache = softmax
+        return softmax
+
+    def backward(self, dout):
+        return dout
 
     
 class NeuralNetwork:

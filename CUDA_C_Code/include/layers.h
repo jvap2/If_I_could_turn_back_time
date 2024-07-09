@@ -149,6 +149,30 @@ void Read_Weather_Data_Norm(float **data, float **output)
         col = 0;
         row++;
     }
+    //Go through the data and normalize it
+    //Find the max and min of each column
+    float max[WEATHER_INPUT_SIZE];  
+    float min[WEATHER_INPUT_SIZE];
+    for(int i = 0; i < WEATHER_INPUT_SIZE; i++) {
+        max[i] = -1000000;
+        min[i] = 1000000;
+    }
+    for(int i = 0; i < WEATHER_SIZE; i++) {
+        for(int j = 0; j < WEATHER_INPUT_SIZE; j++) {
+            if(data[i][j] > max[j]) {
+                max[j] = data[i][j];
+            }
+            if(data[i][j] < min[j]) {
+                min[j] = data[i][j];
+            }
+        }
+    }
+    //Normalize the data
+    for(int i = 0; i < WEATHER_SIZE; i++) {
+        for(int j = 0; j < WEATHER_INPUT_SIZE; j++) {
+            data[i][j] = (data[i][j] - min[j])/(max[j] - min[j]);
+        }
+    }
 }
 
 void Train_Split_Test(float **data, float **output, float **train_data, float **train_output, float **test_data, float **test_output, int size)
@@ -3530,9 +3554,9 @@ __global__ void linear_derivative_kernel(T *loss, T *Weights, T *d_Weights, T *d
             sum += loss[i] * Weights[i * cols + col];
         }
         d_F[col] = sum;
-        if(fabsf(d_F[col]) < 1e-6){
-            printf("d_F[%d] = %f\n", col, d_F[col]);
-        }
+        // if(fabsf(d_F[col]) < 1e-6){
+        //     printf("d_F[%d] = %f\n", col, d_F[col]);
+        // }
     }
 
     // Multiply the loss by the transpose of the input (x^T)*delta
@@ -3544,7 +3568,7 @@ __global__ void linear_derivative_kernel(T *loss, T *Weights, T *d_Weights, T *d
         // if(fabsf(d_Weights[row * cols + col]) > 0.0001){
         //     printf("output[%d] = %f, loss[%d] = %f, d_Weights[%d][%d] = %f, Weights[%d][%d]=%f\n", row, output[row], col, loss[col], row, col, d_Weights[row * cols + col], row, col, Weights[row * cols + col]);
         // }
-        printf("output[%d] = %f, loss[%d] = %f, d_Weights[%d][%d] = %f\n", row, output[row], col, loss[col], row, col, d_Weights[row * cols + col]);
+        // printf("output[%d] = %f, loss[%d] = %f, d_Weights[%d][%d] = %f\n", row, output[row], col, loss[col], row, col, d_Weights[row * cols + col]);
         // printf("Weights[%d][%d] = %f\n", row, col, Weights[row * cols + col]);
     }
     __syncthreads();
@@ -3677,11 +3701,6 @@ void Linear<T>::backward(T *loss)
         cout << "Error in copying output from device to host" << endl;
         exit(1);
     }
-    // cout<<"Next Loss"<<endl;
-    // for(int i = 0; i < cols; i++){
-    //     cout<<this->next_loss[i]<<" ";
-    // }
-    // Free device memory
     if (!HandleCUDAError(cudaFree(d_loss)))
     {
         cout << "Error in freeing d_input" << endl;
@@ -3911,24 +3930,29 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int gt_idx = 0;
     int sum = 0;
 
-    for (int i = 0; i < epochs; i++)
+    for (int i = 0; i < 1; i++)
     {
-        for (int k = 0; k < batch_size; k++)
+        for (int k = 0; k < 1; k++)
         {
             indices[k] = rand() % size;
             cout << "Index k is " << indices[k] << endl;
         }
         sum = 0;
         cout << "Epoch: " << i << endl;
-        for (int j = 0; j < batch_size; j++)
+        for (int j = 0; j < 1; j++)
         {
             cout << "Batch: " << j << endl;
             layers[layers.size() - 1]->set_labels(output[indices[j]]);
+            cout<< "Input:"<<endl;
+            for(int i = 0; i < input_size; i++){
+                cout<<input[indices[j]][i]<<" ";
+            }   
+            cout<<endl;
             forward(input[indices[j]], output[indices[j]]);
             cout << "Prediction: " << endl;
             for (int k = 0; k < output_size; k++)
             {
-                cout << layers[layers.size() - 1]->hidden_output[k] << " ";
+                cout << layers[layers.size() - 1]->hidden_output[k] << ", ";
             }
             cout << endl;
             cout << "Ground Truth: ";
@@ -3937,8 +3961,158 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
                 cout << output[indices[j]][k] << " ";
             }
             cout << endl;
+            for (int k = 0; k < layerMetadata.size(); k++)
+            {
+                // Validate layerNumber is within bounds
+                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+                {
+                    // Check if the layer pointer is not null
+                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+                    {
+                        // Check if the current layer is marked as updateable
+                        if (layerMetadata[k].isUpdateable)
+                        {   
+                            cout<<"Weight before update"<<endl;
+                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<"[";
+                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+                                    cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+                                }
+                                cout<<"]";
+                                cout<<endl;
+                                cout<<endl;
+                            }
+                            cout<<"]";
+                            cout<<endl;
+
+                            cout<<"Biases before update"<<endl;
+                            cout<<"Layer "<<k<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
+                            }
+                            cout<<"]";
+                            cout<<endl;
+                            
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+                    }
+                }
+                else
+                {
+                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+                }
+            }
+
             backward(input[indices[j]], output[indices[j]]);
             update_weights(learning_rate);
+            cout<<"Weight after update"<<endl;
+            //Only print the weights if it is a linear layer
+            for (int k = 0; k < layerMetadata.size(); k++)
+            {
+                // Validate layerNumber is within bounds
+                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+                {
+                    // Check if the layer pointer is not null
+                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+                    {
+                        // Check if the current layer is marked as updateable
+                        if (layerMetadata[k].isUpdateable)
+                        {   
+                            cout<<"Weight before update"<<endl;
+                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<"[";
+                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+                                    cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+                                }
+                                cout<<"]";
+                                cout<<endl;
+                                cout<<endl;
+                            }
+                            cout<<"]";
+                            cout<<endl;
+
+                            cout<<"Biases before update"<<endl;
+                            cout<<"Layer "<<k<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
+                            }
+                            cout<<"]";
+                            cout<<endl;
+                            
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+                    }
+                }
+                else
+                {
+                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+                }
+            }
+            for (int k = 0; k < layerMetadata.size(); k++)
+            {
+                // Validate layerNumber is within bounds
+                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+                {
+                    // Check if the layer pointer is not null
+                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+                    {
+                        // Check if the current layer is marked as updateable
+                        if (layerMetadata[k].isUpdateable)
+                        {   
+                            cout<<"Weight Gradient"<<endl;
+                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<"[";
+                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+                                    cout<<layers[layerMetadata[k].layerNumber]->d_weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+                                }
+                                cout<<"]";
+                                cout<<endl;
+                                cout<<endl;
+                            }
+                            cout<<"]";
+                            cout<<endl;
+
+                            cout<<"Bias Gradient"<<endl;
+                            cout<<"Layer "<<k<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<layers[layerMetadata[k].layerNumber]->d_biases[l]<<", ";
+                            }
+                            cout<<"]";
+                            cout<<endl;
+                            
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+                    }
+                }
+                else
+                {
+                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+                }
+            }
             for (int k = 0; k < output_size; k++)
             {
                 if (layers[layers.size() - 1]->hidden_output[k] > layers[layers.size() - 1]->hidden_output[pred_idx])
