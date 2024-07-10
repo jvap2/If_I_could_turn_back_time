@@ -817,14 +817,23 @@ public:
 template <typename T>
 __global__ void update_weights_kernel(T *weights, T *biases, T *d_weights, T *d_biases, T learning_rate, int input_size, int output_size)
 {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < output_size && col < input_size)
+    {
+        weights[row * input_size + col] -= learning_rate * d_weights[row * input_size + col];
+    }
+}
+
+
+template <typename T>
+__global__ void update_bias_kernel(T *biases, T *d_biases, T learning_rate, int size)
+{
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < output_size)
+    if (index < size)
     {
-        for (int i = 0; i < input_size; i++)
-        {
-            weights[i * output_size + index] -= learning_rate * d_weights[i * output_size + index];
-        }
         biases[index] -= learning_rate * d_biases[index];
     }
 }
@@ -903,15 +912,24 @@ public:
 
         // Define grid and block dimensions
         int block_size = 16;
-        dim3 blockDim(block_size, block_size);
+        dim3 blockDim2D(block_size, block_size);
 
-        dim3 gridDim((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
 
         // Launch the update weights kernel
-        update_weights_kernel<T><<<gridDim, blockDim>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, cols, rows);
+        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, cols, rows);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
+            exit(1);
+        }
+        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, learning_rate, rows);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
         // Copy the result weights and biases from device to host
@@ -3545,7 +3563,22 @@ __global__ void linear_derivative_kernel(T *loss, T *Weights, T *d_Weights, T *d
     /*dL/dX, used to pass to the next layer
     If the Weight matrix is NxM, then this matrix will be Nx1
     */
-    if (row == 0 && col < cols)
+    // Multiply the loss by the transpose of the input (x^T)*delta
+    // This is the derivative of the loss with respect to the weights
+    // Should be an outer product between o_i and delta_j
+    if (row < rows && col < cols)
+    {
+        d_Weights[row * cols + col] = output[row] * loss[col];
+    }
+    __syncthreads();
+    // Sum the loss to get the derivative of the loss with respect to the biases
+}
+
+
+template <typename T>
+__global__ void linear_weight_derivatives(T *loss, T *Weights, T *d_F, int rows, int cols){
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col < cols)
     {
         T sum = 0;
         for (int i = 0; i < rows; i++)
@@ -3553,31 +3586,17 @@ __global__ void linear_derivative_kernel(T *loss, T *Weights, T *d_Weights, T *d
             sum += loss[i] * Weights[i * cols + col];
         }
         d_F[col] = sum;
-        // if(fabsf(d_F[col]) < 1e-6){
-        //     printf("d_F[%d] = %f\n", col, d_F[col]);
-        // }
     }
 
-    // Multiply the loss by the transpose of the input (x^T)*delta
-    // This is the derivative of the loss with respect to the weights
-    // Should be an outer product between o_i and delta_j
-    if (row < rows && col < cols)
+}
+
+template <typename T>
+__global__ void linear_bias_derivatives(T *loss, T *d_biases, int rows){
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < rows)
     {
-        d_Weights[row * cols + col] = output[row] * loss[col];
-        // if(fabsf(d_Weights[row * cols + col]) > 0.0001){
-        //     printf("output[%d] = %f, loss[%d] = %f, d_Weights[%d][%d] = %f, Weights[%d][%d]=%f\n", row, output[row], col, loss[col], row, col, d_Weights[row * cols + col], row, col, Weights[row * cols + col]);
-        // }
-        // printf("output[%d] = %f, loss[%d] = %f, d_Weights[%d][%d] = %f\n", row, output[row], col, loss[col], row, col, d_Weights[row * cols + col]);
-        // printf("Weights[%d][%d] = %f\n", row, col, Weights[row * cols + col]);
+        d_biases[row] = loss[row];
     }
-    __syncthreads();
-    // Sum the loss to get the derivative of the loss with respect to the biases
-    if (row == 0 && col < cols)
-    {
-        // Is this right?
-        d_biases[col] = loss[col];
-    }
-    __syncthreads();
 }
 
 template <typename T>
@@ -3667,6 +3686,32 @@ void Linear<T>::backward(T *loss)
         cout<<"Error in copying output from host to device"<<endl;
         exit(1);
     }
+
+    // Create three streams to (1) Find the weight update (2) Find the bias update (3) Find the next loss
+
+    // Define grid and block dimensions
+    int threadsPerBlock = 256;
+    int blocksPerGrid_Rows = (rows + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid_Cols = (cols + threadsPerBlock - 1) / threadsPerBlock;
+    
+    // Define the streams
+    cudaStream_t stream1, stream2, stream3;
+    if (!HandleCUDAError(cudaStreamCreate(&stream1)))
+    {
+        cout << "Error in creating stream1" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaStreamCreate(&stream2)))
+    {
+        cout << "Error in creating stream2" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaStreamCreate(&stream3)))
+    {
+        cout << "Error in creating stream3" << endl;
+        exit(1);
+    }
+
     int output_size = rows;
     int input_size = cols;
     // Define grid and block dimensions
