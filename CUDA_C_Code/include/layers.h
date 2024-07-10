@@ -3524,7 +3524,7 @@ void Linear<T>::forward(T *input, T *output)
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T *loss, T *Weights, T *d_Weights, T *d_biases, T *d_F, T *output, int rows, int cols)
+__global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int rows, int cols)
 {
 
     /*Calculate the weight update for the backward step
@@ -3719,17 +3719,40 @@ void Linear<T>::backward(T *loss)
     dim3 blockDim(block_size, block_size);
     dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim>>>(d_loss, dev_weights, dd_weights, dd_biases, d_F, d_output, cols, rows);
-    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, cols, rows);
+    if (!HandleCUDAError(cudaStreamSynchronize(stream1)))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
-    // Copy the result output from device to host
-    // if(!HandleCUDAError(cudaMemcpy(loss, d_output, rows * sizeof(T), cudaMemcpyDeviceToHost))){
-    //     cout<<"Error in copying output from device to host"<<endl;
-    //     exit(1);
-    // }
+    linear_weight_derivatives<T><<<blocksPerGrid_Cols,threadsPerBlock,0,stream2>>>(d_loss,dev_weights,d_F,rows,cols);
+    if (!HandleCUDAError(cudaStreamSynchronize(stream2)))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    linear_bias_derivatives<T><<<blocksPerGrid_Rows,threadsPerBlock,0,stream3>>>(d_loss,dd_biases,rows);
+    if (!HandleCUDAError(cudaStreamSynchronize(stream3)))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+
+
+    //Handle the streams destruction
+    if(!HandleCUDAError(cudaStreamDestroy(stream1))){
+        cout<<"Error in destroying stream1"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaStreamDestroy(stream2))){
+        cout<<"Error in destroying stream2"<<endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaStreamDestroy(stream3))){
+        cout<<"Error in destroying stream3"<<endl;
+        exit(1);
+    }
+
     if (!HandleCUDAError(cudaMemcpy(this->d_weights, dd_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
