@@ -417,8 +417,7 @@ __global__ void matrix_multiply(T *A, T *B, T *C, int rows, int cols, int inter_
 template <typename T>
 __global__ void matrix_vector_multiply_kernel(T *A, T *B, T *C, int rows, int cols)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < rows)
     {
@@ -775,7 +774,7 @@ public:
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-        matrix_vector_multiply_kernel<T><<<twodgridDim, twodblockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows);
+        matrix_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
@@ -1105,7 +1104,7 @@ __global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *los
         {
             // printf("Label[%d]: %f\n", index, output[index]);
             // printf("Input[%d]: %f\n", index, input[index]);
-            loss[index] = (loss[index] - 1) / (size * output[index]);
+            loss[index] = (loss[index] - 1) / (output[index]);
         }
         else
         {

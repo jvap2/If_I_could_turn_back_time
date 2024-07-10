@@ -81,7 +81,7 @@ print(output)
 
 loss = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-target = torch.tensor([1.0,0.0,0.0, 0.0])
+target = torch.tensor([1.0,0.0,0.0,0.0])
 
 ## Perform backward pass
 
@@ -91,6 +91,8 @@ optimizer.zero_grad()
 loss_val = loss(output, target)
 loss_val.backward()
 optimizer.step()
+
+print(loss_val)
 
 
 
