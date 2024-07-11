@@ -1,2 +1,10 @@
 -It is not accessing the layers
 - Need to use the network stuff to pass in new stuff
+
+
+Loss[0] = -149505433879864934400.000000
+Loss[1] = 0.000000
+Loss[2] = -149505433879864934400.000000
+
+
+need to address why this is blowing up
