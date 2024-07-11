@@ -696,7 +696,7 @@ void LeakyRELU_layer<T>::forward(T *input, T *output)
     dim3 blockDim(TPB, 1, 1);
     dim3 gridDim((size + TPB - 1) / TPB, 1, 1);
     // Launch the LeakyRELU kernel
-    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -776,7 +776,7 @@ void LeakyRELU_layer<T>::backward(T* loss){
     dim3 gridDim(blocksPerGrid, 1, 1);
     dim3 blockDim(threadsPerBlock, 1, 1);
     // Launch the LeakyRELU derivative kernel
-    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss, rows);
+    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss,this->alpha, rows);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -4287,36 +4287,36 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int gt_idx = 0;
     int sum = 0;
 
-    for (int i = 0; i < epochs; i++)
+    for (int i = 0; i < 1; i++)
     {
-        for (int k = 0; k < batch_size; k++)
+        for (int k = 0; k < 1; k++)
         {
             indices[k] = rand() % size;
             // cout << "Index k is " << indices[k] << endl;
         }
         sum = 0;
         cout << "Epoch: " << i << endl;
-        for (int j = 0; j < batch_size; j++)
+        for (int j = 0; j < 1; j++)
         {
             cout << "Batch: " << j << endl;
             layers[layers.size() - 1]->set_labels(output[indices[j]]);
-            // cout<< "Input:"<<endl;
-            // for(int i = 0; i < input_size; i++){
-            //     cout<<input[indices[j]][i]<<" ";
-            // }   
-            // cout<<endl;
+            cout<< "Input:"<<endl;
+            for(int i = 0; i < input_size; i++){
+                cout<<input[indices[j]][i]<<" ";
+            }   
+            cout<<endl;
             forward(input[indices[j]], output[indices[j]]);
-            // cout << "Prediction: " << endl;
-            // for (int k = 0; k < output_size; k++)
-            // {
-            //     cout << layers[layers.size() - 1]->hidden_output[k] << ", ";
-            // }
-            // cout << endl;
-            // cout << "Ground Truth: ";
-            // for (int k = 0; k < output_size; k++)
-            // {
-            //     cout << output[indices[j]][k] << " ";
-            // }
+            cout << "Prediction: " << endl;
+            for (int k = 0; k < output_size; k++)
+            {
+                cout << layers[layers.size() - 1]->hidden_output[k] << ", ";
+            }
+            cout << endl;
+            cout << "Ground Truth: ";
+            for (int k = 0; k < output_size; k++)
+            {
+                cout << output[indices[j]][k] << " ";
+            }
             cout << endl;
             for (int k = 0; k < layerMetadata.size(); k++)
             {
