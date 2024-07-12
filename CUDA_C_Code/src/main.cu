@@ -34,16 +34,18 @@ int main(){
     Read_Weather_Data_Norm(input, target);
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
     Network<float> net(input_size, output_size);
-    net.addLayer(new Linear<float>(input_size, 16));
-    net.addLayer(new RELU_layer<float>(16));
-    net.addLayer(new Linear<float>(16, 8));
-    net.addLayer(new RELU_layer<float>(8));
-    net.addLayer(new Linear<float>(8, output_size));
+    net.addLayer(new Linear<float>(input_size, 256));
+    net.addLayer(new LeakyRELU_layer<float>(256));
+    net.addLayer(new Linear<float>(256, 128));
+    net.addLayer(new RELU_layer<float>(128));
+    net.addLayer(new Linear<float>(128, 64));
+    net.addLayer(new RELU_layer<float>(64));
+    net.addLayer(new Linear<float>(64, output_size));
     net.addLayer(new Softmax<float>(output_size));
     net.addLoss(new Categorical<float>(output_size));
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 15, .001, training_size, batch_size);
+    net.train(train_input, train_target, 100, .001, training_size, batch_size);
 
     // net.predict(test_input,test_target, test_size);
 

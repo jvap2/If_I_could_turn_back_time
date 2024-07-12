@@ -67,7 +67,7 @@ W_Layer_3 = np.array([[-0.398546,-0.342725,-0.255851,-0.363829,0.0891186,-0.4419
 
 b_Layer_3 = np.array([0.508845, 0.410501, -0.160262, -0.653303])
 
-inpt = np.array([0.0597015, 0.303371, 0.0927835, 0.669725, 0.333333, 0.102458, 1, 0.333333, 0.525, 0  ])
+inpt = np.array([0.0597015, 0.303371, 0.0927835, 0.669725, 0.333333, 0.102458, 1, 0.333333, 0.525, 0  ], dtype=np.float32)
 
 class Network(nn.Module):
     def __init__(self):
@@ -89,17 +89,31 @@ class Network(nn.Module):
         self.relu_2 = nn.ReLU()
 
     def forward(self, x):
-        x = torch.tensor(x, dtype=torch.float32)
+        x = torch.tensor(x, dtype=torch.float32, requires_grad=True)
         x = self.layer1(x)
+        print(x)
         x= self.relu_1(x)
+        print(x)
         x = self.layer2(x)
+        print(x)
         x= self.relu_2(x)
+        print(x)
         x = self.layer3(x)
+        print(x)
         x = self.sm(x)
+        print(x)
         return x
+    
+def hook_fn(module, grad_input, grad_output):
+    print("Gradient output:", grad_output)
     
 
 model = Network()
+
+
+model.sm.register_backward_hook(hook_fn)
+model.relu_1.register_backward_hook(hook_fn)
+model.relu_2.register_backward_hook(hook_fn)
 model.train()
 output=model(inpt)
 print(output)

@@ -838,8 +838,11 @@ __global__ void softmax_derivative_kernel(T *input, T *output, int size)
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (row < size && col < size)
     {
-        float val = (row==col)?1:0;
-        output[row * size + col] = input[row] * (val - input[col]);
+        if(row == col) {
+            output[row * size + col] = input[row] * (1 - input[col]);
+        } else {
+            output[row * size + col] = -input[row] * input[col];
+        }  
 
     }
 }
@@ -1043,6 +1046,10 @@ public:
             cout << "Error in copying loss from device to host Softmax" << endl;
             // exit(1);
         }
+        // cout<<"Softmax Next Loss"<<endl;
+        // for(int i = 0; i<rows; i++) {
+        //     cout<<"Next Loss["<<i<<"]"<<this->next_loss[i]<<endl;
+        // }
         if (!HandleCUDAError(cudaFree(d_out)))
         {
             cout << "Error in freeing d_out" << endl;
@@ -1355,36 +1362,13 @@ __global__ void Binary_Cross_Entropy_Derivative(T *input, T *output, T *loss, in
 template <typename T>
 __global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *loss, int size)
 {
-    /*def backward(self, top, propagate_down, bottom):
-   delta = self.diff   # If the class label is 0, the gradient is equal to probs
-   labels = bottom[1].data
-   for r in range(bottom[0].num):  # For each element in the batch
-       scale_factor = 1 / float(np.count_nonzero(labels[r, :]))
-       for c in range(len(labels[r,:])):  # For each class
-           if labels[r, c] != 0:  # If positive class
-               delta[r, c] = scale_factor * (delta[r, c] - 1) + (1 - scale_factor) * delta[r, c]
-   bottom[0].diff[...] = delta / bottom[0].num
-    */
-
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     // The input is the output of the network and the output is the ground truth
     if (index < size)
     {
-        if (output[index] != 0)
-        {
-            // printf("Label[%d]: %f\n", index, output[index]);
-            // printf("Input[%d]: %f\n", index, input[index]);
-            loss[index] = (loss[index] - 1) / (output[index]);
-        }
-        else
-        {
-            loss[index] = 0.0f;
-        }
+        loss[index] = -1 * (output[index] / input[index]);
     }
     __syncthreads();
-    // if(index<size){
-    //     printf("Loss[%d]: %f\n", index, loss[index]);
-    // }
 }
 
 template <typename T>
@@ -1973,12 +1957,13 @@ class Network
 {
 public:
     Network(int input_size, int *hidden_size, int output_size, int num_layers);
-    Network(int input_size, int output_size){
+    Network(int input_size, int output_size, string optimzer){
         this->input_size = input_size;
         this->output_size = output_size;
         this->num_layers = 0;
         this->num_activation = 0;
         this->num_derv = 0;
+        this->optim = optimzer;
     }
     ~Network(){};
     int input_size;
@@ -1989,6 +1974,7 @@ public:
     int num_derv;
     float *input;
     float *prediction;
+    string optim;
     thrust::host_vector<Matrix<T> *> layers;
     thrust::host_vector<Matrix<T> *> activation;
     thrust::host_vector<float *> loss;
@@ -2004,10 +1990,6 @@ public:
                 if (i > 0)
                 {
                     loss[i - 1] = layers[i]->next_loss;
-                    // cout<<layers[i]->name<<endl;
-                    // for(int j = 0; j<layers[i]->rows;j++){
-                    //     cout<<layers[i]->next_loss[j]<<endl;
-                    // }
                 }
             }
             else
@@ -3546,12 +3528,8 @@ void RELU_layer<T>::forward(T *input, T *output)
         exit(1);
     }
     // this->hidden_output = output;
-    if (this->hidden_output == NULL)
-    {
-        cout << "Hidden output is NULL for ReLU" << endl;
-        this->hidden_output = (T *)malloc(size * sizeof(T));
-    }
     memcpy(this->hidden_output, output, size * sizeof(T));
+
 }
 
 template <typename T>
@@ -3574,17 +3552,7 @@ void RELU_layer<T>::backward(T *loss)
     T *d_input, *d_output;
     T *d_loss;
     T *input = this->hidden_output;
-    // cout<<"RELU Backward"<<endl;
-    // if(loss == NULL){
-    //     cout<<"Loss is NULL for ReLU"<<endl;
-    // } else{
-    //     cout<<"Loss is not NULL for ReLU"<<endl;
-    // }
-    // if(this->next_loss == NULL){
-    //     cout<<"Next loss is NULL for ReLU"<<endl;
-    // } else{
-    //     cout<<"Next loss is not NULL for ReLU"<<endl;
-    // }
+
     int size = this->rows;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
     {
@@ -3691,18 +3659,6 @@ void Linear<T>::forward(T *input, T *output)
     // Allocate device memory for input, output, weights, and biases
     int input_size = this->cols;
     int output_size = this->rows;
-
-    // this->input = input;
-    if (input == NULL)
-    {
-        cout << "Input Linear is NULL" << endl;
-        input = (T *)malloc(input_size * sizeof(T));
-        if (input == NULL)
-        {
-            cout << "Input of RELU is NULL" << endl;
-            exit(1);
-        }
-    }
     memcpy(this->input, input, input_size * sizeof(T));
     // for(int i = 0; i < input_size; i++){
     //     cout<<input[i]<<" ";
@@ -3802,6 +3758,7 @@ void Linear<T>::forward(T *input, T *output)
         }
     }
     mempcpy(this->hidden_output, output, output_size * sizeof(T));
+
 }
 
 template <typename T>
@@ -3849,12 +3806,12 @@ __global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int r
     // Should be an outer product between o_i and delta_j
     if (row < rows && col < cols)
     {
-        d_Weights[row * cols + col] = output[row] * loss[col];
-        // printf("Loss[%d] = %f\n", col, loss[col]);
-        // printf("Output[%d] = %f\n", row, output[row]);
-        // printf("d_Weights[%d][%d] = %f\n", row, col, d_Weights[row * cols + col]);
+        d_Weights[row * cols + col] = output[col] * loss[row];
+        // if(row == 0){
+        //     printf("d_input[%d] = %f\n", col, output[col]);
+        // }
     }
-    __syncthreads();
+
     // Sum the loss to get the derivative of the loss with respect to the biases
 }
 
@@ -3890,6 +3847,7 @@ void Linear<T>::backward(T *loss)
     // Allocate device memory for input, output, weights, and biases
     // We need to take the loss from the previous layer and calculate the derivative of the loss with respect to the input, weights, and biases
     // Then we need to output the next loss for the layers behind this one
+    // cout<<"Linear Backwards"<<endl;
     T *d_loss, *d_output, *dev_weights, *dev_biases;
     T *dd_weights, *dd_biases;
     T *d_F;
@@ -3902,12 +3860,17 @@ void Linear<T>::backward(T *loss)
     //     cout<<loss[i]<<" ";
     // }
     // cout<<endl;
+    // cout<<"Input for Linear Backwards"<<endl;
+    // for(int i = 0; i < cols; i++){
+    //     cout<<this->input[i]<<" ";
+    // }
+    cout<<endl;
     if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, cols * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
@@ -3967,7 +3930,7 @@ void Linear<T>::backward(T *loss)
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
     }
-    if(!HandleCUDAError(cudaMemcpy(d_output,this->hidden_output,rows*sizeof(T),cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_output,this->input,cols*sizeof(T),cudaMemcpyHostToDevice))){
         cout<<"Error in copying output from host to device"<<endl;
         exit(1);
     }
@@ -3978,7 +3941,7 @@ void Linear<T>::backward(T *loss)
     int threadsPerBlock = 256;
     int blocksPerGrid_Rows = (rows + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGrid_Cols = (cols + threadsPerBlock - 1) / threadsPerBlock;
-    
+
     // Define the streams
     cudaStream_t stream1, stream2, stream3;
     if (!HandleCUDAError(cudaStreamCreate(&stream1)))
@@ -4001,10 +3964,10 @@ void Linear<T>::backward(T *loss)
     int input_size = cols;
     // Define grid and block dimensions
     int block_size = 16;
-    dim3 blockDim(block_size, block_size);
+    dim3 blockDim(block_size, block_size,1);
     dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, cols, rows);
+    linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, rows, cols);
     if (!HandleCUDAError(cudaStreamSynchronize(stream1)))
     {
         cout << "Error in synchronizing device" << endl;
@@ -4248,6 +4211,9 @@ void Network<T>::update_weights(T learning_rate)
         }
     }
 }
+
+
+
 template <typename T>
 int argmax(T *arr, int size)
 {
@@ -4287,16 +4253,16 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int gt_idx = 0;
     int sum = 0;
 
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < epochs; i++)
     {
-        for (int k = 0; k < 1; k++)
+        for (int k = 0; k < batch_size; k++)
         {
             indices[k] = rand() % size;
             // cout << "Index k is " << indices[k] << endl;
         }
         sum = 0;
         cout << "Epoch: " << i << endl;
-        for (int j = 0; j < 1; j++)
+        for (int j = 0; j < batch_size; j++)
         {
             cout << "Batch: " << j << endl;
             layers[layers.size() - 1]->set_labels(output[indices[j]]);
@@ -4318,107 +4284,107 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
                 cout << output[indices[j]][k] << " ";
             }
             cout << endl;
-            for (int k = 0; k < layerMetadata.size(); k++)
-            {
-                // Validate layerNumber is within bounds
-                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
-                {
-                    // Check if the layer pointer is not null
-                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
-                    {
-                        // Check if the current layer is marked as updateable
-                        if (layerMetadata[k].isUpdateable)
-                        {   
-                            cout<<"Weight before update"<<endl;
-                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
-                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
-                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
-                            cout<<"[";
-                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-                                cout<<"[";
-                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
-                                    cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
-                                }
-                                cout<<"]";
-                                cout<<endl;
-                                cout<<endl;
-                            }
-                            cout<<"]";
-                            cout<<endl;
+            // for (int k = 0; k < layerMetadata.size(); k++)
+            // {
+            //     // Validate layerNumber is within bounds
+            //     if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+            //     {
+            //         // Check if the layer pointer is not null
+            //         if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+            //         {
+            //             // Check if the current layer is marked as updateable
+            //             if (layerMetadata[k].isUpdateable)
+            //             {   
+            //                 cout<<"Weight before update"<<endl;
+            //                 cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+            //                 cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+            //                 cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+            //                 cout<<"[";
+            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+            //                     cout<<"[";
+            //                     for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+            //                         cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+            //                     }
+            //                     cout<<"]";
+            //                     cout<<endl;
+            //                     cout<<endl;
+            //                 }
+            //                 cout<<"]";
+            //                 cout<<endl;
 
-                            cout<<"Biases before update"<<endl;
-                            cout<<"Layer "<<k<<endl;
-                            cout<<"[";
-                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-                                cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
-                            }
-                            cout<<"]";
-                            cout<<endl;
+            //                 cout<<"Biases before update"<<endl;
+            //                 cout<<"Layer "<<k<<endl;
+            //                 cout<<"[";
+            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+            //                     cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
+            //                 }
+            //                 cout<<"]";
+            //                 cout<<endl;
                             
-                        }
-                    }
-                    else
-                    {
-                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
-                    }
-                }
-                else
-                {
-                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
-                }
-            }
+            //             }
+            //         }
+            //         else
+            //         {
+            //             std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+            //         }
+            //     }
+            //     else
+            //     {
+            //         std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+            //     }
+            // }
 
             backward(input[indices[j]], output[indices[j]]);
             update_weights(learning_rate);
-            for (int k = 0; k < layerMetadata.size(); k++)
-            {
-                // Validate layerNumber is within bounds
-                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
-                {
-                    // Check if the layer pointer is not null
-                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
-                    {
-                        // Check if the current layer is marked as updateable
-                        if (layerMetadata[k].isUpdateable)
-                        {   
-                            cout<<"Weight Gradient"<<endl;
-                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
-                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
-                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
-                            cout<<"[";
-                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-                                cout<<"[";
-                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
-                                    cout<<layers[layerMetadata[k].layerNumber]->d_weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
-                                }
-                                cout<<"]";
-                                cout<<endl;
-                                cout<<endl;
-                            }
-                            cout<<"]";
-                            cout<<endl;
+            // for (int k = 0; k < layerMetadata.size(); k++)
+            // {
+            //     // Validate layerNumber is within bounds
+            //     if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+            //     {
+            //         // Check if the layer pointer is not null
+            //         if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+            //         {
+            //             // Check if the current layer is marked as updateable
+            //             if (layerMetadata[k].isUpdateable)
+            //             {   
+            //                 cout<<"Weight Gradient"<<endl;
+            //                 cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+            //                 cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+            //                 cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+            //                 cout<<"[";
+            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+            //                     cout<<"[";
+            //                     for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+            //                         cout<<layers[layerMetadata[k].layerNumber]->d_weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+            //                     }
+            //                     cout<<"]";
+            //                     cout<<endl;
+            //                     cout<<endl;
+            //                 }
+            //                 cout<<"]";
+            //                 cout<<endl;
 
-                            cout<<"Bias Gradient"<<endl;
-                            cout<<"Layer "<<k<<endl;
-                            cout<<"[";
-                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-                                cout<<layers[layerMetadata[k].layerNumber]->d_biases[l]<<", ";
-                            }
-                            cout<<"]";
-                            cout<<endl;
+            //                 cout<<"Bias Gradient"<<endl;
+            //                 cout<<"Layer "<<k<<endl;
+            //                 cout<<"[";
+            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+            //                     cout<<layers[layerMetadata[k].layerNumber]->d_biases[l]<<", ";
+            //                 }
+            //                 cout<<"]";
+            //                 cout<<endl;
                             
-                        }
-                    }
-                    else
-                    {
-                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
-                    }
-                }
-                else
-                {
-                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
-                }
-            }
+            //             }
+            //         }
+            //         else
+            //         {
+            //             std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+            //         }
+            //     }
+            //     else
+            //     {
+            //         std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+            //     }
+            // }
             pred_idx = argmax<float>(layers[layers.size() - 1]->hidden_output, output_size);
             // cout<<"Prediction: "<<pred_idx<<endl;
             // for(int k = 0; k < output_size; k++){
