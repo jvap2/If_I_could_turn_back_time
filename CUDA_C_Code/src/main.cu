@@ -33,7 +33,8 @@ int main(){
     }
     Read_Weather_Data_Norm(input, target);
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
-    Network<float> net(input_size, output_size);
+    string optimizer = "adam";
+    Network<float> net(input_size, output_size, optimizer);
     net.addLayer(new Linear<float>(input_size, 256));
     net.addLayer(new LeakyRELU_layer<float>(256));
     net.addLayer(new Linear<float>(256, 128));
