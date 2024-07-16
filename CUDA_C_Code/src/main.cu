@@ -33,11 +33,13 @@ int main(){
     }
     Read_Weather_Data_Norm(input, target);
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
-    string optimizer = "adam";
+    AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer);
     net.addLayer(new Linear<float>(input_size, 256));
     net.addLayer(new LeakyRELU_layer<float>(256));
-    net.addLayer(new Linear<float>(256, 128));
+    net.addLayer(new Linear<float>(256, 512));
+    net.addLayer(new RELU_layer<float>(512));
+    net.addLayer(new Linear<float>(512, 128));
     net.addLayer(new RELU_layer<float>(128));
     net.addLayer(new Linear<float>(128, 64));
     net.addLayer(new RELU_layer<float>(64));
@@ -48,7 +50,7 @@ int main(){
 
     net.train(train_input, train_target, 100, .001, training_size, batch_size);
 
-    // net.predict(test_input,test_target, test_size);
+    net.predict(test_input,test_target, test_size);
 
 
     return 0;
