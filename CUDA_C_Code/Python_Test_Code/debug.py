@@ -36,6 +36,7 @@ W_Layer_1 = np.array([[-0.301304,-0.0968752,0.369422,0.285944,-0.126029,0.046944
 [0.203527,-0.322836,0.0922233,-0.00677821,0.302436,0.200577,-0.28782,-0.248682,-0.00131887,-0.338756],
 
 [-0.323569,-0.124824,-0.156697,0.386299,0.36536,0.109205,0.301268,0.284542,-0.00351116,-0.147606]
+
 ])
 
 b_Layer_1 = np.array([-0.298888, 0.449242, 0.307967, -0.681916, -0.986471, -1.20903, -1.10917, 0.416365, -0.385802, -0.598864, -0.476913, -1.15641, -0.205548, 1.22894, 0.236372, -0.663376])
@@ -151,11 +152,13 @@ W_Layer_4 = np.array([[-0.143663,-0.0147291,-0.337876,-0.260937,0.353307,0.34156
 
 [-0.308588,-0.102257,0.219391,-0.308834,-0.11425,-0.232366,-0.246763,0.143628,0.309888,-0.103082,0.223906,-0.154354,-0.245707,-0.286701,-0.130043,0.00596386],
 
-[-0.248847,0.183627,0.263912,-0.314389,0.1602,-0.311269,0.299363,0.221449,-0.0620089,0.106509,-0.155233,0.208429,-0.18735,0.0803863,-0.0183496,-0.142384]])
+[-0.248847,0.183627,0.263912,-0.314389,0.1602,-0.311269,0.299363,0.221449,-0.0620089,0.106509,-0.155233,0.208429,-0.18735,0.0803863,-0.0183496,-0.142384]
+
+])
 
 b_Layer_4 = np.array([1.32673, -0.610046, -0.390658, -0.544482])
 
-inpt = np.array([0.335821, 0.674157, 0.216495, 0.66055, 0.333333, 0.481019, 0.142857, 0, 0.2, 0.5 ], dtype=np.float32)
+inpt = np.array([0.335821, 0.674157, 0.216495, 0.66055, 0.333333, 0.481019, 0.142857, 0, 0.2, 0.5], dtype=np.float32)
 
 gt_1 = np.array([0.0,0.0,1.0,0.0], dtype=np.float32)
 
@@ -170,14 +173,14 @@ class Network(nn.Module):
         self.layer2 = nn.Linear(16, 32)
         self.layer3 = nn.Linear(32, 16)
         self.layer4 = nn.Linear(16, 4)
-        self.layer1.weight = nn.Parameter(torch.tensor(W_Layer_1, dtype=torch.float32))
-        self.layer1.bias = nn.Parameter(torch.tensor(b_Layer_1, dtype=torch.float32))
-        self.layer2.weight = nn.Parameter(torch.tensor(W_Layer_2, dtype=torch.float32))
-        self.layer2.bias = nn.Parameter(torch.tensor(b_Layer_2, dtype=torch.float32))
-        self.layer3.weight = nn.Parameter(torch.tensor(W_Layer_3, dtype=torch.float32))
-        self.layer3.bias = nn.Parameter(torch.tensor(b_Layer_3, dtype=torch.float32))
-        self.layer4.weight = nn.Parameter(torch.tensor(W_Layer_4, dtype=torch.float32))
-        self.layer4.bias = nn.Parameter(torch.tensor(b_Layer_4, dtype=torch.float32))
+        self.layer1.weight = nn.Parameter(torch.tensor(W_Layer_1, dtype=torch.float64))
+        self.layer1.bias = nn.Parameter(torch.tensor(b_Layer_1, dtype=torch.float64))
+        self.layer2.weight = nn.Parameter(torch.tensor(W_Layer_2, dtype=torch.float64))
+        self.layer2.bias = nn.Parameter(torch.tensor(b_Layer_2, dtype=torch.float64))
+        self.layer3.weight = nn.Parameter(torch.tensor(W_Layer_3, dtype=torch.float64))
+        self.layer3.bias = nn.Parameter(torch.tensor(b_Layer_3, dtype=torch.float64))
+        self.layer4.weight = nn.Parameter(torch.tensor(W_Layer_4, dtype=torch.float64))
+        self.layer4.bias = nn.Parameter(torch.tensor(b_Layer_4, dtype=torch.float64))
         self.layer1.requires_grad = True
         self.layer2.requires_grad = True
         self.layer3.requires_grad = True
@@ -188,7 +191,7 @@ class Network(nn.Module):
         self.relu_3 = nn.ReLU()
 
     def forward(self, x):
-        x = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+        x = torch.tensor(x, dtype=torch.float64, requires_grad=True)
         x = self.layer1(x)
         
         x= self.relu_1(x)
@@ -203,7 +206,7 @@ class Network(nn.Module):
 
         x = self.layer4(x)
         
-        x = self.sm(x)
+        # x = self.sm(x)
         
         return x
     
@@ -217,8 +220,9 @@ model = Network()
 # model.sm.register_backward_hook(hook_fn)
 # model.relu_1.register_backward_hook(hook_fn)
 # model.relu_2.register_backward_hook(hook_fn)
-loss = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+loss = nn.CrossEntropyLoss(reduction='sum')
+# optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
 model.train()
 output=model(inpt)
 print(output)
@@ -232,6 +236,7 @@ output = output.unsqueeze(0)
 target = torch.tensor(gt_1).unsqueeze(0)
 optimizer.zero_grad()
 loss_val = loss(output, target)
+print(loss_val)
 loss_val.backward()
 optimizer.step()
 
@@ -263,17 +268,21 @@ optimizer.step()
 
 
 
-# print("Layer 1 Weights Gradient")
-# print(model.layer1.weight.grad)
-# print("Layer 1 bias Gradient")
-# print(model.layer1.bias.grad)
-# print("Layer 2 Weights Gradient")
-# print(model.layer2.weight.grad)
-# print("Layer 2 bias Gradient")
-# print(model.layer2.bias.grad)
-# print("Layer 3 Weights Gradient")
-# print(model.layer3.weight.grad)
-# print("Layer 3 bias Gradient")
-# print(model.layer3.bias.grad)
+print("Layer 1 Weights Gradient")
+print(model.layer1.weight.grad)
+print("Layer 1 bias Gradient")
+print(model.layer1.bias.grad)
+print("Layer 2 Weights Gradient")
+print(model.layer2.weight.grad)
+print("Layer 2 bias Gradient")
+print(model.layer2.bias.grad)
+print("Layer 3 Weights Gradient")
+print(model.layer3.weight.grad)
+print("Layer 3 bias Gradient")
+print(model.layer3.bias.grad)
+print("Layer 4 Weights Gradient")
+print(model.layer4.weight.grad)
+print("Layer 4 bias Gradient")
+print(model.layer4.bias.grad)
 
 

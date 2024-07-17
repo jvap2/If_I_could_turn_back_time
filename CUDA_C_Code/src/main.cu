@@ -33,10 +33,11 @@ int main(){
     }
     Read_Weather_Data_Norm(input, target);
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
-    AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
+    // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
+    SGD_Optimizer<float>* optimizer = new SGD_Optimizer<float>(.001);
     Network<float> net(input_size, output_size, optimizer);
     net.addLayer(new Linear<float>(input_size, 16));
-    net.addLayer(new LeakyRELU_layer<float>(16));
+    net.addLayer(new RELU_layer<float>(16));
     net.addLayer(new Linear<float>(16, 32));
     net.addLayer(new RELU_layer<float>(32));
     // net.addLayer(new Linear<float>(512, 128));
