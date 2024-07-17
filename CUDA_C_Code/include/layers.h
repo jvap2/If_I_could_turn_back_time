@@ -397,7 +397,7 @@ public:
     virtual void update_weights_SGD(T learning_rate) { cout << "Hello" << endl; };
     virtual void update_weights_Momentum(T learning_rate, T momentum) {};
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
-    virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon) {};
+    virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
     int get_cols();
@@ -1156,6 +1156,48 @@ __global__ void update_bias_kernel(T *biases, T *d_biases, T learning_rate, int 
     }
 }
 
+
+template <typename T>
+__global__ void Adam_Update_Weights(T *weights, T *d_weights, T *m_weights, T *v_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < output_size && col < input_size)
+    {
+        m_weights[row * input_size + col] = beta1 * m_weights[row * input_size + col] + (1 - beta1) * d_weights[row * input_size + col];
+        v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * d_weights[row * input_size + col] * d_weights[row * input_size + col];
+        T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
+        weights[row * input_size + col] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+        if(weights[row * input_size + col] != weights[row * input_size + col]) {
+            printf("NAN detected in weights\n");
+            printf("m_hat: %f\n", m_hat);
+            printf("v_hat: %f\n", v_hat);
+            printf("weights: %f\n", weights[row * input_size + col]);
+            printf("d_weights: %f\n", d_weights[row * input_size + col]);
+            printf("m_weights: %f\n", m_weights[row * input_size + col]);
+            printf("v_weights: %f\n", v_weights[row * input_size + col]);
+        }
+    }
+}
+
+template <typename T>
+__global__ void Adam_Update_Bias(T *biases, T *d_biases, T *m_biases, T *v_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size)
+    {
+        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * d_biases[index];
+        v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * d_biases[index] * d_biases[index];
+        T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
+        biases[index] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+    }
+}
+
+
 template <typename T>
 class Linear : public Matrix<T>
 {
@@ -1170,6 +1212,10 @@ public:
         v_biases = (T*)malloc(rows * sizeof(T));
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
+        ZeroMatrix<T>(v_weights, rows, cols);
+        ZeroVector<T>(v_biases, rows);
+        ZeroMatrix<T>(m_weights, rows, cols);
+        ZeroVector<T>(m_biases, rows);
         this->name = "linear";
     }
     ~Linear() override
@@ -1525,7 +1571,17 @@ public:
         }
 
     }
-    void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon) override {
+    void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) override {
+        /*
+        Algorithm:
+        m = beta1 * m + (1 - beta1) * d_weights
+        v = beta2 * v + (1 - beta2) * d_weights^2
+        m_hat = m / (1 - beta1^t)
+        v_hat = v / (1 - beta2^t)
+        weights = weights - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
+        
+        
+        */
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases, *d_m_weights, *d_m_biases;
         int cols = this->cols;
         int rows = this->rows;
@@ -1612,7 +1668,7 @@ public:
             cout << "Error in copying m_biases from host to device" << endl;
             exit(1);
         }
-
+        cout<<"Epoch "<<epochs<<endl;
         // Define grid and block dimensions
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
@@ -1623,48 +1679,35 @@ public:
         dim3 blockDim1D(TPB, 1, 1);
         dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
 
-        // Launch the update weights kernel
+        //Follow the algorithm  from line 1529 to 1538
 
-        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, cols, rows);
-        if (!HandleCUDAError(cudaDeviceSynchronize()))
+        //Calculate m = beta1 * m + (1 - beta1) * d_weights using thrust
+
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
         {
-            cout << "Error in synchronizing device" << endl;
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
             exit(1);
         }
 
-        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, learning_rate, rows);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+        Adam_Update_Weights<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_weights, d_d_weights, d_m_weights, d_v_weights, beta1, beta2, epsilon, learning_rate, cols, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
 
-        // Update the weights and biases
-        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_v_weights, d_v_biases, d_d_weights, d_d_biases, beta1, cols, rows);
-        if (!HandleCUDAError(cudaDeviceSynchronize()))
-        {
-            cout << "Error in synchronizing device" << endl;
-            exit(1);
-        }
-
-        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_v_biases, d_d_biases, beta1, rows);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+        Adam_Update_Bias<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_biases, d_d_biases, d_m_biases, d_v_biases, beta1, beta2, epsilon, learning_rate, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-
-        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_m_weights, d_m_biases, d_d_weights, d_d_biases, beta2, cols, rows);
-        if (!HandleCUDAError(cudaDeviceSynchronize()))
-        {
-            cout << "Error in synchronizing device" << endl;
-            exit(1);
-        }
-
-        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_m_biases, d_d_biases, beta2, rows);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
-            cout<<"Error in synchronizing device"<<endl;
-            exit(1);
-        }
-
         // Copy the result weights and biases from device to host
 
         if (!HandleCUDAError(cudaMemcpy(this->weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
@@ -2628,6 +2671,7 @@ public:
         }
     }
     void update_weights(T learning_rate);
+    void update_weights(T learning_rate, int epochs);
     void addLayer(Linear<T> *layer)
     {
         layers.push_back(layer);
@@ -4804,7 +4848,7 @@ int Network<T>::get_output_size()
 }
 
 template <typename T>
-void Network<T>::update_weights(T learning_rate)
+void Network<T>::update_weights(T learning_rate, int epochs)
 {
     // Ensure layers vector is not empty and is properly initialized
     if (this->layers.empty())
@@ -4830,7 +4874,7 @@ void Network<T>::update_weights(T learning_rate)
                         this->layers[layerMetadata[i].layerNumber]->update_weights_SGD(learning_rate);
                     }
                     else if(this->optim->name == "Adam"){
-                        this->layers[layerMetadata[i].layerNumber]->update_weights_Adam(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon);
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_Adam(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                     }
                     else if(this->optim->name == "RMSProp"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_RMSProp(learning_rate, this->optim->decay_rate);
@@ -4896,7 +4940,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int gt_idx = 0;
     int sum = 0;
 
-    for (int i = 0; i < epochs; i++)
+    for (int i = 0; i < 1; i++)
     {
         for (int k = 0; k < batch_size; k++)
         {
@@ -4905,7 +4949,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         }
         sum = 0;
         cout << "Epoch: " << i << endl;
-        for (int j = 0; j < batch_size; j++)
+        for (int j = 0; j < 2; j++)
         {
             cout << "Batch: " << j << endl;
             layers[layers.size() - 1]->set_labels(output[indices[j]]);
@@ -4927,58 +4971,58 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
                 cout << output[indices[j]][k] << " ";
             }
             cout << endl;
-            // for (int k = 0; k < layerMetadata.size(); k++)
-            // {
-            //     // Validate layerNumber is within bounds
-            //     if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
-            //     {
-            //         // Check if the layer pointer is not null
-            //         if (this->layers[layerMetadata[k].layerNumber] != nullptr)
-            //         {
-            //             // Check if the current layer is marked as updateable
-            //             if (layerMetadata[k].isUpdateable)
-            //             {   
-            //                 cout<<"Weight before update"<<endl;
-            //                 cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
-            //                 cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
-            //                 cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
-            //                 cout<<"[";
-            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-            //                     cout<<"[";
-            //                     for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
-            //                         cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
-            //                     }
-            //                     cout<<"]";
-            //                     cout<<endl;
-            //                     cout<<endl;
-            //                 }
-            //                 cout<<"]";
-            //                 cout<<endl;
+            for (int k = 0; k < layerMetadata.size(); k++)
+            {
+                // Validate layerNumber is within bounds
+                if (layerMetadata[k].layerNumber >= 0 && layerMetadata[k].layerNumber < this->layers.size())
+                {
+                    // Check if the layer pointer is not null
+                    if (this->layers[layerMetadata[k].layerNumber] != nullptr)
+                    {
+                        // Check if the current layer is marked as updateable
+                        if (layerMetadata[k].isUpdateable)
+                        {   
+                            cout<<"Weight before update"<<endl;
+                            cout<<"Layer "<<layerMetadata[k].layerNumber<<endl;
+                            cout<<"Rows "<<layers[layerMetadata[k].layerNumber]->rows<<endl;
+                            cout<<"Cols "<<layers[layerMetadata[k].layerNumber]->cols<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<"[";
+                                for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
+                                    cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+                                }
+                                cout<<"]";
+                                cout<<endl;
+                                cout<<endl;
+                            }
+                            cout<<"]";
+                            cout<<endl;
 
-            //                 cout<<"Biases before update"<<endl;
-            //                 cout<<"Layer "<<k<<endl;
-            //                 cout<<"[";
-            //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-            //                     cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
-            //                 }
-            //                 cout<<"]";
-            //                 cout<<endl;
+                            cout<<"Biases before update"<<endl;
+                            cout<<"Layer "<<k<<endl;
+                            cout<<"[";
+                            for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
+                                cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
+                            }
+                            cout<<"]";
+                            cout<<endl;
                             
-            //             }
-            //         }
-            //         else
-            //         {
-            //             std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
-            //         }
-            //     }
-            //     else
-            //     {
-            //         std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
-            //     }
-            // }
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Layer at index " << layerMetadata[i].layerNumber << " is a null pointer.\n";
+                    }
+                }
+                else
+                {
+                    std::cerr << "Error: layerNumber out of bounds: " << layerMetadata[i].layerNumber << "\n";
+                }
+            }
 
             backward(input[indices[j]], output[indices[j]]);
-            update_weights(learning_rate);
+            update_weights(learning_rate, i);
             // for (int k = 0; k < layerMetadata.size(); k++)
             // {
             //     // Validate layerNumber is within bounds
@@ -4998,7 +5042,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
             //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
             //                     cout<<"[";
             //                     for(int m = 0; m<layers[layerMetadata[k].layerNumber]->cols; m++){
-            //                         cout<<layers[layerMetadata[k].layerNumber]->d_weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
+            //                         cout<<layers[layerMetadata[k].layerNumber]->weights[l*layers[layerMetadata[k].layerNumber]->cols + m]<<",";
             //                     }
             //                     cout<<"]";
             //                     cout<<endl;
@@ -5011,7 +5055,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
             //                 cout<<"Layer "<<k<<endl;
             //                 cout<<"[";
             //                 for(int l = 0; l<layers[layerMetadata[k].layerNumber]->rows; l++){
-            //                     cout<<layers[layerMetadata[k].layerNumber]->d_biases[l]<<", ";
+            //                     cout<<layers[layerMetadata[k].layerNumber]->biases[l]<<", ";
             //                 }
             //                 cout<<"]";
             //                 cout<<endl;
