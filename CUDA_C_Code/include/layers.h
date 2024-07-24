@@ -2940,6 +2940,19 @@ public:
             exit(1);
         }
     }
+    Network(int input_size, int output_size, Optimizer<T>* optimizer, int Q){
+        this->input_size = input_size;
+        this->output_size = output_size;
+        this->num_layers = 0;
+        this->num_activation = 0;
+        this->num_derv = 0;
+        this->optim = optimizer;
+        if(optimizer == NULL){
+            cout<<"Optimizer is NULL"<<endl;
+            exit(1);
+        }
+        this->Q = Q;
+    }
     ~Network(){};
     int input_size;
     int *hidden_size;
@@ -2976,7 +2989,7 @@ public:
         }
     }
     void update_weights(T learning_rate);
-    void update_weights(T learning_rate, int epochs);
+    void update_weights(T learning_rate, int epochs, int Q);
     void addLayer(Linear<T> *layer)
     {
         layers.push_back(layer);
@@ -5140,7 +5153,7 @@ int Network<T>::get_output_size()
 }
 
 template <typename T>
-void Network<T>::update_weights(T learning_rate, int epochs)
+void Network<T>::update_weights(T learning_rate, int epochs, int Q)
 {
     // Ensure layers vector is not empty and is properly initialized
     if (this->layers.empty())
@@ -5148,6 +5161,23 @@ void Network<T>::update_weights(T learning_rate, int epochs)
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
+    if(this->optim->name == "AdamWBernoulli")
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        // Find the top Q dW*W
+                    }
+                }
+            }
+        }
 
     // Iterate over each entry in the layerMetadata vector
     for (int i = 0; i < layerMetadata.size(); i++)
