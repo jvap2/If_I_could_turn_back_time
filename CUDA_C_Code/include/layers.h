@@ -212,6 +212,16 @@ struct LayerMetadata
 };
 
 template <typename T>
+struct Loc_Layer
+{
+    int row;
+    int col;
+    int layer;
+    T weights_dW;
+    int rank;
+};
+
+template <typename T>
 void InitializeMatrix(T *matrix, int ny, int nx)
 {
 
@@ -490,9 +500,6 @@ __global__ void vector_elementwise_multiply_kernel(T *A, T *B, T *C, int size)
     if (index < size)
     {
         C[index] = A[index] * B[index];
-        // printf("C[%d]: %f\n", index, C[index]);
-        // printf("A[%d]: %f\n", index, A[index]);
-        // printf("B[%d]: %f\n", index, B[index]);
     }
 }
 
@@ -1241,6 +1248,8 @@ __global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, 
 }
 
 
+
+
 template <typename T>
 class Linear : public Matrix<T>
 {
@@ -1255,6 +1264,10 @@ public:
         v_biases = (T*)malloc(rows * sizeof(T));
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
+        B_weights = (T*)malloc(rows * cols * sizeof(T));
+        B_biases = (T*)malloc(rows * sizeof(T));
+        W_dW_weights = (T*)malloc(rows * cols * sizeof(T));
+        W_dW_biases = (T*)malloc(rows * sizeof(T));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
@@ -1284,6 +1297,8 @@ public:
     T* m_biases;
     T* B_weights;
     T* B_biases;
+    T* W_dW_weights;
+    T* W_dW_biases;
     void Fill_Bernoulli(){
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
@@ -2201,6 +2216,77 @@ public:
             cout << "Error in resetting device" << endl;
             exit(1);
         }
+    }
+    void find_Loss_Metric(){
+        T* d_Weights, d_Biases, d_d_Weights, d_d_Biases;
+        T* d_wDw, d_bDb;
+
+        int cols = this->cols;
+        int rows = this->rows;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_wDw, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_bDb, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_bDb" << endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(d_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_Biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_Weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(d_d_Biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_wDw, this->W_dW_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying wDw from host to device"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_bDb, this->W_dW_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying bDb from host to device"<<endl;
+            exit(1);
+        }
+
+
     }
 };
 
@@ -5347,7 +5433,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
             }
 
             backward(input[indices[j]], output[indices[j]]);
-            update_weights(learning_rate, i);
+            update_weights(learning_rate, i, this->Q);
             for (int k = 0; k < layerMetadata.size(); k++)
             {
                 // Validate layerNumber is within bounds
