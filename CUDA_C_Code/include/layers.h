@@ -398,6 +398,7 @@ public:
     virtual void update_weights_Momentum(T learning_rate, T momentum) {};
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
     int get_cols();
@@ -459,6 +460,13 @@ class RMSPropOptimizer : public Optimizer<T>
 {
 public:
     RMSPropOptimizer(T learning_rate, T decay_rate, T epsilon) : Optimizer<T>(learning_rate, 0.0, decay_rate, 0.0, 0.0, epsilon) {this -> name = "RMSProp";};
+};
+
+template <typename T>
+class AdamWBernoulli: public Optimizer<T>
+{
+public:
+    AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon) : Optimizer<T>(learning_rate, 0.0, 0.0, beta1, beta2, epsilon) {this->name = "AdamWBernoulli";};
 };
 
 
@@ -1183,6 +1191,24 @@ __global__ void Adam_Update_Weights(T *weights, T *d_weights, T *m_weights, T *v
 }
 
 template <typename T>
+__global__ void Adam_Update_Weights_Bernoulli(T *weights, T *d_weights, T *m_weights, T *v_weights, T *B_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < output_size && col < input_size)
+    {
+        d_weights[row * input_size + col] = B_weights[row * input_size + col] * d_weights[row * input_size + col];
+        m_weights[row * input_size + col] = beta1 * m_weights[row * input_size + col] + (1 - beta1) * d_weights[row * input_size + col];
+        v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * d_weights[row * input_size + col] * d_weights[row * input_size + col];
+        T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
+        T temp = weights[row * input_size + col];
+        weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon)+ temp);
+    }
+}
+
+template <typename T>
 __global__ void Adam_Update_Bias(T *biases, T *d_biases, T *m_biases, T *v_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1194,6 +1220,23 @@ __global__ void Adam_Update_Bias(T *biases, T *d_biases, T *m_biases, T *v_biase
         T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
         T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
         biases[index] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+    }
+}
+
+template <typename T>
+__global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, T *v_biases, T *B_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size)
+    {
+        d_biases[index] = B_biases[index] * d_biases[index];
+        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * d_biases[index];
+        v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * d_biases[index] * d_biases[index];
+        T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
+        T temp = biases[index];
+        biases[index] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon) + temp);
     }
 }
 
@@ -1230,11 +1273,26 @@ public:
     }
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
+    void set_weights(T *weights, T *biases)
+    {
+        this->weights = weights;
+        this->biases = biases;
+    }
     T* v_weights;
     T* v_biases;
     T* m_weights;
     T* m_biases;
-    
+    T* B_weights;
+    T* B_biases;
+    void Fill_Bernoulli(){
+        // Only fill with 0's and 1's at random
+        for(int i = 0; i<this->rows * this->cols; i++) {
+            this->B_weights[i] = rand() % 2;
+        }
+        for(int i = 0; i<this->rows; i++) {
+            this->B_biases[i] = rand() % 2;
+        }
+    }
     void update_weights_RMSProp(T learning_rate, T decay_rate) override {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases;
         int cols = this->cols;
@@ -1793,6 +1851,248 @@ public:
         }
         
     }
+    void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) override {
+        /*
+        Algorithm:
+        m = beta1 * m + (1 - beta1) * d_weights
+        v = beta2 * v + (1 - beta2) * d_weights^2
+        m_hat = m / (1 - beta1^t)
+        v_hat = v / (1 - beta2^t)
+        weights = weights - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
+        
+        
+        */
+        T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases, *d_m_weights, *d_m_biases;
+        T *d_B_weights, *d_B_biases;
+        int cols = this->cols;
+        int rows = this->rows;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_v_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_v_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_v_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_v_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_m_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_m_weights" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_m_biases, rows * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_m_biases"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_B_weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_B_biases"<<endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(d_d_biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_v_weights, this->v_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying v_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_v_biases, this->v_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying v_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_weights, this->m_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_biases, this->m_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying B_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying B_biases from host to device" << endl;
+            exit(1);
+        }
+        cout<<"Epoch "<<epochs<<endl;
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+
+        //Follow the algorithm  from line 1529 to 1538
+
+        //Calculate m = beta1 * m + (1 - beta1) * d_weights using thrust
+
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+
+        Adam_Update_Weights_Bernoulli<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_weights, d_d_weights, d_m_weights, d_v_weights, d_B_weights, beta1, beta2, epsilon, learning_rate, cols, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        Adam_Update_Bias_Bernoulli<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_biases, d_d_biases, d_m_biases, d_v_biases, d_B_biases, beta1, beta2, epsilon, learning_rate, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        // Copy the result weights and biases from device to host
+
+        if (!HandleCUDAError(cudaMemcpy(this->weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying biases from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->v_weights, d_v_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying v_weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->v_biases, d_v_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying v_biases from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->m_weights, d_m_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->m_biases, d_m_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_biases from device to host" << endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(d_weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_v_weights)))
+        {
+            cout << "Error in freeing d_v_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_v_biases)))
+        {
+            cout << "Error in freeing d_v_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_m_weights)))
+        {
+            cout << "Error in freeing d_m_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_m_biases)))
+        {
+            cout << "Error in freeing d_m_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaDeviceReset()))
+        {
+            cout << "Error in resetting device" << endl;
+            exit(1);
+        }
+
+    }
     void update_weights_SGD(T learning_rate) override
     {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
@@ -1902,7 +2202,6 @@ public:
             exit(1);
         }
     }
-    void set_weights(T *weights, T *biases);
 };
 
 template <typename T>
@@ -2636,6 +2935,10 @@ public:
         this->num_activation = 0;
         this->num_derv = 0;
         this->optim = optimizer;
+        if(optimizer == NULL){
+            cout<<"Optimizer is NULL"<<endl;
+            exit(1);
+        }
     }
     ~Network(){};
     int input_size;
@@ -2644,11 +2947,13 @@ public:
     int num_layers;
     int num_activation;
     int num_derv;
+    int Q;
     T *input;
     T *prediction;
     Optimizer<T>* optim;
     thrust::host_vector<Matrix<T> *> layers;
     thrust::host_vector<Matrix<T> *> activation;
+    thrust::host_vector<Matrix<T> *> bernoullie;
     thrust::host_vector<T *> loss;
     thrust::host_vector<T *> hidden;
     thrust::host_vector<LayerMetadata> layerMetadata;
@@ -2676,6 +2981,9 @@ public:
     {
         layers.push_back(layer);
         loss.push_back((T *)malloc(layer->rows * sizeof(T)));
+        // if(this->optim->name == "AdamWBernoulli"){
+        //     bernoullie.push_back((T *)malloc(layer->rows * layer->cols * sizeof(T)));
+        // }
         layer->name = "saved linear";
         if (layer->next_loss == NULL)
         {
@@ -2801,18 +3109,7 @@ public:
     }
 };
 
-template <typename T>
-class Bernoulli_Network : public Network<T>
-{
-public:
-    Bernoulli_Network(int input_size, int *hidden_size, int output_size, int num_layers);
-    ~Bernoulli_Network();
-    void forward(T *input, T *output);
-    void backward(T *input, T *output);
-    void update_weights(T learning_rate);
-    void train(T *input, T *output, int epochs, T learning_rate);
-    void predict(T *input, T *output);
-};
+
 
 template <typename T>
 __global__ void matrix_multiply_kernel(T *A, T *B, T *C, int rows, int cols)
@@ -4731,12 +5028,7 @@ void Linear<T>::backward(T *loss)
     }
 }
 
-template <typename T>
-void Linear<T>::set_weights(T *weights, T *biases)
-{
-    this->weights = weights;
-    this->biases = biases;
-}
+
 
 // Assemble network
 
@@ -4881,6 +5173,9 @@ void Network<T>::update_weights(T learning_rate, int epochs)
                     }
                     else if(this->optim->name == "Momentum"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_Momentum(learning_rate, this->optim->momentum);
+                    }
+                    else if(this->optim->name == "AdamWBernoulli"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWBernoulli(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                     }
                     else{
                         cout<<"Optimizer not found"<<endl;
