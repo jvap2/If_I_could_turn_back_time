@@ -2378,9 +2378,6 @@ public:
             cout << "Error in freeing d_bDb" << endl;
             exit(1);
         }
-
-
-
     }
 };
 
@@ -5341,7 +5338,24 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
-    if(this->optim->name == "AdamWBernoulli")
+    if(this->optim->name == "AdamWBernoulli"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        // Find the top Q dW*W
+                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
+                    }
+                }
+            }
+        }
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds
@@ -5358,6 +5372,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                 }
             }
         }
+    }
 
     // Iterate over each entry in the layerMetadata vector
     for (int i = 0; i < layerMetadata.size(); i++)
