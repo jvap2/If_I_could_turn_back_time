@@ -409,6 +409,7 @@ public:
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void find_Loss_Metric() {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
     int get_cols();
@@ -2217,7 +2218,7 @@ public:
             exit(1);
         }
     }
-    void find_Loss_Metric(){
+    void find_Loss_Metric() override {
         T* d_Weights, d_Biases, d_d_Weights, d_d_Biases;
         T* d_wDw, d_bDb;
 
@@ -2312,12 +2313,12 @@ public:
 
         //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
 
-        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_Weights, d_wDw, cols, rows);
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_Weights, d_d_Weights, d_wDw, cols, rows);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_d_Biases, d_bDb, rows);
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_Biases, d_d_Biases, d_bDb, rows);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -3143,7 +3144,8 @@ public:
     Optimizer<T>* optim;
     thrust::host_vector<Matrix<T> *> layers;
     thrust::host_vector<Matrix<T> *> activation;
-    thrust::host_vector<Matrix<T> *> bernoullie;
+    thrust::host_vector<Loc_Layer<T>*> bernoullie_w;
+    thrust::host_vector<Loc_Layer<T>*> bernoullie_b;
     thrust::host_vector<T *> loss;
     thrust::host_vector<T *> hidden;
     thrust::host_vector<LayerMetadata> layerMetadata;
@@ -3171,9 +3173,10 @@ public:
     {
         layers.push_back(layer);
         loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        // if(this->optim->name == "AdamWBernoulli"){
-        //     bernoullie.push_back((T *)malloc(layer->rows * layer->cols * sizeof(T)));
-        // }
+        if(this->optim->name == "AdamWBernoulli"){
+            bernoullie_w.push_back((Loc_Layer<T> *)malloc(layer->rows * layer->cols * sizeof(Loc_Layer<T>)));
+            bernoullie_b.push_back((Loc_Layer<T> *)malloc(layer->rows * sizeof(Loc_Layer<T>)));
+        }
         layer->name = "saved linear";
         if (layer->next_loss == NULL)
         {
@@ -3296,6 +3299,24 @@ public:
     void getOutput(T *output)
     {
         memcpy(output, prediction, output_size * sizeof(T));
+    }
+    void Fill_Bern(Matrix<T>* Layer, int layer_num){
+        if(this->optim->name == "AdamWBernoulli"){
+            for(int i = 0; i<Layer->rows; i++){
+                for(int j = 0; j<Layer->cols; j++){
+                    bernoullie_w[layer_num][i*Layer->cols + j].row = i;
+                    bernoullie_w[layer_num][i*Layer->cols + j].col = j;
+                    bernoullie_w[layer_num][i*Layer->cols + j].layer = layer_num;
+                    bernoullie_w[layer_num][i*Layer->cols + j].value = Layer->weights[i*Layer->cols + j];
+                }
+            }
+            for(int i = 0; i<Layer->rows; i++){
+                bernoullie_b[layer_num][i].row = i;
+                bernoullie_b[layer_num][i].col = 0;
+                bernoullie_b[layer_num][i].layer = layer_num;
+                bernoullie_b[layer_num][i].value = Layer->biases[i];
+            }
+        }
     }
 };
 
@@ -5350,7 +5371,6 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     // Check if the current layer is marked as updateable
                     if (layerMetadata[i].isUpdateable)
                     {
-                        // Find the top Q dW*W
                         this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
                     }
                 }
@@ -5368,6 +5388,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     if (layerMetadata[i].isUpdateable)
                     {
                         // Find the top Q dW*W
+
                     }
                 }
             }
