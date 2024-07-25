@@ -1380,7 +1380,7 @@ public:
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
 
-        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
@@ -1549,7 +1549,7 @@ public:
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
         
-        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
@@ -1746,7 +1746,7 @@ public:
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
 
-        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
@@ -1986,7 +1986,7 @@ public:
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
 
-        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
@@ -2160,7 +2160,7 @@ public:
         int block_size = 16;
         dim3 blockDim2D(block_size, block_size);
 
-        dim3 gridDim2D((rows + block_size - 1) / block_size, 1, 1);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
@@ -2285,6 +2285,100 @@ public:
             cout<<"Error in copying bDb from host to device"<<endl;
             exit(1);
         }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+
+        //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
+
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_Weights, d_wDw, cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_d_Biases, d_bDb, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        //Delete streams
+        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
+        {
+            cout << "Error in destroying stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
+        {
+            cout << "Error in destroying stream for bias" << endl;
+            exit(1);
+        }
+
+        //Transfer the result to host
+        if (!HandleCUDAError(cudaMemcpy(this->W_dW_weights, d_wDw, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying wDw from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->W_dW_biases, d_bDb, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying bDb from device to host" << endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(d_Weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_Biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_wDw)))
+        {
+            cout << "Error in freeing d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_bDb)))
+        {
+            cout << "Error in freeing d_bDb" << endl;
+            exit(1);
+        }
+
 
 
     }
@@ -3264,7 +3358,7 @@ void Matrix<T>::matrix_multiply(T *A, T *B, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((input_size + block_size - 1) / block_size, (output_size + block_size - 1) / block_size, 1);
 
     // Launch the matrix multiplication kernel
     matrix_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -3352,7 +3446,7 @@ void Matrix<T>::matrix_add(T *A, T *B, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix addition kernel
     matrix_add_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -3439,7 +3533,7 @@ void Matrix<T>::matrix_subtract(T *A, T *B, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix subtraction kernel
     matrix_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -3517,7 +3611,7 @@ void Matrix<T>::matrix_transpose(T *A, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix transpose kernel
     matrix_transpose_kernel<T><<<gridDim, blockDim>>>(d_A, d_C, rows, cols);
@@ -3590,7 +3684,7 @@ void Matrix<T>::matrix_scalar_multiply(T *A, T *C, T scalar)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix scalar multiplication kernel
     matrix_scalar_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
@@ -3660,7 +3754,7 @@ void Matrix<T>::matrix_scalar_add(T *A, T *C, T scalar)
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
 
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix scalar addition kernel
     matrix_scalar_add_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
@@ -3730,7 +3824,7 @@ void Matrix<T>::matrix_scalar_subtract(T *A, T *C, T scalar)
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
 
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix scalar subtraction kernel
     matrix_scalar_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
@@ -3801,7 +3895,7 @@ void Matrix<T>::matrix_elementwise_multiply(T *A, T *B, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix elementwise multiplication kernel
     matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -3890,7 +3984,7 @@ void Matrix<T>::matrix_elementwise_divide(T *A, T *B, T *C)
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
 
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix elementwise division kernel
     matrix_elementwise_divide_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -3978,7 +4072,7 @@ void Matrix<T>::matrix_elementwise_add(T *A, T *B, T *C)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix elementwise addition kernel
     matrix_elementwise_add_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -4067,7 +4161,7 @@ void Matrix<T>::matrix_elementwise_subtract(T *A, T *B, T *C)
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
 
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     // Launch the matrix elementwise subtraction kernel
     matrix_elementwise_subtract_kernel<T><<<gridDim, blockDim>>>(d_A, d_B, d_C, rows, cols);
@@ -4165,7 +4259,7 @@ void Matrix<T>::matrix_sum(T *A, T *C, int axis)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
 
     if (axis == 0)
     {
@@ -4252,7 +4346,7 @@ void Matrix<T>::matrix_scalar_divide(T *A, T *C, T scalar)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
     // Launch the matrix scalar division kernel
     matrix_scalar_divide_kernel<T><<<gridDim, blockDim>>>(d_A, scalar, d_C, rows, cols);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
@@ -5034,7 +5128,7 @@ void Linear<T>::backward(T *loss)
     // Define grid and block dimensions
     int block_size = 16;
     dim3 blockDim(block_size, block_size,1);
-    dim3 gridDim((output_size + block_size - 1) / block_size, (input_size + block_size - 1) / block_size, 1);
+    dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
     // Launch the linear derivative kernel
     linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, rows, cols);
     if (!HandleCUDAError(cudaStreamSynchronize(stream1)))
