@@ -321,6 +321,11 @@ public:
         this->biases = (T *)malloc(rows * sizeof(T));
         this->hidden_output = (T *)malloc(rows * sizeof(T));
         this->input = (T *)malloc(cols * sizeof(T));
+        this->loss = (T *)malloc(rows * sizeof(T));
+        this->B_weights = (T *)malloc(rows * cols * sizeof(T));
+        this->B_biases = (T *)malloc(rows * sizeof(T));
+        this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
+        this->W_dW_biases = (T *)malloc(rows * sizeof(T));
         // Create random weights and biases
         // InitializeMatrix<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->weights, rows, cols);
@@ -385,6 +390,10 @@ public:
     T *hidden_output;
     T *loss;
     T *next_loss;
+    T* B_weights;
+    T* B_biases;
+    T* W_dW_weights;
+    T* W_dW_biases;
     void matrix_multiply(T *A, T *B, T *C);
     void matrix_add(T *A, T *B, T *C);
     void matrix_subtract(T *A, T *B, T *C);
@@ -1265,10 +1274,6 @@ public:
         v_biases = (T*)malloc(rows * sizeof(T));
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
-        B_weights = (T*)malloc(rows * cols * sizeof(T));
-        B_biases = (T*)malloc(rows * sizeof(T));
-        W_dW_weights = (T*)malloc(rows * cols * sizeof(T));
-        W_dW_biases = (T*)malloc(rows * sizeof(T));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
@@ -1296,10 +1301,6 @@ public:
     T* v_biases;
     T* m_weights;
     T* m_biases;
-    T* B_weights;
-    T* B_biases;
-    T* W_dW_weights;
-    T* W_dW_biases;
     void Fill_Bernoulli(){
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
@@ -3307,14 +3308,14 @@ public:
                     bernoullie_w[layer_num][i*Layer->cols + j].row = i;
                     bernoullie_w[layer_num][i*Layer->cols + j].col = j;
                     bernoullie_w[layer_num][i*Layer->cols + j].layer = layer_num;
-                    bernoullie_w[layer_num][i*Layer->cols + j].value = Layer->weights[i*Layer->cols + j];
+                    bernoullie_w[layer_num][i*Layer->cols + j].value = Layer->W_dW_weights[i*Layer->cols + j];
                 }
             }
             for(int i = 0; i<Layer->rows; i++){
                 bernoullie_b[layer_num][i].row = i;
                 bernoullie_b[layer_num][i].col = 0;
                 bernoullie_b[layer_num][i].layer = layer_num;
-                bernoullie_b[layer_num][i].value = Layer->biases[i];
+                bernoullie_b[layer_num][i].value = Layer->W_dW_biases[i];
             }
         }
     }
