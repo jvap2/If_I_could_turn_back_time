@@ -48,6 +48,8 @@
 #define TRAIN .9
 #define TEST .1
 
+
+
 void Read_Weather_Data(float **data, float **output)
 {
     std::ifstream file(WEATHER_DATA);
@@ -3326,6 +3328,26 @@ public:
             }
         }
     }
+    thrust::host_vector<Loc_Layer<T>> flatten() {   
+        thrust::host_vector<Loc_Layer<T>>  result;
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        result.insert(result.end(), bernoullie_w[layerMetadata[i].LinNumber], bernoullie_w[layerMetadata[i].LinNumber]+layers[layerMetadata[i].layerNumber]->rows*layers[layerMetadata[i].layerNumber]->cols); 
+                    }
+                }
+            }
+        }
+        return result;
+    }
 };
 
 
@@ -5403,10 +5425,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                 }
             }
         }
-        //I need to find the top Q weights with the highest bernoulli values throughout all the layers
-        thrust::sort(thrust::host, this->bernoullie_w.begin(), this->bernoullie_w.end(), CompareBernoulliWeights<T>());
-        thrust::sort(thrust::host, this->bernoullie_b.begin(), this->bernoullie_b.end(), CompareBernoulliLayers<T>());
-
+        thrust::host_vector<Loc_Layer<T>> res = flatten();
     }
 
     // Iterate over each entry in the layerMetadata vector
