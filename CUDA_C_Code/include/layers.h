@@ -206,9 +206,11 @@ void Train_Split_Test(float **data, float **output, float **train_data, float **
 struct LayerMetadata
 {
     int layerNumber;
+    int LinNumber;
     bool isUpdateable;
 
     LayerMetadata(int number, bool updateable) : layerNumber(number), isUpdateable(updateable) {}
+    LayerMetadata(int number, int linNumber, bool updateable) : layerNumber(number), LinNumber(linNumber), isUpdateable(updateable) {}
 };
 
 template <typename T>
@@ -1304,10 +1306,10 @@ public:
     void Fill_Bernoulli(){
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
-            this->B_weights[i] = rand() % 2;
+            this->B_weights[i] = 0;
         }
         for(int i = 0; i<this->rows; i++) {
-            this->B_biases[i] = rand() % 2;
+            this->B_biases[i] = 0;
         }
     }
     void update_weights_RMSProp(T learning_rate, T decay_rate) override {
@@ -2220,18 +2222,18 @@ public:
         }
     }
     void find_Loss_Metric() override {
-        T* d_Weights, d_Biases, d_d_Weights, d_d_Biases;
-        T* d_wDw, d_bDb;
+        T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
+        T *d_wDw, *d_bDb;
 
         int cols = this->cols;
         int rows = this->rows;
 
-        if (!HandleCUDAError(cudaMalloc((void **)&d_Weights, rows * cols * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Weights, rows * cols * sizeof(T))))
         {
             cout << "Error in allocating memory for d_weights" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_Biases, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Biases, rows * sizeof(T))))
         {
             cout << "Error in allocating memory for d_biases" << endl;
             exit(1);
@@ -2258,12 +2260,12 @@ public:
         }
 
         // Copy weights, biases, d_weights, and d_biases from host to device
-        if (!HandleCUDAError(cudaMemcpy(d_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying weights from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_Biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(dev_Biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying biases from host to device" << endl;
             exit(1);
@@ -2314,12 +2316,12 @@ public:
 
         //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
 
-        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_Weights, d_d_Weights, d_wDw, cols, rows);
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(dev_Weights, d_d_Weights, d_wDw, cols, rows);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_Biases, d_d_Biases, d_bDb, rows);
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(dev_Biases, d_d_Biases, d_bDb, rows);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -2350,12 +2352,12 @@ public:
         }
 
         // Free device memory
-        if (!HandleCUDAError(cudaFree(d_Weights)))
+        if (!HandleCUDAError(cudaFree(dev_Weights)))
         {
             cout << "Error in freeing d_weights" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaFree(d_Biases)))
+        if (!HandleCUDAError(cudaFree(dev_Biases)))
         {
             cout << "Error in freeing d_biases" << endl;
             exit(1);
@@ -3113,6 +3115,7 @@ public:
         this->num_layers = 0;
         this->num_activation = 0;
         this->num_derv = 0;
+        this->num_updateable = 0;
         this->optim = optimizer;
         if(optimizer == NULL){
             cout<<"Optimizer is NULL"<<endl;
@@ -3140,6 +3143,7 @@ public:
     int num_activation;
     int num_derv;
     int Q;
+    int num_updateable;
     T *input;
     T *prediction;
     Optimizer<T>* optim;
@@ -3184,7 +3188,8 @@ public:
             layer->next_loss = (T *)malloc(layer->cols * sizeof(T));
         }
         hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
-        layerMetadata.push_back(LayerMetadata(num_layers, true)); // Assuming Linear layers are updateable
+        num_updateable = bernoullie_w.size()-1;
+        layerMetadata.push_back(LayerMetadata(num_layers,num_updateable, true)); // Assuming Linear layers are updateable
         num_layers++;
         num_derv++;
     }
@@ -3303,19 +3308,21 @@ public:
     }
     void Fill_Bern(Matrix<T>* Layer, int layer_num){
         if(this->optim->name == "AdamWBernoulli"){
+            cout<<layer_num<<endl;
+            cout<<Layer->cols<<endl;
             for(int i = 0; i<Layer->rows; i++){
                 for(int j = 0; j<Layer->cols; j++){
                     bernoullie_w[layer_num][i*Layer->cols + j].row = i;
                     bernoullie_w[layer_num][i*Layer->cols + j].col = j;
                     bernoullie_w[layer_num][i*Layer->cols + j].layer = layer_num;
-                    bernoullie_w[layer_num][i*Layer->cols + j].value = Layer->W_dW_weights[i*Layer->cols + j];
+                    bernoullie_w[layer_num][i*Layer->cols + j].weights_dW = Layer->W_dW_weights[i*Layer->cols + j];
                 }
             }
             for(int i = 0; i<Layer->rows; i++){
                 bernoullie_b[layer_num][i].row = i;
                 bernoullie_b[layer_num][i].col = 0;
                 bernoullie_b[layer_num][i].layer = layer_num;
-                bernoullie_b[layer_num][i].value = Layer->W_dW_biases[i];
+                bernoullie_b[layer_num][i].weights_dW = Layer->W_dW_biases[i];
             }
         }
     }
@@ -5352,6 +5359,23 @@ int Network<T>::get_output_size()
 }
 
 template <typename T>
+struct CompareBernoulliWeights {
+    __host__ __device__
+    bool operator()(const Loc_Layer<T>* a, const Loc_Layer<T>* b) const {
+        return a->weights_dW > b->weights_dW; // Sort in descending order
+    }
+};
+
+template <typename T>
+struct CompareBernoulliLayers {
+    __host__ __device__
+    bool operator()(const Loc_Layer<T>* a, const Loc_Layer<T>* b) const {
+        return a->layer < b->layer; // Sort in ascending order
+    }
+};
+
+
+template <typename T>
 void Network<T>::update_weights(T learning_rate, int epochs, int Q)
 {
     // Ensure layers vector is not empty and is properly initialized
@@ -5373,27 +5397,16 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     if (layerMetadata[i].isUpdateable)
                     {
                         this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
+                        Fill_Bern(this->layers[layerMetadata[i].layerNumber], layerMetadata[i].LinNumber);
+                        
                     }
                 }
             }
         }
-        for (int i = 0; i < layerMetadata.size(); i++)
-        {
-            // Validate layerNumber is within bounds
-            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
-            {
-                // Check if the layer pointer is not null
-                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
-                {
-                    // Check if the current layer is marked as updateable
-                    if (layerMetadata[i].isUpdateable)
-                    {
-                        // Find the top Q dW*W
+        //I need to find the top Q weights with the highest bernoulli values throughout all the layers
+        thrust::sort(thrust::host, this->bernoullie_w.begin(), this->bernoullie_w.end(), CompareBernoulliWeights<T>());
+        thrust::sort(thrust::host, this->bernoullie_b.begin(), this->bernoullie_b.end(), CompareBernoulliLayers<T>());
 
-                    }
-                }
-            }
-        }
     }
 
     // Iterate over each entry in the layerMetadata vector
