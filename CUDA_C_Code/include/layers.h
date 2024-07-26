@@ -5383,18 +5383,13 @@ int Network<T>::get_output_size()
 template <typename T>
 struct CompareBernoulliWeights {
     __host__ __device__
-    bool operator()(const Loc_Layer<T>* a, const Loc_Layer<T>* b) const {
-        return a->weights_dW > b->weights_dW; // Sort in descending order
+    bool operator()(const Loc_Layer<T>& lhs, const Loc_Layer<T>& rhs) const {
+        // Assuming Loc_Layer has a member function or variable to get the weight
+        return lhs.weights_dW > rhs.weights_dW; // Sort in ascending order
     }
 };
 
-template <typename T>
-struct CompareBernoulliLayers {
-    __host__ __device__
-    bool operator()(const Loc_Layer<T>* a, const Loc_Layer<T>* b) const {
-        return a->layer < b->layer; // Sort in ascending order
-    }
-};
+
 
 
 template <typename T>
@@ -5426,6 +5421,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
             }
         }
         thrust::host_vector<Loc_Layer<T>> res = flatten();
+        thrust::sort(res.begin(), res.end(), CompareBernoulliWeights<T>());
     }
 
     // Iterate over each entry in the layerMetadata vector
