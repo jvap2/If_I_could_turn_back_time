@@ -12,7 +12,7 @@ int main(){
     int* hidden_layers = new int[num_layers-2];
     hidden_layers[0] = 16;
     int batch_size = 32;
-    int Q = 1024;
+    int Q = 64;
     // Create a network
     float** input = new float*[WEATHER_SIZE];
     float** target = new float*[WEATHER_SIZE];

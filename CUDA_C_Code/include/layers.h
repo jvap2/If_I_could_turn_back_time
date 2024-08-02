@@ -385,6 +385,8 @@ public:
         }
     }
     virtual void set_labels(float *labels) {};
+    virtual void set_Bernoulli(int row, int col) {};
+    virtual void Fill_Bernoulli(){};
     int rows;
     int cols;
     T *weights;
@@ -1305,7 +1307,7 @@ public:
     T* v_biases;
     T* m_weights;
     T* m_biases;
-    void Fill_Bernoulli(){
+    void Fill_Bernoulli() override{
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
             this->B_weights[i] = 0;
@@ -1313,6 +1315,9 @@ public:
         for(int i = 0; i<this->rows; i++) {
             this->B_biases[i] = 0;
         }
+    }
+    void set_Bernoulli(int row, int col) override{
+        this->B_weights[row*(this->cols) + col] = 1;
     }
     void update_weights_RMSProp(T learning_rate, T decay_rate) override {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases;
@@ -5389,6 +5394,15 @@ struct CompareBernoulliWeights {
     }
 };
 
+template <typename T>
+struct CompareBernoulliLayers {
+    __host__ __device__
+    bool operator()(const Loc_Layer<T>& lhs, const Loc_Layer<T>& rhs) const {
+        // Assuming Loc_Layer has a member function or variable to get the weight
+        return lhs.layer > rhs.layer; // Sort in ascending order
+    }
+};
+
 
 
 
@@ -5422,6 +5436,13 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         }
         thrust::host_vector<Loc_Layer<T>> res = flatten();
         thrust::sort(res.begin(), res.end(), CompareBernoulliWeights<T>());
+        thrust::sort(res.begin(), res.begin()+Q, CompareBernoulliLayers<T>());
+        //Use the column and rows to set Bernoulli
+        for(int i = 0; i < Q; i++){
+            this->layers[res[i].layer]->set_Bernoulli(res[i].row, res[i].col);
+        }
+        
+        
     }
 
     // Iterate over each entry in the layerMetadata vector
@@ -5451,6 +5472,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     }
                     else if(this->optim->name == "AdamWBernoulli"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWBernoulli(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
                     }
                     else{
                         cout<<"Optimizer not found"<<endl;
@@ -5510,7 +5532,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int gt_idx = 0;
     int sum = 0;
 
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < epochs; i++)
     {
         for (int k = 0; k < batch_size; k++)
         {
@@ -5519,7 +5541,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         }
         sum = 0;
         cout << "Epoch: " << i << endl;
-        for (int j = 0; j < 1; j++)
+        for (int j = 0; j < batch_size; j++)
         {
             cout << "Batch: " << j << endl;
             layers[layers.size() - 1]->set_labels(output[indices[j]]);
