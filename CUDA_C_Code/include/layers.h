@@ -4771,15 +4771,14 @@ void RELU_layer<T>::forward(T *input, T *output)
 }
 
 template <typename T>
-__global__ void RELU_derivative_kernel(T *input, T *output, int size)
+__global__ void RELU_derivative_kernel(T *input, T *output, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int batch = blockIdx.x*blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        output[index] = input[index] > 0 ? 1 : 0;
-        // printf("output[%d] = %f\n", index, output[index]);
-        // printf("input[%d] = %f\n", index, input[index]);
+        output[index*batch_size+batch] = input[index*batch_size+batch] > 0 ? 1 : 0;
     }
 }
 
@@ -4790,19 +4789,20 @@ void RELU_layer<T>::backward(T *loss)
     T *d_input, *d_output;
     T *d_loss;
     T *input = this->hidden_output;
+    int batch_size = this->batch_size;
 
     int size = this->rows;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_loss_mat" << endl;
         exit(1);
@@ -4820,20 +4820,21 @@ void RELU_layer<T>::backward(T *loss)
     }
 
     // Define grid and block dimensions
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 16;
     int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid_batch = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
 
-    dim3 gridDim(blocksPerGrid, 1, 1);
-    dim3 blockDim(threadsPerBlock, 1, 1);
+    dim3 gridDim(blocksPerGrid_batch, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
     // Launch the sigmoid derivative kernel
-    RELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+    RELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
 
-    vector_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss, d_loss, size);
+    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss, d_loss, size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -4846,7 +4847,7 @@ void RELU_layer<T>::backward(T *loss)
     }
 
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -5157,7 +5158,7 @@ void Linear<T>::backward(T *loss)
         cout << "Error in allocating memory for d_biases" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_F, cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_F, cols * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_F" << endl;
         exit(1);
