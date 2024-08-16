@@ -4970,7 +4970,7 @@ void Linear<T>::forward(T *input, T *output)
         exit(1);
     }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, output_size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -5015,7 +5015,7 @@ void Linear<T>::forward(T *input, T *output)
 }
 
 template <typename T>
-__global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int rows, int cols)
+__global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int rows, int cols, int batch_size)
 {
 
     /*Calculate the weight update for the backward step
@@ -5057,40 +5057,58 @@ __global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int r
     // Multiply the loss by the transpose of the input (x^T)*delta
     // This is the derivative of the loss with respect to the weights
     // Should be an outer product between o_i and delta_j
-    if (row < rows && col < cols)
-    {
-        d_Weights[row * cols + col] = output[col] * loss[row];
-        // if(row == 0){
-        //     printf("d_input[%d] = %f\n", col, output[col]);
-        // }
+    // Reference for batch_size = 1
+    // if (row < rows && col < cols)
+    // {
+    //     d_Weights[row * cols + col] = output[col] * loss[row];
+    // }
+    if(row < rows && col < cols){
+        T sum = 0;
+        for (int k = 0 ; k < batch_size ; k++){
+            sum += output[col * batch_size + k] * loss[row * batch_size + k];
+        }
+        d_Weights[row * cols + col] = sum;
     }
-
     // Sum the loss to get the derivative of the loss with respect to the biases
 }
 
 
 template <typename T>
-__global__ void linear_weight_derivatives(T *loss, T *Weights, T *d_F, int rows, int cols){
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (col < cols)
-    {
+__global__ void linear_weight_derivatives(T *loss, T *Weights, T *d_F, int rows, int cols, int batch_size){
+    int col = blockIdx.x * blockDim.x + threadIdx.x; // columns
+    int batch = blockIdx.y * blockDim.y + threadIdx.y; //batch_size
+    //Compute gradient with respect to weights
+    // dx = np.dot(dout, self.W.T)  
+    //Now we must do this for a loss matrix of size cols x batch_size
+    // if (col < cols)
+    // {
+    //     T sum = 0;
+    //     for (int i = 0; i < rows; i++)
+    //     {
+    //         sum += loss[i] * Weights[col * rows + i]; // Gradient of the loss w.r.t. input x, delta* W^T
+    //     }
+    //     d_F[col] = sum;
+    // }
+    if(row < batch_size && col < cols){
         T sum = 0;
-        for (int i = 0; i < rows; i++)
-        {
-            sum += loss[i] * Weights[i * cols + col];
+        for (int k = 0 ; k < rows ; k++){
+            sum += Weights[col * rows + k] * loss[k* batch_size + batch];
         }
-        d_F[col] = sum;
-        // printf("d_F[%d] = %f\n", col, d_F[col]);
+        d_F[col * batch_size + batch] = sum;
     }
 
 }
 
 template <typename T>
-__global__ void linear_bias_derivatives(T *loss, T *d_biases, int rows){
+__global__ void linear_bias_derivatives(T *loss, T *d_biases, int rows, int batch_size){
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     if (row < rows)
     {
-        d_biases[row] = loss[row];
+        T sum = 0;
+        for(int i = 0; i < batch_size; i++){
+            sum += loss[row * batch_size + i];
+        }
+        d_biases[row] = sum;
     }
 }
 
@@ -5107,23 +5125,14 @@ void Linear<T>::backward(T *loss)
     // cout<<"Linear Backwards"<<endl;
     int rows = this->rows;
     int cols = this->cols;
-    // cout<<"Linear Rows "<<rows<<endl;
-    // cout<<"Linear Cols "<<cols<<endl;
-    // for(int i = 0; i < rows; i++){
-    //     cout<<loss[i]<<" ";
-    // }
-    // cout<<endl;
-    // cout<<"Input for Linear Backwards"<<endl;
-    // for(int i = 0; i < cols; i++){
-    //     cout<<this->input[i]<<" ";
-    // }
+    int batch_size = this->batch_size;
     cout<<endl;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, cols * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
@@ -5158,7 +5167,7 @@ void Linear<T>::backward(T *loss)
         cout << "Loss is NULL" << endl;
     }
     // Copy input, weights, and biases from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device, Linear Loss" << endl;
         exit(1);
@@ -5183,7 +5192,7 @@ void Linear<T>::backward(T *loss)
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
     }
-    if(!HandleCUDAError(cudaMemcpy(d_output,this->input,cols*sizeof(T),cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_output,this->input,cols * batch_size * sizeof(T),cudaMemcpyHostToDevice))){
         cout<<"Error in copying output from host to device"<<endl;
         exit(1);
     }
@@ -5193,7 +5202,6 @@ void Linear<T>::backward(T *loss)
     // Define grid and block dimensions
     int threadsPerBlock = 256;
     int blocksPerGrid_Rows = (rows + threadsPerBlock - 1) / threadsPerBlock;
-    int blocksPerGrid_Cols = (cols + threadsPerBlock - 1) / threadsPerBlock;
 
     // Define the streams
     cudaStream_t stream1, stream2, stream3;
@@ -5219,6 +5227,8 @@ void Linear<T>::backward(T *loss)
     int block_size = 16;
     dim3 blockDim(block_size, block_size,1);
     dim3 gridDim((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+    dim3 gridDim_Cols((cols + block_size - 1) / block_size, (batch_size+block_size-1)/block_size, 1);
     // Launch the linear derivative kernel
     linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, rows, cols);
     if (!HandleCUDAError(cudaStreamSynchronize(stream1)))
@@ -5226,13 +5236,13 @@ void Linear<T>::backward(T *loss)
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
-    linear_weight_derivatives<T><<<blocksPerGrid_Cols,threadsPerBlock,0,stream2>>>(d_loss,dev_weights,d_F,rows,cols);
+    linear_weight_derivatives<T><<<gridDim_Cols,blockDim,0,stream2>>>(d_loss,dev_weights,d_F,rows,cols, batch_size);
     if (!HandleCUDAError(cudaStreamSynchronize(stream2)))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
-    linear_bias_derivatives<T><<<blocksPerGrid_Rows,threadsPerBlock,0,stream3>>>(d_loss,dd_biases,rows);
+    linear_bias_derivatives<T><<<blocksPerGrid_Rows,threadsPerBlock,0,stream3>>>(d_loss,dd_biases,rows, batch_size);
     if (!HandleCUDAError(cudaStreamSynchronize(stream3)))
     {
         cout << "Error in synchronizing device" << endl;
@@ -5264,7 +5274,7 @@ void Linear<T>::backward(T *loss)
         cout << "Error in copying output from device to host" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_F, cols * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_F, cols * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);

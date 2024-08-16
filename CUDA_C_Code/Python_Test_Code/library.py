@@ -45,7 +45,8 @@ class Linear:
 
     def backward(self, dout):
         x = self.cache  # Retrieve the cached input
-
+        print("dout shape: ", dout.shape)
+        print("W.T shape: ", self.W.T.shape)
         # Compute gradient with respect to input
         dx = np.dot(dout, self.W.T)  # Gradient of the loss w.r.t. input x, delta* W^T
 
@@ -178,10 +179,12 @@ nn = NeuralNetwork(layers)
 # Forward pass
 x = np.random.randn(10, 4)  # Example input
 output = nn.forward(x)
+y = np.random.randn(10, 3)  # Example output
 
+def compute_loss(output, y):
+    return np.sum((output - y) ** 2)
 # # Compute loss (example, assuming some loss function)
-# loss = compute_loss(output, y)
+loss = compute_loss(output, y)
 
-# # Backward pass
-# dout = compute_loss_gradient(output, y)  # Gradient of loss w.r.t. output
-# nn.backward(dout)
+# Backward pass
+nn.backward(loss)
