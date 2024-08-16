@@ -389,6 +389,7 @@ public:
     virtual void Fill_Bernoulli(){};
     int rows;
     int cols;
+    int batch_size;
     T *weights;
     T *biases;
     T *d_weights;
@@ -1307,7 +1308,6 @@ public:
     T* v_biases;
     T* m_weights;
     T* m_biases;
-    int batch_size;
     void Fill_Bernoulli() override{
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
@@ -4892,16 +4892,16 @@ __global__ void linear_kernel(T *input, T *output, T *weights, T *biases, int in
 }
 
 template <typename T>
-__global__ void linear_kernel(T* Weights, T* Input, T* Output, const int ny, const int nx, const int batch_size) {
+__global__ void linear_kernel_batch(T* Input, T* Output, T* Weights, T* bias, const int nx, const int ny, const int batch_size) {
 	int row = threadIdx.y + (blockIdx.y * blockDim.y);
 	int col = threadIdx.x + (blockIdx.x * blockDim.x);
 	float fSum = 0.0f;
 	//This conditional is for debugging, even though done on the device
 	if (row < ny && col < batch_size) { 
 		for (int k = 0; k < nx; k++) {
-			fSum += g_A[row * nx + k] * g_B[k * batch_size + col];
+			fSum += Weights[row * nx + k] * Input[k * batch_size + col];
 		}
-		g_C[row * nx + col] = fSum;
+		Output[row * batch_size + col] = fSum + bias[row];
 	}
 }
 
@@ -4912,17 +4912,17 @@ void Linear<T>::forward(T *input, T *output)
     int input_size = this->cols;
     int output_size = this->rows;
     int batch_size = this->batch_size;
-    memcpy(this->input, input, input_size * sizeof(T));
+    memcpy(this->input, input, input_size * batch_size * sizeof(T));
     // for(int i = 0; i < input_size; i++){
     //     cout<<input[i]<<" ";
     // }
     T *d_input, *d_output, *dev_weights, *dev_biases;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, output_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, output_size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
@@ -4939,7 +4939,7 @@ void Linear<T>::forward(T *input, T *output)
     }
 
     // Copy input, weights, and biases from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, input_size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device, Linear" << endl;
         exit(1);
@@ -4963,7 +4963,7 @@ void Linear<T>::forward(T *input, T *output)
     dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the linear kernel
-    linear_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, dev_weights, dev_biases, input_size, output_size);
+    linear_kernel_batch<T><<<gridDim, blockDim>>>(d_input, d_output, dev_weights, dev_biases, input_size, output_size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;

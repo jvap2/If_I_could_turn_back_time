@@ -8,3 +8,5 @@ Loss[2] = -149505433879864934400.000000
 
 
 need to address why this is blowing up
+
+line 4924, trying to incorporate batch learning
