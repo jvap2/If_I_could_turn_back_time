@@ -933,15 +933,36 @@ void LeakyRELU_layer<T>::backward(T* loss){
 
 }
 
-template <typename T>
-__global__ void softmax_kernel(T *input, T *output, T reduce, int size)
-{
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < size)
-    {
-        output[index] = input[index] / reduce;
+template <typename T>
+__global__ void Col_Wise_Reduce(T* input, T* red, T* max, int cols, int batch_size){
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if(batch<batch_size){
+        for(int i = 0; i<cols; i++){
+            input[i*batch_size + batch] = exp(input[i*batch_size + batch] - max[batch]);
+        }
     }
+    __syncthreads();
+    if(batch < batch_size){
+        T sum = 0;
+        for(int i = 0; i < cols; i++){
+            sum += input[i*batch_size + batch];
+        }
+        red[batch] = sum;
+    }
+}
+
+template <typename T>
+__global__ void softmax_kernel(T *input, T *output, T* reduce, int size, int batch_size)
+{
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    if (index < size && batch < batch_size)
+    {
+        output[index*batch_size + batch] = input[index*batch_size + batch] / reduce[batch];
+    }
+
+
 }
 
 template <typename T>
@@ -1027,6 +1048,7 @@ public:
             }
         }
         T* d_max;
+        T* d_reduce;
         if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
@@ -1040,6 +1062,11 @@ public:
         if(!HandleCUDAError(cudaMalloc((void **)&d_max, batch_size * sizeof(T))))
         {
             cout<<"Error in allocating memory for d_max"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_reduce, batch_size * sizeof(T))))
+        {
+            cout<<"Error in allocating memory for d_reduce"<<endl;
             exit(1);
         }
         // Copy input from host to device
@@ -1060,6 +1087,25 @@ public:
         // Corrected transformation for applying exp
 
         int threadsPerBlock = 16;
+        int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+        int batchBlocksPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+        dim3 gridDim(batchBlocksPerGrid, blocksPerGrid, 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+        int TPB = 256;
+        int blocks = (batch_size + TPB - 1) / TPB;
+        Col_Wise_Reduce<<<blocks, TPB>>>(d_input, d_reduce, d_max, size, batch_size);
+        if (!HandleCUDAError(cudaDeviceSynchronize()))
+        {
+            cout << "Error in synchronizing device" << endl;
+            exit(1);
+        }
+        softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_reduce, size, batch_size);
+        if (!HandleCUDAError(cudaDeviceSynchronize()))
+        {
+            cout << "Error in synchronizing device" << endl;
+            exit(1);
+        }
         // Copy the result output from device to host
         if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
@@ -2479,7 +2525,7 @@ __global__ void Binary_Cross_Entropy_Kernel(T *input, T *output, T *loss, int si
 }
 
 template <typename T>
-__global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size)
+__global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size, int batch_size)
 {
     /*def forward(self, bottom, top):
    labels = bottom[1].data
@@ -2501,11 +2547,11 @@ __global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size
 
    self.diff[...] = probs  # Store softmax activations
    top[0].data[...] = data_loss # Store loss*/
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (index < size)
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    if (index < size && batch < batch_size)
     {
-        loss[index] = -1 * input[index] * log(output[index]);
+        loss[index*batch_size + batch] = -1 * input[index*batch_size + batch] * log(output[index*batch_size + batch]);
     }
 }
 
@@ -2973,42 +3019,32 @@ public:
         // Allocate device memory for input and output
         T *d_input, *d_output, *d_loss;
         int rows = this->rows;
-        // if(input == NULL){
-        //     cout<<"Input of Categorical is NULL"<<endl;
-        //     exit(1);
-        // }
-
-        // if(output == NULL){
-        //     cout<<"Output of Categorical is NULL"<<endl;
-        //     exit(1);
-        // } else{
-        //     cout<<"Output of Categorical is not NULL"<<endl;
-        // }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * sizeof(T))))
+        int batch_size = this->batch_size;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_output" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
 
         // Copy input from host to device
-        if (!HandleCUDAError(cudaMemcpy(d_input, input, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_input, input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Categorical" << endl;
             exit(1);
         }
         // cout<<sizeof(output)<<endl;
         // cout<<rows*sizeof(T)<<endl;
-        if (!HandleCUDAError(cudaMemcpy(d_output, output, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_output, output, rows * batch_size *  sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying output from host to device" << endl;
             exit(1);
@@ -3016,14 +3052,14 @@ public:
 
         // Define grid and block dimensions
 
-        int threadsPerBlock = 256;
+        int threadsPerBlock = 16;
         int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
-
-        dim3 gridDim(blocksPerGrid, 1, 1);
-        dim3 blockDim(threadsPerBlock, 1, 1);
+        int batchPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+        dim3 gridDim(batchPerGrid, blocksPerGrid, 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
         // Launch the categorical cross entropy kernel
-        Categorical_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, rows);
+        Categorical_Cross_Entropy<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
@@ -3031,7 +3067,7 @@ public:
         }
 
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->loss, d_loss, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host" << endl;
             exit(1);
