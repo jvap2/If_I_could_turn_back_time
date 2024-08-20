@@ -554,6 +554,26 @@ __global__ void matrix_vector_multiply_kernel(T *A, T *B, T *C, int rows, int co
 }
 
 template <typename T>
+__global__ void matrix3D_vector_multiply_kernel(T *A, T *B, T *C, int rows, int cols, int depth)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // matrix is rows x cols x depth
+    // vector is cols x depth
+    // output is rows x depth
+    if (row < rows && batch < depth)
+    {
+        T sum = 0;
+        for (int k = 0; k < cols; k++)
+        {
+            sum += A[batch * rows * cols + row * cols + k] * B[k * cols + batch];
+        }
+        C[row*depth+batch] = sum;
+    }
+}
+
+template <typename T>
 __global__ void matrix_vector_addition_kernel(T *A, T *B, T *C, int rows, int cols)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -710,24 +730,24 @@ public:
 
 
 template <typename T>
-__global__ void LeakyRELU_kernel(T *input, T *output, T alpha, int size)
+__global__ void LeakyRELU_kernel(T *input, T *output, T alpha, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size)
     {
-        output[index] = input[index] > 0 ? input[index] : alpha * input[index];
+        output[index*batch_size + batch] = input[index*batch_size + batch] > 0 ? input[index*batch_size + batch] : alpha * input[index*batch_size + batch];
     }
 }
 
 
 template <typename T>
-__global__ void LeakyRELU_derivative_kernel(T *input, T *output, T alpha, int size){
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (index < size)
+__global__ void LeakyRELU_derivative_kernel(T *input, T *output, T alpha, int size, int batch_size){
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size && batch < batch_size)
     {
-        output[index] = input[index] > 0 ? 1 : -alpha;
+        output[index*batch_size+batch] = input[index*batch_size+batch] > 0 ? 1 : -alpha;
     }
 }
 
@@ -761,40 +781,41 @@ void LeakyRELU_layer<T>::forward(T *input, T *output)
     // Allocate device memory for input and output
     T *d_input, *d_output;
     int size = this->rows;
+    int batch_size = this->batch_size;
     if (input == NULL)
     {
         cout << "Input LeakyRELU is NULL" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
     // Copy input from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device, LeakyRELU" << endl;
         exit(1);
     }
     // Define grid and block dimensions
-    int TPB = 256;
-    dim3 blockDim(TPB, 1, 1);
-    dim3 gridDim((size + TPB - 1) / TPB, 1, 1);
+    int TPB = 16;
+    dim3 blockDim(TPB, TPB, 1);
+    dim3 gridDim((batch_size + TPB -1 ) / TPB, (size + TPB - 1) / TPB, 1);
     // Launch the LeakyRELU kernel
-    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size);
+    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -831,49 +852,50 @@ void LeakyRELU_layer<T>::backward(T* loss){
     T *d_temp_loss;
     T *d_out;
     int rows = this->rows;
+    int batch_size = this->batch_size;
     if (loss == NULL)
     {
         cout << "Loss of LeakyRELU is NULL" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_loss" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_out" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_temp_loss" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device, LeakyRELU loss" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying loss from host to device, LeakyRELU loss" << endl;
         exit(1);
     }
     // Define grid and block dimensions
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
-    dim3 gridDim(blocksPerGrid, 1, 1);
-    dim3 blockDim(threadsPerBlock, 1, 1);
+    int threadsPerBlock = 16;
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+    dim3 gridDim((batch_size + blockDim.x - 1) / blockDim.x, (rows + blockDim.y - 1) / blockDim.y, 1);
     // Launch the LeakyRELU derivative kernel
-    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss,this->alpha, rows);
+    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss,this->alpha, rows, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
-    matrix_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows);
+    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -883,7 +905,7 @@ void LeakyRELU_layer<T>::backward(T* loss){
         cout<<"Next loss is NULL"<<endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -923,16 +945,17 @@ __global__ void softmax_kernel(T *input, T *output, T reduce, int size)
 }
 
 template <typename T>
-__global__ void softmax_derivative_kernel(T *input, T *output, int size)
+__global__ void softmax_derivative_kernel(T *input, T *output, int size, int batch_size)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < size && col < size)
+    int batch = blockIdx.z * blockDim.z + threadIdx.z;
+    if (row < size && col < size && batch < batch_size)
     {
         if(row == col) {
-            output[row * size + col] = input[row] * (1 - input[col]);
+            output[row * size + col + batch*size*size] = input[row*batch_size+batch] * (1 - input[col*batch_size+batch]);
         } else {
-            output[row * size + col] = -input[row] * input[col];
+            output[row * size + col + batch*size*size] = -input[row*batch_size+batch] * input[col*batch_size+batch];
         }  
 
     }
@@ -975,71 +998,70 @@ public:
     void forward(T *input, T *output) override
     {
         // Allocate device memory for input and output
-        T max = *thrust::max_element(thrust::host, input, input + this->rows);
+        T* max = new T [this->batch_size];
+        //Find the max of each column in input;
+        for(int i = 0; i<this->batch_size; i++) {
+            max[i] = input[i];
+            for(int j = 1; j<this->rows; j++) {
+                if(input[j*this->batch_size+i] > max[i]) {
+                    max[i] = input[j*this->batch_size+i];
+                }
+            }
+        }
         int size = this->rows;
+        int batch_size = this->batch_size;
         T *d_input, *d_output;
         if (input == NULL)
         {
             cout << "Input Softmax is NULL" << endl;
-            input = (T *)malloc(size * sizeof(T));
+            input = (T *)malloc(size * batch_size *sizeof(T));
             if (input == NULL)
             {
                 cout << "Input of Softmax is NULL" << endl;
                 exit(1);
             }
         } else {
-            for(int i = 0; i<size; i++) {
+            for(int i = 0; i<size*batch_size; i++) {
                 this->input[i] = input[i];
                 // cout<<"Input["<<i<<"]"<<input[i]<<endl;
             }
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
+        T* d_max;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_output" << endl;
             exit(1);
         }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_max, batch_size * sizeof(T))))
+        {
+            cout<<"Error in allocating memory for d_max"<<endl;
+            exit(1);
+        }
         // Copy input from host to device
-        if (!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Softmax" << endl;
             exit(1);
         }
-        thrust::fill(thrust::device, d_output, d_output + size, (T)0);
+        if(!HandleCUDAError(cudaMemcpy(d_max, max, batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout<<"Error in copying max from host to device"<<endl;
+            exit(1);
+        }
+        thrust::fill(thrust::device, d_output, d_output + size*batch_size, (T)0);
 
         // Define grid and block dimensions
         // Launch the softmax kernel
         // Corrected transformation for applying exp
 
-        //Find max of input
-
-        thrust::transform(thrust::device, d_input, d_input + size, d_output, [max] __device__(T x)
-                        { return x - max; });
-        thrust::transform(thrust::device, d_input, d_input + size, d_output, [max] __device__(T x)
-                        { return exp(x); });
-
-        // Step 3: Sum the exponentials
-        T sum = thrust::reduce(thrust::device, d_output, d_output + size, (T)0, thrust::plus<T>());
-
-        // Step 4: Divide each exponential by the sum
-        // Corrected transformation for dividing each element by the sum
-
-        int TPB = 256;
-        dim3 blockDim(TPB, 1, 1);
-        dim3 gridDim((size + TPB - 1) / TPB, 1, 1);
-
-
-        softmax_kernel<T><<<gridDim, blockDim>>>(d_output, d_output, sum, size);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
-            cout<<"Error in synchronizing device"<<endl;
-            exit(1);
-        }
+        int threadsPerBlock = 16;
         // Copy the result output from device to host
-        if (!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying output from device to host" << endl;
         }
@@ -1072,55 +1094,58 @@ public:
         T *d_temp_loss;
         T *d_out;
         int rows = this->rows;
+        int batch_size = this->batch_size;
         if (loss == NULL)
         {
             cout << "Loss of Softmax is NULL" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_out" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * rows * batch_size * sizeof(T))))
         {
+            //May need to make a 3D matrix for this
             cout << "Error in allocating memory for d_temp_loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Softmax loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying loss from host to device, Softmax loss" << endl;
             exit(1);
         }
         // Define grid and block dimensions
-        int threadsPerBlock = 256;
+        int threadsPerBlock = 16;
         int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
-        dim3 gridDim(blocksPerGrid, 1, 1);
-        dim3 blockDim(threadsPerBlock, 1, 1);
+        int batchBlocksPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+        dim3 gridDim(batchBlocksPerGrid, blocksPerGrid , 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
-        int twodthreadsPerBlock = 16;
-        dim3 twodblockDim(twodthreadsPerBlock, twodthreadsPerBlock, 1);
+        int twodthreadsPerBlock = 8;
+        dim3 twodblockDim(twodthreadsPerBlock, twodthreadsPerBlock, twodthreadsPerBlock);
 
-        dim3 twodgridDim((rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, (rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, 1);
+        dim3 twodgridDim((rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, (rows + twodthreadsPerBlock - 1) / twodthreadsPerBlock, (batch_size + twodthreadsPerBlock - 1) / twodthreadsPerBlock);
 
         // Launch the softmax derivative kernel
-        softmax_derivative_kernel<T><<<twodgridDim, twodblockDim>>>(d_out, d_temp_loss, rows);
+        softmax_derivative_kernel<T><<<twodgridDim, twodblockDim>>>(d_out, d_temp_loss, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-        matrix_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows);
+        matrix3D_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
@@ -1132,7 +1157,7 @@ public:
             exit(1);
         }
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host Softmax" << endl;
             // exit(1);
@@ -2518,13 +2543,15 @@ __global__ void Binary_Cross_Entropy_Derivative(T *input, T *output, T *loss, in
 }
 
 template <typename T>
-__global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *loss, int size)
+__global__ void Categorical_Cross_Entropy_Derivative(T *input, T *output, T *loss, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+
     // The input is the output of the network and the output is the ground truth
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        loss[index] = -1 * (output[index] / input[index]);
+        loss[index* batch_size + batch] = -1 * (output[index* batch_size + batch] / input[index* batch_size + batch]);
     }
     __syncthreads();
 }
@@ -3037,48 +3064,50 @@ public:
         T *d_loss;
         T *d_out, *d_gt;
         int rows = this->rows;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * sizeof(T))))
+        int batch_size = this->batch_size;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_out" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_gt, rows * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_gt, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_gt" << endl;
             exit(1);
         }
 
-        if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Categorical Loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_gt, this->labels, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_gt, this->labels, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying output from host to device" << endl;
             exit(1);
         }
 
-        int threadsPerBlock = 256;
+        int threadsPerBlock = 16;
         int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+        int blocksPerGrid2 = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
 
-        dim3 gridDim(blocksPerGrid, 1, 1);
-        dim3 blockDim(threadsPerBlock, 1, 1);
+        dim3 gridDim(blocksPerGrid2, blocksPerGrid, 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
         // Launch the categorical cross entropy derivative kernel
-        Categorical_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, rows);
+        Categorical_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host" << endl;
             exit(1);
@@ -4578,13 +4607,14 @@ void Sigmoid<T>::forward(T *input, T *output)
 }
 
 template <typename T>
-__global__ void sigmoid_derivative_kernel(T *input, T *output, int size)
+__global__ void sigmoid_derivative_kernel(T *input, T *output, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        output[index] = input[index] * (1 - input[index]);
+        output[index*batch_size+batch] = input[index*batch_size+batch] * (1 - input[index*batch_size+batch]);
     }
 }
 
@@ -4597,44 +4627,46 @@ void Sigmoid<T>::backward(T *loss)
     T *d_loss_mat;
     T *input = this->output;
     int rows = this->rows;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * sizeof(T))))
+    int batch_size = this->batch_size;
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * batch_size* sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_loss_mat, rows * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss_mat, rows * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_loss_mat" << endl;
         exit(1);
     }
 
     // Copy input from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device" << endl;
         exit(1);
     }
 
     // Define grid and block dimensions
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 16;
     int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid2 = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
 
-    dim3 gridDim(blocksPerGrid, 1, 1);
-    dim3 blockDim(threadsPerBlock, 1, 1);
+    dim3 gridDim(blocksPerGrid2, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
     // Launch the sigmoid derivative kernel
-    sigmoid_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, rows);
+    sigmoid_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, rows, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
-    vector_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss_mat, d_loss_mat, rows);
+    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_output, d_loss_mat, d_loss_mat, rows, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -4642,7 +4674,7 @@ void Sigmoid<T>::backward(T *loss)
     }
 
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(loss, d_loss_mat, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(loss, d_loss_mat, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -4672,13 +4704,14 @@ void Sigmoid<T>::backward(T *loss)
 }
 
 template <typename T>
-__global__ void RELU_kernel(T *input, T *output, int size)
+__global__ void RELU_kernel(T *input, T *output, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        output[index] = input[index] > 0 ? input[index] : 0;
+        output[index*batch_size + batch] = input[index*batch_size + batch] > 0 ? input[index*batch_size + batch] : 0;
     }
 }
 
@@ -4687,11 +4720,12 @@ void RELU_layer<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input and output
     int size = this->rows;
+    int batch_size = this->batch_size;
     // this->input = input;
     if (input == NULL)
     {
         cout << "Input RELU is NULL" << endl;
-        input = (T *)malloc(size * sizeof(T));
+        input = (T *)malloc(size * batch_size* sizeof(T));
         if (input == NULL)
         {
             cout << "Input of RELU is NULL" << endl;
@@ -4701,28 +4735,28 @@ void RELU_layer<T>::forward(T *input, T *output)
     if (output == NULL)
     {
         cout << "Output of RELU is NULL" << endl;
-        output = (T *)malloc(size * sizeof(T));
+        output = (T *)malloc(size * batch_size * sizeof(T));
         if (output == NULL)
         {
             cout << "Output of RELU is NULL" << endl;
             exit(1);
         }
     }
-    memcpy(this->input, input, size * sizeof(T));
+    memcpy(this->input, input, size * batch_size * sizeof(T));
     T *d_input, *d_output;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
 
     // Copy input from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device, ReLU" << endl;
         exit(1);
@@ -4736,14 +4770,14 @@ void RELU_layer<T>::forward(T *input, T *output)
     dim3 blockDim(threadsPerBlock, 1, 1);
 
     // Launch the RELU kernel
-    RELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size);
+    RELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
         exit(1);
     }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -4766,7 +4800,7 @@ void RELU_layer<T>::forward(T *input, T *output)
         exit(1);
     }
     // this->hidden_output = output;
-    memcpy(this->hidden_output, output, size * sizeof(T));
+    memcpy(this->hidden_output, output, size * batch_size * sizeof(T));
 
 }
 
@@ -5090,7 +5124,7 @@ __global__ void linear_weight_derivatives(T *loss, T *Weights, T *d_F, int rows,
     //     }
     //     d_F[col] = sum;
     // }
-    if(row < batch_size && col < cols){
+    if(batch < batch_size && col < cols){
         T sum = 0;
         for (int k = 0 ; k < rows ; k++){
             sum += Weights[col * rows + k] * loss[k* batch_size + batch];
@@ -5231,7 +5265,7 @@ void Linear<T>::backward(T *loss)
 
     dim3 gridDim_Cols((cols + block_size - 1) / block_size, (batch_size+block_size-1)/block_size, 1);
     // Launch the linear derivative kernel
-    linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, rows, cols);
+    linear_derivative_kernel<T><<<gridDim, blockDim,0,stream1>>>(d_loss, dd_weights, d_output, rows, cols, batch_size);
     if (!HandleCUDAError(cudaStreamSynchronize(stream1)))
     {
         cout << "Error in synchronizing device" << endl;
