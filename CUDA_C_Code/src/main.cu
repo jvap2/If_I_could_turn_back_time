@@ -36,21 +36,21 @@ int main(){
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, WEATHER_SIZE);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     AdamWBernoulli<float>* optimizer = new AdamWBernoulli<float>(.001, .9, .999, 1e-8);
-    Network<float> net(input_size, output_size, optimizer,Q);
-    net.addLayer(new Linear<float>(input_size, 16));
-    net.addLayer(new RELU_layer<float>(16));
-    net.addLayer(new Linear<float>(16, 32));
-    net.addLayer(new RELU_layer<float>(32));
+    Network<float> net(input_size, output_size, optimizer,Q,batch_size);
+    net.addLayer(new Linear<float>(input_size, 16,batch_size));
+    net.addLayer(new RELU_layer<float>(16,batch_size));
+    net.addLayer(new Linear<float>(16, 32, batch_size));
+    net.addLayer(new RELU_layer<float>(32, batch_size));
     // net.addLayer(new Linear<float>(512, 128));
     // net.addLayer(new RELU_layer<float>(128));
-    net.addLayer(new Linear<float>(32, 16));
-    net.addLayer(new RELU_layer<float>(16));
-    net.addLayer(new Linear<float>(16, output_size));
-    net.addLayer(new Softmax<float>(output_size));
-    net.addLoss(new Categorical<float>(output_size));
+    net.addLayer(new Linear<float>(32, 16, batch_size));
+    net.addLayer(new RELU_layer<float>(16, batch_size));
+    net.addLayer(new Linear<float>(16, output_size,batch_size));
+    net.addLayer(new Softmax<float>(output_size,batch_size));
+    net.addLoss(new Categorical<float>(output_size,batch_size));
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 100, .001, training_size, batch_size);
+    net.train(train_input, train_target, 100, .001, training_size);
 
     // net.predict(test_input,test_target, test_size);
 
