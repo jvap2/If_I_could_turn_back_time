@@ -50,7 +50,7 @@ int main(){
 
     net.train(train_input, train_target, 100, .001, training_size);
 
-    // net.predict(test_input,test_target, test_size);
+    net.predict(test_input,test_target, test_size);
 
 
     return 0;

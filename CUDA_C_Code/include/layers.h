@@ -3339,17 +3339,18 @@ public:
     void addLayer(Linear<T> *layer)
     {
         layers.push_back(layer);
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         if(this->optim->name == "AdamWBernoulli"){
             bernoullie_w.push_back((Loc_Layer<T> *)malloc(layer->rows * layer->cols * sizeof(Loc_Layer<T>)));
             bernoullie_b.push_back((Loc_Layer<T> *)malloc(layer->rows * sizeof(Loc_Layer<T>)));
         }
         layer->name = "saved linear";
+        cout<<layer->name<<endl;
         if (layer->next_loss == NULL)
         {
             layer->next_loss = (T *)malloc(layer->cols * sizeof(T));
         }
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_updateable = bernoullie_w.size()-1;
         layerMetadata.push_back(LayerMetadata(num_layers,num_updateable, true)); // Assuming Linear layers are updateable
         num_layers++;
@@ -3373,11 +3374,11 @@ public:
     void addLayer(Sigmoid<T> *layer)
     {
         layers.push_back(layer);
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
         }
         num_layers++;
         layer->batch_size = this->batch_size;
@@ -3388,10 +3389,10 @@ public:
         layer->name = "saved RELU";
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
         }
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
     }
@@ -3401,23 +3402,23 @@ public:
         layer->name = "saved LeakyRELU";
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
         }
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
     }
     void addLayer(Softmax<T> *layer)
     {
         layers.push_back(layer);
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         layer->name = "saved softmax";
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
         }
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
     }
@@ -3442,7 +3443,7 @@ public:
         layer->name = "saved categorical";
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
         }
         num_layers++;
         layer->batch_size = this->batch_size;
@@ -5612,16 +5613,16 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
-    for(int i = 0; i<this->layers.size(); i++){
-        cout<<this->layers[i]->name<<endl;
-        if(this->layers[i] == nullptr){
-            cout<<"Layer is null"<<endl;
-            return;
-        }
-        else{
-            cout<<"I have AIDS?"<<endl;
-        }
-    }   
+    // for(int i = 0; i<this->layers.size(); i++){
+    //     cout<<this->layers[i]->name<<endl;
+    //     if(this->layers[i]->name.empty()){
+    //         cout<<"Layer is null"<<endl;
+    //         return;
+    //     }
+    //     else{
+    //         cout<<"I have AIDS?"<<endl;
+    //     }
+    // }   
     if(this->optim->name == "AdamWBernoulli"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
@@ -5634,8 +5635,6 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     // Check if the current layer is marked as updateable
                     if (layerMetadata[i].isUpdateable)
                     {
-                        cout<<"Layer Number: "<<layerMetadata[i].layerNumber<<endl;
-                        cout<<this->layers[layerMetadata[i].layerNumber]->name<<endl;
                         this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
                         Fill_Bern(this->layers[layerMetadata[i].layerNumber], layerMetadata[i].LinNumber);
                         
@@ -5746,41 +5745,12 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         for (int k = 0; k < batch_size; k++)
         {
             indices[k] = rand() % size;
-            // cout << "Index k is " << indices[k] << endl;
         }
         Format_Batch_Data(input,output,batch_input,batch_output,indices,batch_size,input_size,output_size);
         sum = 0;
-        cout << "Epoch: " << i << endl;
-        // for (int j = 0; j < batch_size; j++)
-        // {
-        //     layers[layers.size() - 1]->set_labels(output[indices[j]]);
-        //     forward(input[indices[j]], output[indices[j]]);
-        //     cout << "Prediction: " << endl;
-        //     for (int k = 0; k < output_size; k++)
-        //     {
-        //         cout << layers[layers.size() - 1]->hidden_output[k] << ", ";
-        //     }
-        //     cout << endl;
-        //     cout << "Ground Truth: ";
-        //     for (int k = 0; k < output_size; k++)
-        //     {
-        //         cout << output[indices[j]][k] << " ";
-        //     }
-        //     cout << endl;
-        //     backward(input[indices[j]], output[indices[j]]);
-        //     update_weights(learning_rate, i, this->Q);
-        //     pred_idx = argmax<float>(layers[layers.size() - 1]->hidden_output, output_size);
-        //     gt_idx = argmax<float>(output[indices[j]], output_size);
-        //     if (pred_idx == gt_idx)
-        //     {
-        //         sum++;
-        //     }
-        // }
         forward(batch_input, batch_output);
         backward(batch_input, batch_output);
         update_weights(learning_rate, i, this->Q);
-        cout << "Accuracy: " << sum / batch_size << endl;
-        cout << endl;
     }
 }
 
