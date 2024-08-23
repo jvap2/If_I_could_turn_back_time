@@ -3334,7 +3334,7 @@ public:
             }
         }
     }
-    void update_weights(T learning_rate);
+    void update_weights(T learning_rate){};
     void update_weights(T learning_rate, int epochs, int Q);
     void addLayer(Linear<T> *layer)
     {
@@ -3478,8 +3478,6 @@ public:
     }
     void Fill_Bern(Matrix<T>* Layer, int layer_num){
         if(this->optim->name == "AdamWBernoulli"){
-            cout<<layer_num<<endl;
-            cout<<Layer->cols<<endl;
             for(int i = 0; i<Layer->rows; i++){
                 for(int j = 0; j<Layer->cols; j++){
                     bernoullie_w[layer_num][i*Layer->cols + j].row = i;
@@ -5614,6 +5612,16 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
+    for(int i = 0; i<this->layers.size(); i++){
+        cout<<this->layers[i]->name<<endl;
+        if(this->layers[i] == nullptr){
+            cout<<"Layer is null"<<endl;
+            return;
+        }
+        else{
+            cout<<"I have AIDS?"<<endl;
+        }
+    }   
     if(this->optim->name == "AdamWBernoulli"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
@@ -5626,6 +5634,8 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     // Check if the current layer is marked as updateable
                     if (layerMetadata[i].isUpdateable)
                     {
+                        cout<<"Layer Number: "<<layerMetadata[i].layerNumber<<endl;
+                        cout<<this->layers[layerMetadata[i].layerNumber]->name<<endl;
                         this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
                         Fill_Bern(this->layers[layerMetadata[i].layerNumber], layerMetadata[i].LinNumber);
                         
@@ -5709,7 +5719,6 @@ void Network<T>::train(T *input, T *output, int epochs, T learning_rate)
         backward(input, output);
 
         update_weights(learning_rate);
-        cout << endl;
     }
     for (int i = 0; i < output_size; i++)
     {

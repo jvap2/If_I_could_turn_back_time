@@ -41,10 +41,8 @@ int main(){
     net.addLayer(new RELU_layer<float>(16,batch_size));
     net.addLayer(new Linear<float>(16, 32, batch_size));
     net.addLayer(new RELU_layer<float>(32, batch_size));
-    // net.addLayer(new Linear<float>(512, 128));
-    // net.addLayer(new RELU_layer<float>(128));
-    net.addLayer(new Linear<float>(32, 16, batch_size));
-    net.addLayer(new RELU_layer<float>(16, batch_size));
+    // net.addLayer(new Linear<float>(32, 16, batch_size));
+    // net.addLayer(new RELU_layer<float>(16, batch_size));
     net.addLayer(new Linear<float>(16, output_size,batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     net.addLoss(new Categorical<float>(output_size,batch_size));
