@@ -609,11 +609,8 @@ __global__ void matrix3D_vector_multiply_kernel(T *A, T *B, T *C, int rows, int 
         for (int k = 0; k < cols; k++)
         {
             sum += A[batch * rows * cols + row * cols + k] * B[k * cols + batch];
-            // printf("A[%d][%d][%d] = %f\n", row, k, batch, A[batch * rows * cols + row * cols + k]);
-            // printf("B[%d][%d] = %f\n", k, batch, B[k * cols + batch]);
         }
         C[row*depth+batch] = sum;
-        // printf("C[%d][%d] = %f\n", row, batch, C[row*depth+batch]);
     }
 }
 
@@ -2607,13 +2604,14 @@ public:
 };
 
 template <typename T>
-__global__ void Binary_Cross_Entropy_Kernel(T *input, T *output, T *loss, int size)
+__global__ void Binary_Cross_Entropy_Kernel(T *label, T *output, T *loss, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        loss[index] = -1 * (input[index] * log(output[index]) + (1 - input[index]) * log(1 - output[index]));
+        loss[index*batch_size + batch] = -1 * (label[index*batch_size + batch] * log(output[index*batch_size + batch]) + (1 - label[index*batch_size + batch]) * log(1 - output[index*batch_size + batch]));
     }
 }
 
@@ -2671,13 +2669,14 @@ __global__ void Mean_Squared_Error_Derivative(T *input, T *output, T *loss, int 
 }
 
 template <typename T>
-__global__ void Binary_Cross_Entropy_Derivative(T *input, T *output, T *loss, int size)
+__global__ void Binary_Cross_Entropy_Derivative(T *label, T *output, T *loss, int size, int batch_size)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
     // The input is the output of the network and the output is the ground truth
-    if (index < size)
+    if (index < size && batch < batch_size)
     {
-        loss[index] = (output[index] - input[index]) / (output[index] * (1 - output[index]));
+        loss[index*batch_size + batch] = (output[index*batch_size + batch] - label[index*batch_size + batch]) / (output[index*batch_size + batch] * (1 - output[index*batch_size + batch]));
     }
 }
 
@@ -2923,6 +2922,17 @@ public:
         this->next_loss = (T *)malloc(size * sizeof(T));
         this->name = "binary_cross_entropy";
     }
+    Binary_CrossEntropy(int size, int batch_size) : Loss<T>(size, batch_size)
+    {
+        this->rows = size;
+        this->loss = (T *)malloc(size * batch_size * sizeof(T));
+        this->input = (T *)malloc(size * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(size * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(size * batch_size * sizeof(T));
+        this->labels = (T *)malloc(size * batch_size * sizeof(T));
+        this->name = "categorical";
+        this->batch_size = batch_size;
+    }
     ~Binary_CrossEntropy() override
     {
         free(this->loss);
@@ -2932,36 +2942,36 @@ public:
     void forward(T *input, T *output) override
     {
         // Allocate device memory for input and output
-        T *d_input, *d_output, *d_loss;
-        int size = this->rows;
-        if (input == NULL)
-        {
-            cout << "Input of Categorical is NULL" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * sizeof(T))))
+        T *d_pred, *d_labels, *d_loss;
+        int rows = this->rows;
+        int batch_size = this->batch_size;
+        //Output holds the labels
+        //Input holds the predictions
+        memcpy(this->labels, output, rows * batch_size * sizeof(T));
+        memcpy(this->input, input, rows * batch_size * sizeof(T));
+        if (!HandleCUDAError(cudaMalloc((void **)&d_pred, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_labels, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_output" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, size * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
 
         // Copy input from host to device
-        if (!HandleCUDAError(cudaMemcpy(d_input, input, size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_pred, input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Categorical" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_output, output, size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_labels, output, rows * batch_size *  sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying output from host to device" << endl;
             exit(1);
@@ -2969,14 +2979,14 @@ public:
 
         // Define grid and block dimensions
 
-        int threadsPerBlock = 256;
-        int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-
-        dim3 gridDim(blocksPerGrid, 1, 1);
-        dim3 blockDim(threadsPerBlock, 1, 1);
+        int threadsPerBlock = 16;
+        int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+        int batchPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+        dim3 gridDim(batchPerGrid, blocksPerGrid, 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
         // Launch the categorical cross entropy kernel
-        Binary_Cross_Entropy_Kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_loss, size);
+        Binary_Cross_Entropy_Kernel<T><<<gridDim, blockDim>>>(d_labels, d_pred, d_loss, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
@@ -2984,7 +2994,7 @@ public:
         }
 
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host" << endl;
             exit(1);
@@ -3009,58 +3019,64 @@ public:
             cout << "Error in resetting device" << endl;
             exit(1);
         }
-        memcpy(output, this->output, size * sizeof(T));
-        memcpy(input, this->input, size * sizeof(T));
+        memcpy(this->hidden_output, input, rows * sizeof(T));
     }
     void backward(T *lss) override
     {
         /*Calculate the derivative of the Cost with respect to the last output to begin backpropogation*/
         T *d_loss;
         T *d_out, *d_gt;
-        int size = this->rows;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, size * sizeof(T))))
+        int rows = this->rows;
+        int batch_size = this->batch_size;
+
+        //-label/output
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_out, size * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_out" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_gt, size * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_gt, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_gt" << endl;
             exit(1);
         }
+        //Output holds the labels
+        //Input holds the predictions
 
-        if (!HandleCUDAError(cudaMemcpy(d_out, this->input, size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_out, this->input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Categorical Loss" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_gt, this->output, size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_gt, this->labels, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying output from host to device" << endl;
             exit(1);
         }
+        //-d_gt/d_out
 
-        int threadsPerBlock = 256;
-        int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+        int threadsPerBlock = 16;
+        int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+        int blocksPerGrid2 = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
 
-        dim3 gridDim(blocksPerGrid, 1, 1);
-        dim3 blockDim(threadsPerBlock, 1, 1);
+        dim3 gridDim(blocksPerGrid2, blocksPerGrid, 1);
+        dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
         // Launch the categorical cross entropy derivative kernel
-        Binary_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_out, d_gt, d_loss, size);
+        Binary_Cross_Entropy_Derivative<T><<<gridDim, blockDim>>>(d_gt, d_out, d_loss, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, size * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host" << endl;
             exit(1);
@@ -3130,6 +3146,7 @@ public:
         int rows = this->rows;
         int batch_size = this->batch_size;
         memcpy(this->labels, output, rows * batch_size * sizeof(T));
+        memcpy(this->input, input, rows * batch_size * sizeof(T));
         if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
@@ -3228,7 +3245,7 @@ public:
             exit(1);
         }
 
-        if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_out, this->input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying input from host to device, Categorical Loss" << endl;
             exit(1);
@@ -3362,9 +3379,6 @@ public:
                 if (i > 0)
                 {
                     loss[i - 1] = layers[i]->next_loss;
-                }
-                for(int j=0; j<layers[i]->rows; j++){
-                    cout<<loss[i][j]<<endl;
                 }
             }
             else
@@ -3500,29 +3514,13 @@ public:
     int get_output_size();
     void forward(T *input, T *output)
     {
-        // for(int i = 0; i<layers.size();i++){
-        //     cout<<this->layers[i]->name<<endl;
-        //     cout<<this->layers[i]->rows<<endl;
-        // }
         layers[0]->forward(input, layers[0]->hidden_output);
-        cout<<layers[0]->name<<endl;
-        for(int i=0; i<(layers[0]->rows*batch_size); i++){
-            cout<<layers[0]->hidden_output[i]<<endl;
-        }
         for (int i = 1; i < layers.size() - 1; i++)
         {
             layers[i]->forward(layers[i - 1]->hidden_output, layers[i]->hidden_output);
-            cout<<layers[i]->name<<endl;
-            for(int j=0; j<(layers[i]->rows*batch_size); j++){
-                cout<<layers[i]->hidden_output[j]<<endl;
-            }
         }
         // Should be the cost layer
         layers[layers.size() - 1]->forward(layers[layers.size() - 2]->hidden_output, output);
-        cout<<layers[layers.size()-1]->name<<endl;
-        for(int i=0; i<(layers[layers.size()-1]->rows*batch_size); i++){
-            cout<<output[i]<<endl;
-        }
     }
     void getOutput(T *output)
     {
@@ -5545,21 +5543,18 @@ void Network<T>::predict(T **input, T **output, int size)
 {
     T *prediction = (T *)malloc(output_size * sizeof(T));
     float sum = 0;
-    for (int i = 0; i < 100; i++)
+    int temp = this->batch_size;
+    this->batch_size = 1;
+    for (int i = 0; i < size; i++)
     {
         forward(input[i], output[i]);
         // take the hidden output, and measure accuracy
         prediction = layers[layers.size() - 1]->hidden_output;
-        for (int j = 0; j < output_size; j++)
-        {
-            cout << prediction[j] << " ";
-            cout << output[i][j] << " ";
-        }
         // Find the max value in the prediction
         int max_index = 0;
         for (int j = 0; j < output_size; j++)
         {
-            if (prediction[j] > prediction[max_index])
+            if (prediction[j] >= prediction[max_index])
             {
                 max_index = j;
             }
@@ -5568,7 +5563,7 @@ void Network<T>::predict(T **input, T **output, int size)
         int max_index_output = 0;
         for (int j = 0; j < output_size; j++)
         {
-            if (output[i][j] > output[i][max_index_output])
+            if (output[i][j] >= output[i][max_index_output])
             {
                 max_index_output = j;
             }
@@ -5578,14 +5573,17 @@ void Network<T>::predict(T **input, T **output, int size)
         {
             sum++;
             cout << "Correct Prediction for input " << i << endl;
+            cout<<"Prediction: "<<max_index<<" Output: "<<max_index_output<<endl;
         }
         else
         {
             cout << "Incorrect Prediction for input " << i << endl;
+            cout<<"Prediction: "<<max_index<<" Output: "<<max_index_output<<endl;
         }
     }
     float accuracy = sum / size;
     cout << "Accuracy: " << accuracy << endl;
+    this->batch_size = temp;
 }
 
 template <typename T>
@@ -5790,6 +5788,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     T* batch_output = (T*)malloc(output_size*batch_size*sizeof(T));
     for (int i = 0; i < epochs; i++)
     {
+        cout<< "Epoch: " << i << endl;
         for (int k = 0; k < batch_size; k++)
         {
             indices[k] = rand() % size;
