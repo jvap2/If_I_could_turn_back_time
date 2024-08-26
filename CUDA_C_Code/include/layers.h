@@ -368,9 +368,6 @@ public:
         this->cols = cols;
         this->weights = (T *)malloc(rows * cols * sizeof(T));
         this->biases = (T *)malloc(rows * sizeof(T));
-        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
-        this->input = (T *)malloc(cols * batch_size * sizeof(T));
-        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->B_weights = (T *)malloc(rows * cols * sizeof(T));
         this->B_biases = (T *)malloc(rows * sizeof(T));
         this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
@@ -380,7 +377,6 @@ public:
         InitMatrix_He<T>(this->weights, rows, cols);
         InitializeVector<T>(this->biases, rows);
         this->name = "full matrix";
-        this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
         this->d_biases = (T *)malloc(rows * sizeof(T));
         this->d_weights = (T *)malloc(rows * cols * sizeof(T));
     }
@@ -613,8 +609,11 @@ __global__ void matrix3D_vector_multiply_kernel(T *A, T *B, T *C, int rows, int 
         for (int k = 0; k < cols; k++)
         {
             sum += A[batch * rows * cols + row * cols + k] * B[k * cols + batch];
+            // printf("A[%d][%d][%d] = %f\n", row, k, batch, A[batch * rows * cols + row * cols + k]);
+            // printf("B[%d][%d] = %f\n", k, batch, B[k * cols + batch]);
         }
         C[row*depth+batch] = sum;
+        // printf("C[%d][%d] = %f\n", row, batch, C[row*depth+batch]);
     }
 }
 
@@ -735,7 +734,10 @@ public:
     }
     Sigmoid(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
     {
-        cout<<"Sigmoid layer constructor"<<endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
         ZeroVector<T>(this->input, rows*batch_size);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         this->name = "Sigmoid";
@@ -762,8 +764,14 @@ public:
     RELU_layer(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
     {
         cout<<"ReLU layer constructor"<<endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
         ZeroVector(this->input, rows*batch_size);
         ZeroVector(this->hidden_output, rows*batch_size);
+        ZeroVector(this->loss, rows*batch_size);
+        ZeroVector(this->next_loss, rows*batch_size);
         this->name = "RELU";
     }
     ~RELU_layer()
@@ -807,6 +815,17 @@ public:
     {
         ZeroVector(this->input, rows);
         ZeroVector(this->hidden_output, rows);
+        this->name = "LeakyRELU";
+    }
+    LeakyRELU_layer(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
+    {
+        cout<<"LeakyRELU layer constructor"<<endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
+        ZeroVector(this->input, rows*batch_size);
+        ZeroVector(this->hidden_output, rows*batch_size);
         this->name = "LeakyRELU";
     }
     T alpha = 0.01;
@@ -1007,6 +1026,7 @@ __global__ void softmax_kernel(T *input, T *output, T* reduce, int size, int bat
     if (index < size && batch < batch_size)
     {
         output[index*batch_size + batch] = input[index*batch_size + batch] / reduce[batch];
+        // printf("Output[%d][%d] = %f\n", index, batch, output[index*batch_size + batch]);
     }
 
 
@@ -1051,6 +1071,10 @@ public:
     Softmax(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
     {
         cout<<"Softmax layer constructor"<<endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
         ZeroVector<T>(this->input, rows*batch_size);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         this->name = "Softmax";
@@ -1409,6 +1433,10 @@ public:
     Linear(int cols, int rows,int batch_size) : Matrix<T>(cols, rows,batch_size)
     {
         cout << "Linear Constructor" << endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(cols * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
         InitMatrix_He<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->biases, rows,1);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
@@ -2616,7 +2644,7 @@ __global__ void Categorical_Cross_Entropy(T *input, T *output, T *loss, int size
     int index = blockIdx.y * blockDim.y + threadIdx.y;
     if (index < size && batch < batch_size)
     {
-        loss[index*batch_size + batch] = -1 * input[index*batch_size + batch] * log(output[index*batch_size + batch]);
+        loss[index*batch_size + batch] = -1 * -log(input[index*batch_size + batch]) * output[index*batch_size + batch];
     }
 }
 
@@ -2681,7 +2709,12 @@ public:
     {
         cout << "Loss Constructor" << endl;
     }
-    Loss(int size, int batch_size): Matrix<T>(size,batch_size){};
+    Loss(int size, int batch_size): Matrix<T>(size,batch_size){
+        this->hidden_output = (T *)malloc(size * batch_size * sizeof(T));
+        this->input = (T *)malloc(size * batch_size * sizeof(T));
+        this->loss = (T *)malloc(size * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(size * batch_size * sizeof(T));
+    };
     virtual ~Loss(){};
     virtual void forward(T *input, T *output) override {};
     virtual void backward(T *loss) override {};
@@ -3078,7 +3111,7 @@ public:
         this->rows = size;
         this->loss = (T *)malloc(size * batch_size * sizeof(T));
         this->input = (T *)malloc(size * batch_size * sizeof(T));
-        this->hidden_output = (T *)malloc(size * sizeof(T));
+        this->hidden_output = (T *)malloc(size * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(size * batch_size * sizeof(T));
         this->labels = (T *)malloc(size * batch_size * sizeof(T));
         this->name = "categorical";
@@ -3096,6 +3129,7 @@ public:
         T *d_input, *d_output, *d_loss;
         int rows = this->rows;
         int batch_size = this->batch_size;
+        memcpy(this->labels, output, rows * batch_size * sizeof(T));
         if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_input" << endl;
@@ -3118,8 +3152,6 @@ public:
             cout << "Error in copying input from host to device, Categorical" << endl;
             exit(1);
         }
-        // cout<<sizeof(output)<<endl;
-        // cout<<rows*sizeof(T)<<endl;
         if (!HandleCUDAError(cudaMemcpy(d_output, output, rows * batch_size *  sizeof(T), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying output from host to device" << endl;
@@ -3177,6 +3209,9 @@ public:
         T *d_out, *d_gt;
         int rows = this->rows;
         int batch_size = this->batch_size;
+
+        //-label/output
+
         if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_loss" << endl;
@@ -3203,6 +3238,7 @@ public:
             cout << "Error in copying output from host to device" << endl;
             exit(1);
         }
+        //-d_gt/d_out
 
         int threadsPerBlock = 16;
         int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
@@ -3326,6 +3362,9 @@ public:
                 if (i > 0)
                 {
                     loss[i - 1] = layers[i]->next_loss;
+                }
+                for(int j=0; j<layers[i]->rows; j++){
+                    cout<<loss[i][j]<<endl;
                 }
             }
             else
@@ -3466,12 +3505,24 @@ public:
         //     cout<<this->layers[i]->rows<<endl;
         // }
         layers[0]->forward(input, layers[0]->hidden_output);
+        cout<<layers[0]->name<<endl;
+        for(int i=0; i<(layers[0]->rows*batch_size); i++){
+            cout<<layers[0]->hidden_output[i]<<endl;
+        }
         for (int i = 1; i < layers.size() - 1; i++)
         {
             layers[i]->forward(layers[i - 1]->hidden_output, layers[i]->hidden_output);
+            cout<<layers[i]->name<<endl;
+            for(int j=0; j<(layers[i]->rows*batch_size); j++){
+                cout<<layers[i]->hidden_output[j]<<endl;
+            }
         }
         // Should be the cost layer
         layers[layers.size() - 1]->forward(layers[layers.size() - 2]->hidden_output, output);
+        cout<<layers[layers.size()-1]->name<<endl;
+        for(int i=0; i<(layers[layers.size()-1]->rows*batch_size); i++){
+            cout<<output[i]<<endl;
+        }
     }
     void getOutput(T *output)
     {
@@ -4876,11 +4927,11 @@ void RELU_layer<T>::forward(T *input, T *output)
     }
 
     // Define grid and block dimensions
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 16;
     int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-
-    dim3 gridDim(blocksPerGrid, 1, 1);
-    dim3 blockDim(threadsPerBlock, 1, 1);
+    int batchPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+    dim3 gridDim(batchPerGrid, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
     // Launch the RELU kernel
     RELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size, batch_size);
@@ -5061,9 +5112,6 @@ void Linear<T>::forward(T *input, T *output)
     int output_size = this->rows;
     int batch_size = this->batch_size;
     memcpy(this->input, input, input_size * batch_size * sizeof(T));
-    // for(int i = 0; i < input_size; i++){
-    //     cout<<input[i]<<" ";
-    // }
     T *d_input, *d_output, *dev_weights, *dev_biases;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * batch_size * sizeof(T))))
     {
@@ -5104,11 +5152,11 @@ void Linear<T>::forward(T *input, T *output)
     }
 
     // Define grid and block dimensions
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 16;
     int blocksPerGrid = (output_size + threadsPerBlock - 1) / threadsPerBlock;
-
-    dim3 gridDim(blocksPerGrid, 1, 1);
-    dim3 blockDim(threadsPerBlock, 1, 1);
+    int batchPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+    dim3 gridDim(batchPerGrid, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
 
     // Launch the linear kernel
     linear_kernel_batch<T><<<gridDim, blockDim>>>(d_input, d_output, dev_weights, dev_biases, input_size, output_size, batch_size);
@@ -5747,9 +5795,31 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
             indices[k] = rand() % size;
         }
         Format_Batch_Data(input,output,batch_input,batch_output,indices,batch_size,input_size,output_size);
-        sum = 0;
         forward(batch_input, batch_output);
         backward(batch_input, batch_output);
+        // Display d_weights
+        // for (int i = 0; i < layerMetadata.size(); i++)
+        // {
+        //     // Validate layerNumber is within bounds
+        //     if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+        //     {
+        //         // Check if the layer pointer is not null
+        //         if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+        //         {
+        //             // Check if the current layer is marked as updateable
+        //             if (layerMetadata[i].isUpdateable)
+        //             {
+        //                 for(int j = 0; j < this->layers[layerMetadata[i].layerNumber]->rows; j++){
+        //                     for(int k = 0; k < this->layers[layerMetadata[i].layerNumber]->cols; k++){
+        //                         cout<<this->layers[layerMetadata[i].layerNumber]->d_weights[j*this->layers[layerMetadata[i].layerNumber]->cols + k]<<" ";
+        //                     }
+        //                     cout<<endl;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
         update_weights(learning_rate, i, this->Q);
     }
 }

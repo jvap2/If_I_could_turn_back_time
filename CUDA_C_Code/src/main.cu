@@ -39,18 +39,14 @@ int main(){
     Network<float> net(input_size, output_size, optimizer,Q,batch_size);
     net.addLayer(new Linear<float>(input_size, 16,batch_size));
     net.addLayer(new RELU_layer<float>(16,batch_size));
-    net.addLayer(new Linear<float>(16, 32, batch_size));
-    net.addLayer(new RELU_layer<float>(32, batch_size));
-    // net.addLayer(new Linear<float>(32, 16, batch_size));
-    // net.addLayer(new RELU_layer<float>(16, batch_size));
-    net.addLayer(new Linear<float>(16, output_size,batch_size));
+    net.addLayer(new Linear<float>(16, output_size, batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     net.addLoss(new Categorical<float>(output_size,batch_size));
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 100, .001, training_size);
+    net.train(train_input, train_target, 1, .001, training_size);
 
-    net.predict(test_input,test_target, test_size);
+    // net.predict(test_input,test_target, test_size);
 
 
     return 0;
