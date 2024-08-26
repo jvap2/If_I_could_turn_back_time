@@ -40,9 +40,13 @@
 #include "GPUErrors.h"
 
 #define WEATHER_DATA "../data/weather/weather_classification_data_cleaned.csv"
+#define HEART_DATA "../data/heart/heart_classification_data_cleaned.csv"
+#define HEART_INPUT_SIZE 13
 #define WEATHER_INPUT_SIZE 10
 #define WEATHER_OUTPUT_SIZE 4
+#define HEART_OUTPUT_SIZE 2
 #define WEATHER_SIZE 13200
+#define HEART_SIZE 303
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 #define TRAIN .9
