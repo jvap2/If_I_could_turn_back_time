@@ -181,30 +181,81 @@ void Read_Weather_Data_Norm(float **data, float **output)
     }
 }
 
+template <typename T>
+void Read_Heart_Data(T **data, T **output)
+{
+    std::ifstream file(HEART_DATA);
+    std::string line;
+    int row = 0;
+    int col = 0;
+    int col_max = 13;
+    int classes = 2;
+
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        if (row == 0)
+        {
+            // Skip header or initial row if necessary
+            row++;
+            continue;
+        }
+        while (std::getline(ss, value, ','))
+        {
+            try
+            {
+                if (col < col_max)
+                {
+                    // Convert string to float safely
+                    data[row - 1][col] = std::stof(value);
+                }
+                else
+                {
+                    // Convert string to int safely and update output array
+                    int temp = std::stoi(value);
+                    for (int i = 0; i < classes; i++)
+                    {
+                        output[row - 1][i] = (i == temp) ? 1.0f : 0.0f;
+                    }
+                }
+            }
+            catch (const std::exception &e)
+            {
+                // Handle or log conversion error
+                std::cerr << "Conversion error: " << e.what() << '\n';
+                // Consider setting a default value or skipping this value
+            }
+            col++;
+        }
+        col = 0;
+        row++;
+    }
+}
 
 template <typename T>
-void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T **test_data, T **test_output, int size)
+void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T **test_data, T **test_output, int size, int input_size, int output_size)
 {
-    int training_size = (int)WEATHER_SIZE * TRAIN;
-    int test_size = WEATHER_SIZE - training_size;
+    int training_size = (int)size * TRAIN;
+    int test_size = size - training_size;
     for (int i = 0; i < training_size; i++)
     {
-        for (int j = 0; j < WEATHER_INPUT_SIZE; j++)
+        for (int j = 0; j < input_size; j++)
         {
             train_data[i][j] = data[i][j];
         }
-        for (int j = 0; j < WEATHER_OUTPUT_SIZE; j++)
+        for (int j = 0; j < output_size; j++)
         {
             train_output[i][j] = output[i][j];
         }
     }
     for (int i = training_size; i < size; i++)
     {
-        for (int j = 0; j < WEATHER_INPUT_SIZE; j++)
+        for (int j = 0; j < input_size; j++)
         {
             test_data[i - training_size][j] = data[i][j];
         }
-        for (int j = 0; j < WEATHER_OUTPUT_SIZE; j++)
+        for (int j = 0; j < output_size; j++)
         {
             test_output[i - training_size][j] = output[i][j];
         }
@@ -2702,6 +2753,8 @@ template <typename T>
 class Loss : public Matrix<T>
 {
 public:
+    T* labels;
+    T* output;
     Loss()
     {
         this->size = 0;
@@ -3003,12 +3056,12 @@ public:
             cout << "Error in copying loss from device to host" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaFree(d_input)))
+        if (!HandleCUDAError(cudaFree(d_pred)))
         {
             cout << "Error in freeing d_input" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaFree(d_output)))
+        if (!HandleCUDAError(cudaFree(d_labels)))
         {
             cout << "Error in freeing d_output" << endl;
             exit(1);
@@ -3112,7 +3165,6 @@ template <typename T>
 class Categorical : public Loss<T>
 {
 public:
-    T *labels;
     Categorical()
     {
         this->rows = 0;
@@ -5265,7 +5317,7 @@ __global__ void linear_derivative_kernel(T *loss, T *d_Weights, T *output, int r
         for (int k = 0 ; k < batch_size ; k++){
             sum += output[col * batch_size + k] * loss[row * batch_size + k];
         }
-        d_Weights[row * cols + col] = sum;
+        d_Weights[row * cols + col] = sum/batch_size;
     }
     // Sum the loss to get the derivative of the loss with respect to the biases
 }
@@ -5800,7 +5852,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         Format_Batch_Data(input,output,batch_input,batch_output,indices,batch_size,input_size,output_size);
         forward(batch_input, batch_output);
         backward(batch_input, batch_output);
-        // Display d_weights
+        //Display d_weights
         // for (int i = 0; i < layerMetadata.size(); i++)
         // {
         //     // Validate layerNumber is within bounds
@@ -5818,6 +5870,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         //                     }
         //                     cout<<endl;
         //                 }
+        //                 cout<<endl;
         //             }
         //         }
         //     }

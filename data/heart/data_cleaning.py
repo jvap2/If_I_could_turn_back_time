@@ -1,4 +1,5 @@
 import polars as pl
+import numpy as np
 
 # Load the data
 df = pl.read_csv("heart-disease.csv")
@@ -34,4 +35,8 @@ df_oldpeak = df["oldpeak"]
 ##find max and min oldpeak, then normalize the oldpeak column
 print(df_oldpeak.max(), df_oldpeak.min())
 # Save the cleaned data
+
+# Shuffle the data
+df = df[np.random.permutation(len(df))]
+
 df.write_csv("heart_classification_data_cleaned.csv")
