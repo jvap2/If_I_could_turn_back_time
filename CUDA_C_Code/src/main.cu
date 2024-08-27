@@ -72,7 +72,7 @@ int main(int argc, char** argv){
     }
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, size, input_size, output_size);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
-    AdamWBernoulli<float>* optimizer = new AdamWBernoulli<float>(.0001, .9, .999, 1e-8);
+    AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size);
     net.addLayer(new Linear<float>(input_size, 128,batch_size));
     net.addLayer(new RELU_layer<float>(128,batch_size));
@@ -92,7 +92,11 @@ int main(int argc, char** argv){
     }
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 500, .0001, training_size);
+    net.train(train_input, train_target, 100, .0001, training_size);
+    cout<<"Training Complete"<<endl;
+    cout<<"Results on Training Data"<<endl;
+    net.predict(train_input,train_target, training_size);
+    cout<<"Results on Test Data"<<endl;
     net.predict(test_input,test_target, test_size);
 
 
