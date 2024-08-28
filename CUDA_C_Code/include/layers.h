@@ -879,6 +879,17 @@ __global__ void LeakyRELU_kernel(T *input, T *output, T alpha, int size, int bat
 }
 
 template <typename T>
+__global__ void ELU_kernel(T *input, T *output, T alpha, int size, int batch_size)
+{
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size)
+    {
+        output[index*batch_size + batch] = input[index*batch_size + batch] > 0 ? input[index*batch_size + batch] : alpha * (exp(input[index*batch_size + batch])-1);
+    }
+}
+
+template <typename T>
 __global__ void Tanh_kernel(T* input, T* output, int size, int batch_size){
     int index = blockIdx.y * blockDim.y + threadIdx.y;
     int batch = blockIdx.x * blockDim.x + threadIdx.x;
@@ -895,6 +906,16 @@ __global__ void LeakyRELU_derivative_kernel(T *input, T *output, T alpha, int si
     if (index < size && batch < batch_size)
     {
         output[index*batch_size+batch] = input[index*batch_size+batch] > 0 ? 1 : -alpha;
+    }
+}
+
+template <typename T>
+__global__ void ELU_derivative_kernel(T *input, T *output, T alpha, int size, int batch_size){
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size && batch < batch_size)
+    {
+        output[index*batch_size+batch] = input[index*batch_size+batch] > 0 ? 1 : input[index*batch_size+batch] + alpha;
     }
 }
 
@@ -940,6 +961,200 @@ public:
 
 
 };
+
+
+template <typename T>
+class ELU_layer : public Matrix<T>
+{
+public:
+    ELU_layer(int rows) : Matrix<T>(rows)
+    {
+        ZeroVector(this->input, rows);
+        ZeroVector(this->hidden_output, rows);
+        this->name = "ELU";
+    }
+    ELU_layer(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
+    {
+        cout<<"ELU layer constructor"<<endl;
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
+        ZeroVector(this->input, rows*batch_size);
+        ZeroVector(this->hidden_output, rows*batch_size);
+        this->name = "ELU";
+    }
+    T alpha = 0.01;
+    ~ELU_layer()
+    {
+        free(this->input);
+        free(this->hidden_output);
+    }
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+
+
+};
+
+
+
+template <typename T>
+void ELU_layer<T>::forward(T *input, T *output)
+{
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    int size = this->rows;
+    int batch_size = this->batch_size;
+    if (input == NULL)
+    {
+        cout << "Input LeakyRELU is NULL" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_output" << endl;
+        exit(1);
+    }
+    // Copy input from host to device
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device, LeakyRELU" << endl;
+        exit(1);
+    }
+    // Define grid and block dimensions
+    int TPB = 16;
+    dim3 blockDim(TPB, TPB, 1);
+    dim3 gridDim((batch_size + TPB -1 ) / TPB, (size + TPB - 1) / TPB, 1);
+    // Launch the LeakyRELU kernel
+    ELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    // Copy the result output from device to host
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+    // Free device memory
+    if (!HandleCUDAError(cudaFree(d_input)))
+    {
+        cout << "Error in freeing d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_output)))
+    {
+        cout << "Error in freeing d_output" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaDeviceReset()))
+    {
+        cout << "Error in resetting device" << endl;
+        exit(1);
+    }
+    if (output == NULL)
+    {
+        cout << "Output of LeakyRELU is NULL" << endl;
+        exit(1);
+    }   
+    memcpy(output, this->hidden_output, size * sizeof(T));
+
+}
+
+
+template <typename T>
+void ELU_layer<T>::backward(T* loss){
+    T *d_loss;
+    T *d_temp_loss;
+    T *d_out;
+    int rows = this->rows;
+    int batch_size = this->batch_size;
+    if (loss == NULL)
+    {
+        cout << "Loss of LeakyRELU is NULL" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_out" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_temp_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device, LeakyRELU loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying loss from host to device, LeakyRELU loss" << endl;
+        exit(1);
+    }
+    // Define grid and block dimensions
+    int threadsPerBlock = 16;
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+    dim3 gridDim((batch_size + blockDim.x - 1) / blockDim.x, (rows + blockDim.y - 1) / blockDim.y, 1);
+    // Launch the LeakyRELU derivative kernel
+    ELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss, this-> alpha, rows, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    if(this->next_loss == NULL) {
+        cout<<"Next loss is NULL"<<endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_loss)))
+    {
+        cout << "Error in freeing d_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_out)))
+    {
+        cout << "Error in freeing d_out" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_temp_loss)))
+    {
+        cout << "Error in freeing d_temp_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaDeviceReset()))
+    {
+        cout << "Error in resetting device" << endl;
+        exit(1);
+    }
+
+}
 
 
 template <typename T>
