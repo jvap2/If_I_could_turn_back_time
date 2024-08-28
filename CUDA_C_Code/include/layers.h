@@ -878,6 +878,15 @@ __global__ void LeakyRELU_kernel(T *input, T *output, T alpha, int size, int bat
     }
 }
 
+template <typename T>
+__global__ void Tanh_kernel(T* input, T* output, int size, int batch_size){
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size && batch < batch_size)
+    {
+        output[index*batch_size+batch] = tanh(input[index*batch_size+batch]);
+    }
+}
 
 template <typename T>
 __global__ void LeakyRELU_derivative_kernel(T *input, T *output, T alpha, int size, int batch_size){
@@ -886,6 +895,15 @@ __global__ void LeakyRELU_derivative_kernel(T *input, T *output, T alpha, int si
     if (index < size && batch < batch_size)
     {
         output[index*batch_size+batch] = input[index*batch_size+batch] > 0 ? 1 : -alpha;
+    }
+}
+
+template <typename T> void Tanh_derivative_kernel(T* input, T* output, int size, int batch_size){
+    int index = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size && batch < batch_size)
+    {
+        output[index*batch_size+batch] = 1 - input[index*batch_size+batch]*input[index*batch_size+batch];
     }
 }
 
@@ -957,7 +975,7 @@ void Tanh<T>::forward(T *input, T *output)
     dim3 blockDim(TPB, TPB, 1);
     dim3 gridDim((batch_size + TPB -1 ) / TPB, (size + TPB - 1) / TPB, 1);
     // Launch the LeakyRELU kernel
-    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size, batch_size);
+    Tanh_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
@@ -1038,7 +1056,7 @@ void Tanh<T>::backward(T* loss){
 
     dim3 gridDim((batch_size + blockDim.x - 1) / blockDim.x, (rows + blockDim.y - 1) / blockDim.y, 1);
     // Launch the LeakyRELU derivative kernel
-    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss,this->alpha, rows, batch_size);
+    Tanh_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss, rows, batch_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;
