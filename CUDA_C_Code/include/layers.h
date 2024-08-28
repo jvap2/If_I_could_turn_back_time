@@ -803,6 +803,37 @@ public:
     void backward(T *loss) override;
 };
 
+
+template <typename T>
+class Tanh : public Matrix<T>
+{
+public:
+    Tanh(int rows) : Matrix<T>(rows)
+    {
+        ZeroVector<T>(this->input, rows);
+        ZeroVector<T>(this->hidden_output, rows);
+        this->name = "Tanh";
+    }
+    Tanh(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
+    {
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
+        ZeroVector<T>(this->input, rows*batch_size);
+        ZeroVector<T>(this->hidden_output, rows*batch_size);
+        this->name = "Tanh";
+    }
+    ~Tanh()
+    {
+        free(this->input);
+        free(this->hidden_output);
+    }
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+};
+
+
 template <typename T>
 class RELU_layer : public Matrix<T>
 {
@@ -891,6 +922,165 @@ public:
 
 
 };
+
+
+template <typename T>
+void Tanh<T>::forward(T *input, T *output)
+{
+    // Allocate device memory for input and output
+    T *d_input, *d_output;
+    int size = this->rows;
+    int batch_size = this->batch_size;
+    if (input == NULL)
+    {
+        cout << "Input LeakyRELU is NULL" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_output" << endl;
+        exit(1);
+    }
+    // Copy input from host to device
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device, LeakyRELU" << endl;
+        exit(1);
+    }
+    // Define grid and block dimensions
+    int TPB = 16;
+    dim3 blockDim(TPB, TPB, 1);
+    dim3 gridDim((batch_size + TPB -1 ) / TPB, (size + TPB - 1) / TPB, 1);
+    // Launch the LeakyRELU kernel
+    LeakyRELU_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, this->alpha, size, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    // Copy the result output from device to host
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+    // Free device memory
+    if (!HandleCUDAError(cudaFree(d_input)))
+    {
+        cout << "Error in freeing d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_output)))
+    {
+        cout << "Error in freeing d_output" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaDeviceReset()))
+    {
+        cout << "Error in resetting device" << endl;
+        exit(1);
+    }
+    if (output == NULL)
+    {
+        cout << "Output of LeakyRELU is NULL" << endl;
+        exit(1);
+    }   
+    memcpy(output, this->hidden_output, size * sizeof(T));
+
+}
+
+
+template <typename T>
+void Tanh<T>::backward(T* loss){
+    T *d_loss;
+    T *d_temp_loss;
+    T *d_out;
+    int rows = this->rows;
+    int batch_size = this->batch_size;
+    if (loss == NULL)
+    {
+        cout << "Loss of LeakyRELU is NULL" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_out" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_temp_loss, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_temp_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device, LeakyRELU loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying loss from host to device, LeakyRELU loss" << endl;
+        exit(1);
+    }
+    // Define grid and block dimensions
+    int threadsPerBlock = 16;
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+    dim3 gridDim((batch_size + blockDim.x - 1) / blockDim.x, (rows + blockDim.y - 1) / blockDim.y, 1);
+    // Launch the LeakyRELU derivative kernel
+    LeakyRELU_derivative_kernel<T><<<gridDim, blockDim>>>(d_out, d_temp_loss,this->alpha, rows, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    matrix_elementwise_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+    if(this->next_loss == NULL) {
+        cout<<"Next loss is NULL"<<endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_loss)))
+    {
+        cout << "Error in freeing d_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_out)))
+    {
+        cout << "Error in freeing d_out" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_temp_loss)))
+    {
+        cout << "Error in freeing d_temp_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaDeviceReset()))
+    {
+        cout << "Error in resetting device" << endl;
+        exit(1);
+    }
+
+}
 
 
 template <typename T>
@@ -3434,7 +3624,8 @@ public:
                 layers[i]->backward(loss[i]);
                 if (i > 0)
                 {
-                    loss[i - 1] = layers[i]->next_loss;
+                    memcpy(loss[i - 1], layers[i]->next_loss, layers[i-1]->rows * batch_size * sizeof(T));
+                    // loss[i - 1] = layers[i]->next_loss;
                 }
             }
             else
@@ -4840,10 +5031,9 @@ template <typename T>
 void Sigmoid<T>::backward(T *loss)
 {
     // Allocate device memory for input and output
-    cout << "Sigmoid Layer" << endl;
     T *d_input, *d_output;
     T *d_loss_mat;
-    T *input = this->output;
+    T *input = this->hidden_output;
     int rows = this->rows;
     int batch_size = this->batch_size;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
@@ -5342,7 +5532,7 @@ __global__ void linear_weight_derivatives(T *loss, T *Weights, T *d_F, int rows,
     if(batch < batch_size && col < cols){
         T sum = 0;
         for (int k = 0 ; k < rows ; k++){
-            sum += Weights[col * rows + k] * loss[k* batch_size + batch];
+            sum += Weights[k* cols + col] * loss[k* batch_size + batch];
         }
         d_F[col * batch_size + batch] = sum;
     }

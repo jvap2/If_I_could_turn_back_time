@@ -49,6 +49,17 @@ plt.ylabel("Frequency")
 plt.savefig("age_distribution.png")
 plt.clf()
 
+''' Z-Score Scaling '''
+df = df.with_columns((df["age"] - df["age"].mean()) / df["age"].std())
+
+''' Plot the data after z-score scaling '''
+
+plt.hist(df["age"].to_numpy(), bins=20)
+plt.title("Age Distribution")
+plt.xlabel("Age")
+plt.ylabel("Frequency")
+plt.savefig("age_zscore_distribution.png")
+plt.clf()
 ''' Figure out how to alter the data to make it more normally distributed '''
 
 df_trestbps = df["trestbps"]
@@ -66,7 +77,24 @@ plt.ylabel("Frequency")
 plt.savefig("trestbps_distribution.png")
 plt.clf()
 
+
 ''' Figure out how to alter the data to make it more normally distributed '''
+''' Try log scaling'''
+
+df = df.with_columns(np.log(df["trestbps"]))
+print(df["trestbps"].describe())
+
+''' Plot the data after log scaling '''
+
+plt.hist(df["trestbps"].to_numpy(), bins=20)
+plt.title("Trestbps Distribution")
+plt.xlabel("Trestbps")
+plt.ylabel("Frequency")
+plt.savefig("trestbps_log_distribution.png")
+
+plt.clf()
+
+
 
 df_chol = df["chol"]
 
@@ -81,7 +109,22 @@ plt.ylabel("Frequency")
 plt.savefig("chol_distribution.png")
 plt.clf()
 
+
+
 ''' Figure out how to alter the data to make it more normally distributed '''
+'''Z-score'''
+
+df = df.with_columns((df["chol"] - df["chol"].mean()) / df["chol"].std())
+
+''' Plot the data after z-score scaling '''
+
+plt.hist(df["chol"].to_numpy(), bins=20)
+plt.title("Chol Distribution")
+plt.xlabel("Chol")
+plt.ylabel("Frequency")
+plt.savefig("chol_zscore_distribution.png")
+plt.clf()
+
 
 df_thalach = df["thalach"]
 
@@ -97,6 +140,11 @@ plt.savefig("thalach_distribution.png")
 plt.clf()
 
 ''' Figure out how to alter the data to make it more normally distributed '''
+''' Use z score scaling '''
+
+df = df.with_columns((df["thalach"] - df["thalach"].mean()) / df["thalach"].std())
+
+
 
 df_oldpeak = df["oldpeak"]
 
@@ -112,5 +160,44 @@ plt.savefig("oldpeak_distribution.png")
 plt.clf()
 
 ''' Figure out how to alter the data to make it more normally distributed '''
+''' This shows more of a power law distribution, so we should use log scaling '''
+
+# df = df.with_columns((df["oldpeak"] - df["oldpeak"].mean()) / df["oldpeak"].std())
+
+df = df.with_columns(np.log(np.log(df["oldpeak"]+1)+1))
+print(df["oldpeak"].describe())
+''' Plot the data after log scaling '''
+
+plt.hist(df["oldpeak"].to_numpy(), bins=4)
+plt.title("Oldpeak Distribution")
+plt.xlabel("Oldpeak")
+plt.ylabel("Frequency")
+plt.savefig("oldpeak_log_distribution.png")
+plt.clf()
+
+df_cp = df["cp"]
+print(df_cp.describe())
+
+''' Plot the cp column '''
+plt.hist(df_cp.to_numpy(), bins=4)
+plt.title("CP Distribution")
+plt.xlabel("CP")
+plt.ylabel("Frequency")
+plt.savefig("cp_distribution.png")
+plt.clf()
+
+''' Figure out how to alter the data to make it more normally distributed '''
+''' Use z score scaling '''
+
+''' Linear scaling'''
+
+df = df.with_columns((df["cp"] - df["cp"].min()) / (df["cp"].max() - df["cp"].min()))
+
+df_ca = df["ca"]
+'''Linear scaling'''
+df = df.with_columns((df["ca"] - df["ca"].min()) / (df["ca"].max() - df["ca"].min()))
 
 
+df = df[np.random.permutation(len(df))]
+# Save the cleaned data
+df.write_csv("heart_classification_data_cleaned.csv")

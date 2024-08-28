@@ -75,11 +75,11 @@ int main(int argc, char** argv){
     AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size);
     net.addLayer(new Linear<float>(input_size, 128,batch_size));
-    net.addLayer(new RELU_layer<float>(128,batch_size));
+    net.addLayer(new Sigmoid<float>(128,batch_size));
     net.addLayer(new Linear<float>(128, 256, batch_size));
-    net.addLayer(new RELU_layer<float>(256,batch_size));
+    net.addLayer(new Sigmoid<float>(256,batch_size));
     net.addLayer(new Linear<float>(256, 64, batch_size));
-    net.addLayer(new RELU_layer<float>(64,batch_size));
+    net.addLayer(new Sigmoid<float>(64,batch_size));
     net.addLayer(new Linear<float>(64, output_size, batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(weather){

@@ -14,3 +14,5 @@ line 4924, trying to incorporate batch learning
 need to alter how we pass in the data so each entry is a column
 
 forward is not producing a good output
+
+line 5346 has been changed to deal with the transpose- double check maybe tho
