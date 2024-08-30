@@ -41,12 +41,16 @@
 
 #define WEATHER_DATA "../data/weather/weather_classification_data_cleaned.csv"
 #define HEART_DATA "../data/heart/heart_classification_data_cleaned.csv"
+#define DUMMY_DATA "../data/dummy/dummy.csv"
 #define HEART_INPUT_SIZE 13
 #define WEATHER_INPUT_SIZE 10
 #define WEATHER_OUTPUT_SIZE 4
 #define HEART_OUTPUT_SIZE 2
 #define WEATHER_SIZE 13200
 #define HEART_SIZE 303
+#define DUMMY_SIZE 4
+#define DUMMY_INPUT_SIZE 4
+#define DUMMY_OUTPUT_SIZE 2
 #define RANGE_MAX 0.5
 #define RANGE_MIN -0.5
 #define TRAIN .9
@@ -234,10 +238,61 @@ void Read_Heart_Data(T **data, T **output)
 }
 
 template <typename T>
-void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T **test_data, T **test_output, int size, int input_size, int output_size)
+void Read_Dummy_Data(T **data, T **output)
 {
-    int training_size = (int)size * TRAIN;
-    int test_size = size - training_size;
+    std::ifstream file(DUMMY_DATA);
+    std::string line;
+    int row = 0;
+    int col = 0;
+    int col_max = DUMMY_INPUT_SIZE;
+    int classes = DUMMY_OUTPUT_SIZE;
+
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        if (row == 0)
+        {
+            // Skip header or initial row if necessary
+            row++;
+            continue;
+        }
+        while (std::getline(ss, value, ','))
+        {
+            try
+            {
+                if (col < col_max)
+                {
+                    // Convert string to float safely
+                    cout<<"Value: "<<std::stof(value)<<endl;
+                    data[row - 1][col] = std::stof(value);
+                }
+                else
+                {
+                    // Convert string to int safely and update output array
+                    int temp = std::stoi(value);
+                    for (int i = 0; i < classes; i++)
+                    {
+                        output[row - 1][i] = (i == temp) ? 1.0f : 0.0f;
+                    }
+                }
+            }
+            catch (const std::exception &e)
+            {
+                // Handle or log conversion error
+                std::cerr << "Conversion error: " << e.what() << '\n';
+                // Consider setting a default value or skipping this value
+            }
+            col++;
+        }
+        col = 0;
+        row++;
+    }
+}
+
+template <typename T>
+void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T **test_data, T **test_output, int training_size, int test_size, int size, int input_size, int output_size)
+{
     for (int i = 0; i < training_size; i++)
     {
         for (int j = 0; j < input_size; j++)
@@ -249,15 +304,21 @@ void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T 
             train_output[i][j] = output[i][j];
         }
     }
-    for (int i = training_size; i < size; i++)
-    {
-        for (int j = 0; j < input_size; j++)
+    if(test_size == 0) {
+        return;
+    }
+    else {
+        cout<<"Test size: "<<test_size<<endl;
+        for (int i = training_size; i < size; i++)
         {
-            test_data[i - training_size][j] = data[i][j];
-        }
-        for (int j = 0; j < output_size; j++)
-        {
-            test_output[i - training_size][j] = output[i][j];
+            for (int j = 0; j < input_size; j++)
+            {
+                test_data[i - training_size][j] = data[i][j];
+            }
+            for (int j = 0; j < output_size; j++)
+            {
+                test_output[i - training_size][j] = output[i][j];
+            }
         }
     }
 }
@@ -6489,31 +6550,90 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
             indices[k] = rand() % size;
         }
         Format_Batch_Data(input,output,batch_input,batch_output,indices,batch_size,input_size,output_size);
+        cout<<"Batch Input: "<<endl;
+        for(int j = 0; j< input_size; j++){
+            for(int q = 0; q < batch_size; q++){
+                cout<<batch_input[j*batch_size + q]<<" ";
+            }
+            cout<<endl;
+        }
+        cout<<"OUTPUT: "<<endl;
+        for(int j = 0; j< output_size; j++){
+            for(int q = 0; q < batch_size; q++){
+                cout<<batch_output[j*batch_size + q]<<" ";
+            }
+            cout<<endl;
+        }
+        for (int m = 0; m < layerMetadata.size(); m++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[m].layerNumber >= 0 && layerMetadata[m].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[m].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[m].isUpdateable)
+                    {
+                        cout<< "Weights: "<<endl;
+                        for(int j = 0; j < this->layers[layerMetadata[m].layerNumber]->rows; j++){
+                            for(int k = 0; k < this->layers[layerMetadata[m].layerNumber]->cols; k++){
+                                cout<<this->layers[layerMetadata[m].layerNumber]->weights[j*this->layers[layerMetadata[m].layerNumber]->cols + k]<<" ";
+                            }
+                            cout<<endl;
+                        }
+                        cout<<endl;
+                        cout<<"biases: "<<endl;
+                        cout<<this->layers[layerMetadata[i].layerNumber]->rows<<endl;
+                        for(int j = 0; j < this->layers[layerMetadata[i].layerNumber]->rows; j++){
+                            cout<<this->layers[layerMetadata[i].layerNumber]->biases[j]<<" ";
+                        }
+                        cout<<endl;
+                    }
+                }
+            }
+            cout<<endl;
+        }
         forward(batch_input, batch_output);
+        cout<<"Output: "<<endl;
+        cout<<layers[layers.size()-2]->name<<endl;
+        for(int j=0; j<output_size; j++){
+            for(int k = 0; k < batch_size; k++){
+                cout<<layers[layers.size() - 2]->hidden_output[j*batch_size + k]<<" ";
+            }
+            cout<<endl;
+        }
         backward(batch_input, batch_output);
         //Display d_weights
-        // for (int i = 0; i < layerMetadata.size(); i++)
-        // {
-        //     // Validate layerNumber is within bounds
-        //     if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
-        //     {
-        //         // Check if the layer pointer is not null
-        //         if (this->layers[layerMetadata[i].layerNumber] != nullptr)
-        //         {
-        //             // Check if the current layer is marked as updateable
-        //             if (layerMetadata[i].isUpdateable)
-        //             {
-        //                 for(int j = 0; j < this->layers[layerMetadata[i].layerNumber]->rows; j++){
-        //                     for(int k = 0; k < this->layers[layerMetadata[i].layerNumber]->cols; k++){
-        //                         cout<<this->layers[layerMetadata[i].layerNumber]->d_weights[j*this->layers[layerMetadata[i].layerNumber]->cols + k]<<" ";
-        //                     }
-        //                     cout<<endl;
-        //                 }
-        //                 cout<<endl;
-        //             }
-        //         }
-        //     }
-        // }
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        cout<<"d_weights: "<<endl;
+                        for(int j = 0; j < this->layers[layerMetadata[i].layerNumber]->rows; j++){
+                            for(int k = 0; k < this->layers[layerMetadata[i].layerNumber]->cols; k++){
+                                cout<<this->layers[layerMetadata[i].layerNumber]->d_weights[j*this->layers[layerMetadata[i].layerNumber]->cols + k]<<" ";
+                            }
+                            cout<<endl;
+                        }
+                        cout<<endl;
+                        cout<<"d_biases: "<<endl;
+                        for(int j = 0; j < this->layers[layerMetadata[i].layerNumber]->rows; j++){
+                            cout<<this->layers[layerMetadata[i].layerNumber]->d_biases[j]<<" ";
+                        }
+                        cout<<endl;
+                    }
+                }
+            }
+            cout<<endl;
+        }
 
         update_weights(learning_rate, i, this->Q);
     }
