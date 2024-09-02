@@ -1,0 +1,101 @@
+dummy
+Dummy
+Reading Dummy Data
+Value: 0.5
+Value: 0.25
+Value: 1
+Value: 0
+Value: 0.75
+Value: 0
+Value: 0
+Value: 0.75
+Value: 0.25
+Value: 0.5
+Value: 0.5
+Value: 0.5
+Value: 0.5
+Value: 0.5
+Value: 0.5
+Value: 0.5
+Linear Constructor
+saved linear
+ReLU layer constructor
+Linear Constructor
+saved linear
+Softmax layer constructor
+Adding MSE Loss
+Epoch: 0
+Batch Input: 
+0.5 0.5 0.5 0.75 
+0.5 0.25 0.25 0 
+0.5 1 1 0 
+0.5 0 0 0.75 
+OUTPUT: 
+0 0 0 1 
+1 1 1 0 
+Weights: 
+-0.0319654 0.182251 -0.191224 0.0189518 
+0.639549 0.588589 0.191925 0.307304 
+
+biases: 
+2
+-1.0137 0.302554 
+
+Weights: 
+0.0258648 0.678224 
+0.22528 -0.407937 
+
+biases: 
+2
+-1.0137 0.302554 
+
+Layer 0 output
+-1.02469 -1.17534 -1.17534 -1.02346 
+1.16624 0.961401 0.961401 1.01269 
+
+Layer 1 output
+0 0 0 0 
+1.16624 0.961401 0.961401 1.01269 
+Layer 2 output
+1.18003 1.0411 1.0411 1.07589 
+-0.407057 -0.323496 -0.323496 -0.344421 
+Layer 3 output
+0.830206 0.796506 0.796506 0.805387 
+0.169795 0.203494 0.203494 0.194613 
+Output: 
+saved softmax
+0.830206 0.796506 0.796506 0.805387 
+0.169795 0.203494 0.203494 0.194613 
+Layer: categorical
+Loss: 
+5.88947 4.91415 4.91415 -1.24164 
+-5.88947 -4.91415 -4.91415 1.24164 
+Layer: saved softmax
+Loss: 
+1.66041 1.59301 1.59301 -0.389226 
+-1.66041 -1.59301 -1.59301 0.389226 
+
+Layer: saved linear
+Loss: 
+-0.331111 -0.31767 -0.31767 0.0776174 
+1.80347 1.73027 1.73027 -0.422762 
+Layer: saved RELU
+Loss: 
+-0 -0 0 0 
+0 0 0 0 
+
+d_weights: 
+0 0 0 0 
+0 0 0 0 
+
+d_biases: 
+0 0 
+
+d_weights: 
+0 1.15133 
+0 -1.15133 
+
+d_biases: 
+1.1143 -1.1143 
+
+Training Complete

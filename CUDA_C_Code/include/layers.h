@@ -715,16 +715,14 @@ __global__ void matrix3D_vector_multiply_kernel(T *A, T *B, T *C, int rows, int 
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int batch = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // matrix is rows x cols x depth
-    // vector is cols x depth
-    // output is rows x depth
+    //The 3D matrix is composed as such: The first row*col entries correspond to the first batch, the second row*col entries correspond to the second batch, etc.
+    //The entries of B are such that each column corresponds to a batch
     if (row < rows && batch < depth)
     {
         T sum = 0;
         for (int k = 0; k < cols; k++)
         {
-            sum += A[batch * rows * cols + row * cols + k] * B[k * cols + batch];
+            sum += A[row * cols + k + batch * rows * cols] * B[k*depth + batch];
         }
         C[row*depth+batch] = sum;
     }
@@ -1757,7 +1755,8 @@ __global__ void Col_Wise_Reduce(T* input, T* red, T* max, int cols, int batch_si
     int batch = blockIdx.x * blockDim.x + threadIdx.x;
     if(batch<batch_size){
         for(int i = 0; i<cols; i++){
-            input[i*batch_size + batch] = exp(input[i*batch_size + batch] - max[batch]);
+            input[i*batch_size + batch] = input[i*batch_size + batch] - max[batch];
+            input[i*batch_size + batch] = exp(input[i*batch_size + batch]);
         }
     }
     __syncthreads();
@@ -1767,6 +1766,12 @@ __global__ void Col_Wise_Reduce(T* input, T* red, T* max, int cols, int batch_si
             sum += input[i*batch_size + batch];
         }
         red[batch] = sum;
+    }
+    __syncthreads();
+    if(batch < batch_size){
+        for(int i = 0; i < cols; i++){
+            input[i*batch_size + batch] = input[i*batch_size + batch] / red[batch];
+        }
     }
 }
 
@@ -1794,8 +1799,10 @@ __global__ void softmax_derivative_kernel(T *input, T *output, int size, int bat
     {
         if(row == col) {
             output[row * size + col + batch*size*size] = input[row*batch_size+batch] * (1 - input[col*batch_size+batch]);
+            // printf("Output[%d][%d][%d] = %f\n", row, col,batch, output[row * size + col + batch*size*size]);
         } else {
             output[row * size + col + batch*size*size] = -input[row*batch_size+batch] * input[col*batch_size+batch];
+            // printf("Output[%d][%d][%d] = %f\n", row, col,batch, output[row * size + col + batch*size*size]);
         }  
 
     }
@@ -1924,14 +1931,14 @@ public:
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-        softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_reduce, size, batch_size);
-        if (!HandleCUDAError(cudaDeviceSynchronize()))
-        {
-            cout << "Error in synchronizing device" << endl;
-            exit(1);
-        }
+        // softmax_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_reduce, size, batch_size);
+        // if (!HandleCUDAError(cudaDeviceSynchronize()))
+        // {
+        //     cout << "Error in synchronizing device" << endl;
+        //     exit(1);
+        // }
         // Copy the result output from device to host
-        if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(output, d_input, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying output from device to host" << endl;
         }
@@ -1963,6 +1970,7 @@ public:
         T *d_loss;
         T *d_temp_loss;
         T *d_out;
+        T *d_fin_loss;
         int rows = this->rows;
         int batch_size = this->batch_size;
         if (loss == NULL)
@@ -1975,6 +1983,7 @@ public:
             cout << "Error in allocating memory for d_loss" << endl;
             exit(1);
         }
+        
         if (!HandleCUDAError(cudaMalloc((void **)&d_out, rows * batch_size * sizeof(T))))
         {
             cout << "Error in allocating memory for d_out" << endl;
@@ -1984,6 +1993,11 @@ public:
         {
             //May need to make a 3D matrix for this
             cout << "Error in allocating memory for d_temp_loss" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_fin_loss, rows * batch_size * sizeof(T))))
+        {
+            cout<<"Error in allocating memory for d_fin_loss"<<endl;
             exit(1);
         }
         if (!HandleCUDAError(cudaMemcpy(d_out, this->hidden_output, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
@@ -2015,7 +2029,7 @@ public:
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-        matrix3D_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_loss, rows, rows, batch_size);
+        matrix3D_vector_multiply_kernel<T><<<gridDim, blockDim>>>(d_temp_loss, d_loss, d_fin_loss, rows, rows, batch_size);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
@@ -2027,7 +2041,7 @@ public:
             exit(1);
         }
         // Copy the result loss from device to host
-        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaMemcpy(this->next_loss, d_fin_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
         {
             cout << "Error in copying loss from device to host Softmax" << endl;
             // exit(1);
@@ -3431,7 +3445,7 @@ __global__ void Binary_Cross_Entropy_Derivative(T *label, T *output, T *loss, in
     // The input is the output of the network and the output is the ground truth
     if (index < size && batch < batch_size)
     {
-        loss[index*batch_size + batch] = (output[index*batch_size + batch] - label[index*batch_size + batch]) / (output[index*batch_size + batch] * (1 - output[index*batch_size + batch]));
+        loss[index*batch_size + batch] = -(label[index*batch_size + batch] / output[index*batch_size + batch] - (1 - label[index*batch_size + batch]) / (1 - output[index*batch_size + batch]));
     }
 }
 
@@ -4135,7 +4149,16 @@ public:
                 if (i > 0)
                 {
                     memcpy(loss[i - 1], layers[i]->next_loss, layers[i-1]->rows * batch_size * sizeof(T));
-                    // loss[i - 1] = layers[i]->next_loss;
+                    //Display loss and layer name for debugging
+                    cout << "Layer: " << layers[i]->name << endl;
+                    cout << "Loss: " << endl;
+                    for(int j = 0; j < layers[i-1]->rows; j++){
+                        for(int k = 0; k < batch_size; k++){
+                            cout << loss[i-1][j*batch_size + k] << " ";
+                        }
+                        cout << endl;
+                    }
+
                 }
             }
             else
@@ -4272,9 +4295,24 @@ public:
     void forward(T *input, T *output)
     {
         layers[0]->forward(input, layers[0]->hidden_output);
+        cout<< "Layer 0 output"<<endl;
+            for(int j = 0; j<layers[0]->rows; j++){
+                for(int k = 0; k<batch_size; k++){
+                    cout<<layers[0]->hidden_output[j*batch_size + k]<<" ";
+                }
+                cout<<endl;
+            }
+        cout<<endl;
         for (int i = 1; i < layers.size() - 1; i++)
-        {
+        {   
             layers[i]->forward(layers[i - 1]->hidden_output, layers[i]->hidden_output);
+            cout<<"Layer "<<i<<" output"<<endl;
+            for(int j = 0; j<layers[i]->rows; j++){
+                for(int k = 0; k<batch_size; k++){
+                    cout<<layers[i]->hidden_output[j*batch_size + k]<<" ";
+                }
+                cout<<endl;
+            }
         }
         // Should be the cost layer
         layers[layers.size() - 1]->forward(layers[layers.size() - 2]->hidden_output, output);
@@ -6058,7 +6096,7 @@ __global__ void linear_bias_derivatives(T *loss, T *d_biases, int rows, int batc
         for(int i = 0; i < batch_size; i++){
             sum += loss[row * batch_size + i];
         }
-        d_biases[row] = sum;
+        d_biases[row] = sum/batch_size;
     }
 }
 
