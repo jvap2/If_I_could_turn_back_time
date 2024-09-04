@@ -38,6 +38,8 @@
 #include <cusolverDn.h>
 #include <cmath>
 #include "GPUErrors.h"
+#include "CImg.h"
+using namespace cimg_library;
 
 #define WEATHER_DATA "../data/weather/weather_classification_data_cleaned.csv"
 #define HEART_DATA "../data/heart/heart_classification_data_cleaned.csv"
@@ -3416,13 +3418,18 @@ template <typename T>
 class MaxPooling1D : public Matrix<T>
 {
 public:
-    MaxPooling1D(int cols, int rows)
+    MaxPooling1D(int kernel_width, int stride, int padding, int width, int channels, int batch_size)
     {
-        this->rows = rows;
-        this->cols = cols;
+        this->kernel_width = kernel_width;
+        this->stride = stride;
+        this->padding = padding;
+        this->width = width;
+        this->channels = channels;
+        this->batch_size = batch_size;
+        this->output_width = floor((width - 2 * padding - (kernel_width-1) - 1) / stride + 1);
+        this->input = (T *)malloc(width * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
     }
-    int rows;
-    int cols;
     ~MaxPooling1D();
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
@@ -3432,13 +3439,18 @@ template <typename T>
 class AvePooling1D : public Matrix<T>
 {
 public:
-    AvePooling1D(int cols, int rows)
+    AvePooling1D(int kernel_width, int stride, int padding, int width, int channels, int batch_size)
     {
-        this->rows = rows;
-        this->cols = cols;
+        this->kernel_width = kernel_width;
+        this->stride = stride;
+        this->padding = padding;
+        this->width = width;
+        this->channels = channels;
+        this->batch_size = batch_size;
+        this->output_width = floor((width - 2 * padding - (kernel_width-1) - 1) / stride + 1);
+        this->input = (T *)malloc(width * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
     }
-    int rows;
-    int cols;
     ~AvePooling1D();
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
@@ -3448,13 +3460,35 @@ template <typename T>
 class AvePooling2D : public Matrix<T>
 {
 public:
-    AvePooling2D(int cols, int rows)
+    AvePooling2D(int kernel_width, int kernel_height, int stride, int padding, int width, int height, int channels, int batch_size)
     {
-        this->rows = rows;
-        this->cols = cols;
+        this->kernel_width = kernel_width;
+        this->kernel_height = kernel_height;
+        this->stride = stride;
+        this->padding = padding;
+        this->width = width;
+        this->height = height;
+        this->channels = channels;
+        this->batch_size = batch_size;
+        this->output_width = floor((width - 2 * padding - (kernel_width-1) - 1) / stride + 1);
+        this->output_height = floor((height - 2 * padding - (kernel_height-1) - 1) / stride + 1);
+        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
     }
+    int kernel_width;
+    int kernel_height;
+    int stride;
+    int padding;
+    int width;
+    int height;
+    int channels;
+    int batch_size;
     int rows;
     int cols;
+    int output_width;
+    int output_height;
+    T *input;
+    T *hidden_output;
     ~AvePooling2D();
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
@@ -3464,13 +3498,37 @@ template <typename T>
 class MaxPooling2D : public Matrix<T>
 {
 public:
-    MaxPooling2D(int cols, int rows)
+    MaxPooling2D(int kernel_width, int kernel_height, int stride, int padding, int width, int height, int channels, int batch_size)
     {
-        this->rows = rows;
-        this->cols = cols;
+        this->kernel_width = kernel_width;
+        this->kernel_height = kernel_height;
+        this->stride = stride;
+        this->padding = padding;
+        this->width = width;
+        this->height = height;
+        this->channels = channels;
+        this->batch_size = batch_size;
+        this->rows = channels;
+        this->cols = width * height;
+        this->output_width = floor((width - 2 * padding - (kernel_width-1) - 1) / stride + 1);
+        this->output_height = floor((height - 2 * padding - (kernel_height-1) - 1) / stride + 1);
+        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
     }
+    int kernel_width;
+    int kernel_height;
+    int stride;
+    int padding;
+    int width;
+    int height;
+    int channels;
+    int batch_size;
     int rows;
     int cols;
+    int output_width;
+    int output_height;
+    T *input;
+    T *hidden_output;
     ~MaxPooling2D();
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
@@ -6953,25 +7011,15 @@ __global__ void d_Gauss_Filter_v2(unsigned char *in, unsigned char *out, int h, 
 }
 
 template <typename T>
-__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int radius, int width, int height, int out_width, int out_height)
+__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int batch_size)
 {
-    int outCol = blockIdx.x * blockDim.x + threadIdx.x;
-    int outRow = blockIdx.y * blockDim.y + threadIdx.y;
-    T Pvalue = 0;
-    for (int i = 0; i < 2 * radius + 1; i++)
-    {
-        for (int j = 0; j < 2 * radius + 1; j++)
-        {
-            int inRow = outRow - radius + i;
-            int inCol = outCol - radius + j;
-            if (inRow >= 0 && inRow < height && inCol >= 0 && inCol < width)
-            {
-                Pvalue += input[inRow * width + inCol] * weights[i * (2 * radius + 1) + j];
-            }
-        }
-    }
-    output[outRow * out_width + outCol] = Pvalue + biases[outRow];
+    /*The input has the shape of (batch_size, channel, height, width)
+    The weights have the shape (filters, channel, filter_height, filter_width)
+    The output has the shape of (batch_size, filter, output_height, output_width)
+    We will have the dimy and dimx operate on the single image channel, i.e. deal with height and width
+    For the sake of computatation, we will use the z dim to deal with batches and have them process each channel */
 }
+
 
 template <typename T>
 __global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biases, T *d_weights, T *d_biases, int radius, int width, int height, int out_width, int out_height)
@@ -7209,23 +7257,23 @@ __global__ void max_pooling_kernel(T *input, T *output, int size)
 }
 
 template <typename T>
-void MaxPooling2D<T>::forward(T *input, T *output, int input_size, int output_size)
+void MaxPooling2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input and output
     T *d_input, *d_output;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, output_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
 
     // Copy input from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device" << endl;
         exit(1);
@@ -7245,7 +7293,7 @@ void MaxPooling2D<T>::forward(T *input, T *output, int input_size, int output_si
         exit(1);
     }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * channels * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
