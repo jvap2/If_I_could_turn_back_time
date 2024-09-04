@@ -1001,7 +1001,8 @@ __global__ void SLU_derivative_kernel(T* input, T* loss, T* output, int size, in
     }
 }
 
-template <typename T> void Tanh_derivative_kernel(T* input, T* loss, T* output, int size, int batch_size){
+template <typename T> 
+__global__ void Tanh_derivative_kernel(T* input, T* loss, T* output, int size, int batch_size){
     int index = blockIdx.y * blockDim.y + threadIdx.y;
     int batch = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size && batch < batch_size)
@@ -4215,6 +4216,45 @@ public:
         num_layers++;
         layer->batch_size = this->batch_size;
     }
+    void addLayer(Tanh<T> * layer)
+    {
+        layers.push_back(layer);
+        layer->name = "saved Tanh";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
+        }
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        num_layers++;
+        layer->batch_size = this->batch_size;
+    }
+    void addLayer(SLU_layer<T> * layer)
+    {
+        layers.push_back(layer);
+        layer->name = "saved SLU";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
+        }
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        num_layers++;
+        layer->batch_size = this->batch_size;
+    }
+    void addLayer(ELU_layer<T> * layer)
+    {
+        layers.push_back(layer);
+        layer->name = "saved Tanh";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
+        }
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        num_layers++;
+        layer->batch_size = this->batch_size;
+    }
     void addLayer(Softmax<T> *layer)
     {
         layers.push_back(layer);
@@ -4231,14 +4271,26 @@ public:
     void addLoss(Binary_CrossEntropy<T> *layer)
     {
         layers.push_back(layer);
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        layer->name = "saved Binary";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
+        }
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
     }
     void addLoss(Mean_Squared_Error<T> *layer)
     {
         layers.push_back(layer);
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
+        layer->name = "saved MSE";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * this->batch_size * sizeof(T));
+        }
+        hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
     }
@@ -5555,7 +5607,7 @@ void Sigmoid<T>::backward(T *loss)
     T *d_input, *d_output;
     T *d_loss;
     T *input = this->hidden_output;
-    T* d_fin_loss
+    T* d_fin_loss;
     int rows = this->rows;
     int batch_size = this->batch_size;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
@@ -6324,11 +6376,18 @@ void Network<T>::predict(T **input, T **output, int size)
     float sum = 0;
     int temp = this->batch_size;
     this->batch_size = 1;
+    for(int i=0; i<layers.size(); i++){
+        layers[i]->batch_size = 1;
+    }
     for (int i = 0; i < size; i++)
     {
         forward(input[i], output[i]);
         // take the hidden output, and measure accuracy
         prediction = layers[layers.size() - 1]->hidden_output;
+        for(int j=0; j<output_size; j++){
+            cout<<prediction[j]<<" ";
+        }
+        cout<<endl;
         // Find the max value in the prediction
         int max_index = 0;
         for (int j = 0; j < output_size; j++)
@@ -6363,6 +6422,9 @@ void Network<T>::predict(T **input, T **output, int size)
     float accuracy = sum / size;
     cout << "Accuracy: " << accuracy << endl;
     this->batch_size = temp;
+    for(int i=0; i<layers.size(); i++){
+        layers[i]->batch_size = temp;
+    }
 }
 
 template <typename T>

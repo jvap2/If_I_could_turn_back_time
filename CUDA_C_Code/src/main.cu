@@ -92,17 +92,15 @@ int main(int argc, char** argv){
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
-    SGD_Optimizer <float>* optimizer = new SGD_Optimizer<float>(.0001);
+    AdamOptimizer <float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size);
-    net.addLayer(new Linear<float>(input_size, output_size,batch_size));
-    net.addLayer(new RELU_layer<float>(output_size,batch_size));
-    net.addLayer(new Linear<float>(output_size, output_size,batch_size));
-    // net.addLayer(new Sigmoid<float>(128,batch_size));
-    // net.addLayer(new Linear<float>(128, 256, batch_size));
-    // net.addLayer(new Sigmoid<float>(256,batch_size));
-    // net.addLayer(new Linear<float>(256, 64, batch_size));
-    // net.addLayer(new Sigmoid<float>(64,batch_size));
-    // net.addLayer(new Linear<float>(64, output_size, batch_size));
+    net.addLayer(new Linear<float>(input_size, 128,batch_size));
+    net.addLayer(new Tanh<float>(128,batch_size));
+    net.addLayer(new Linear<float>(128, 256, batch_size));
+    net.addLayer(new Tanh<float>(256,batch_size));
+    net.addLayer(new Linear<float>(256, 64, batch_size));
+    net.addLayer(new Tanh<float>(64,batch_size));
+    net.addLayer(new Linear<float>(64, output_size, batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(strcmp(argv[1],"weather")==0){
         cout<<"Adding Categorical Loss"<<endl;
@@ -118,12 +116,12 @@ int main(int argc, char** argv){
     }
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 1, .0001, training_size);
+    net.train(train_input, train_target, 75, .001, training_size);
     cout<<"Training Complete"<<endl;
     // cout<<"Results on Training Data"<<endl;
     // net.predict(train_input,train_target, training_size);
-    // cout<<"Results on Test Data"<<endl;
-    // net.predict(test_input,test_target, test_size);
+    cout<<"Results on Test Data"<<endl;
+    net.predict(test_input,test_target, test_size);
 
 
     return 0;
