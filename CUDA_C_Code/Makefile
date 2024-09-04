@@ -8,13 +8,22 @@ NVCC := nvcc
 INC := include
 OBJ := obj
 SRC := src
+T_SRC := src_test
 BIN := bin
 
 
 IMM: $(BIN)/IMM
+test: $(BIN)/test
+
+
+$(BIN)/test: $(OBJ)/test.o $(OBJ)/err.o
+	$(NVCC) $(LINK_FLAGS) $(INC_FLAGS) $^ -o $@
 
 $(BIN)/IMM: $(OBJ)/main.o $(OBJ)/err.o
 	$(NVCC) $(LINK_FLAGS) $(INC_FLAGS) $^ -o $@
+
+$(OBJ)/test.o: $(T_SRC)/main_test.cu
+	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ)/main.o: $(SRC)/main.cu
 	$(NVCC) $(NVCC_FLAGS) $(INC_FLAGS) -c $< -o $@

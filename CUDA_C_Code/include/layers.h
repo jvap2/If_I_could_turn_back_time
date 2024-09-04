@@ -3303,28 +3303,101 @@ public:
     }
 };
 
+
+template <typename T>
+class Conv1D : public Matrix<T>
+{
+    public:
+    Conv1D(int width, int channels, int kernel_size, int stride, int padding, int filters, int batch_size) {
+        this->width = width;
+        this->channels = channels;
+        this->kernel_size = kernel_size;
+        this->stride = stride;
+        this->padding = padding;
+        this->filters = filters;
+        this->rows = filters;
+        this->cols = width;
+        this->output_width = (width - kernel_size + 2 * padding) / stride + 1; 
+        this->batch_size = batch_size;
+        this->weights = (T *)malloc(filters * kernel_size * channels * sizeof(T));
+        this->biases = (T *)malloc(filters * sizeof(T));
+        this->input = (T *)malloc(width * channels * batch_size *  sizeof(T));
+        this->hidden_output = (T *)malloc(output_width * filters * batch_size * sizeof(T));
+    }
+    int rows;
+    int cols;
+    int width;
+    int batch_size;
+    int channels;
+    int kernel_size;
+    int stride;
+    int padding;
+    int filters;
+    T *biases;
+    T *weights;
+    T* input;
+    T* hidden_output;
+    int output_width;
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+    ~Conv1D() {
+        free(this->weights);
+        free(this->biases);
+    }
+
+
+};
+
+
+
 template <typename T>
 class Conv2D : public Matrix<T>
 {
 public:
-    Conv2D(int cols, int rows)
+    Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size)
     {
-        this->rows = rows;
-        this->cols = cols;
-        this->weights = (T *)malloc(rows * cols * sizeof(T));
-        this->biases = (T *)malloc(rows * sizeof(T));
+        this->width = width;
+        this->height = height;
+        this->channels = channels;
+        this->kernel_width = kernel_width;
+        this->kernel_height = kernel_height;
+        this->stride = stride;
+        this->padding = padding;
+        this->filters = filters;
+        this->rows = filters;
+        this->cols = width * height;
+        this->output_width = (width - kernel_width + 2 * padding) / stride + 1;
+        this->output_height = (height - kernel_height + 2 * padding) / stride + 1;
+        this->weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
+        this->biases = (T *)malloc(filters * sizeof(T));
+        this->batch_size = batch_size;
+        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(output_width * output_height * filters * batch_size * sizeof(T));
     }
     int rows;
     int cols;
+    int width;
+    int batch_size;
+    int height;
+    int channels;
+    int kernel_width;
+    int kernel_height;
+    int stride;
+    int padding;
+    int filters;
+    int output_width;
+    int output_height;
     T *weights;
     T *biases;
+    T *input;
+    T *hidden_output;
     ~Conv2D()
     {
         free(this->weights);
         free(this->biases);
     }
-    void forward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
-    void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size);
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
     void update_weights(T *weights, T *biases, T learning_rate, int input_size, int output_size);
     void set_weights(T *weights, T *biases);
     void set_kernel_size(int kernel_size);
@@ -3336,6 +3409,55 @@ public:
     {
         return cols;
     }
+};
+
+
+template <typename T>
+class MaxPooling1D : public Matrix<T>
+{
+public:
+    MaxPooling1D(int cols, int rows)
+    {
+        this->rows = rows;
+        this->cols = cols;
+    }
+    int rows;
+    int cols;
+    ~MaxPooling1D();
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+};
+
+template <typename T>
+class AvePooling1D : public Matrix<T>
+{
+public:
+    AvePooling1D(int cols, int rows)
+    {
+        this->rows = rows;
+        this->cols = cols;
+    }
+    int rows;
+    int cols;
+    ~AvePooling1D();
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+};
+
+template <typename T>
+class AvePooling2D : public Matrix<T>
+{
+public:
+    AvePooling2D(int cols, int rows)
+    {
+        this->rows = rows;
+        this->cols = cols;
+    }
+    int rows;
+    int cols;
+    ~AvePooling2D();
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
 };
 
 template <typename T>
@@ -3350,8 +3472,8 @@ public:
     int rows;
     int cols;
     ~MaxPooling2D();
-    void forward(T *input, T *output, int size, int output_size);
-    void backward(T *input, T *output, int size, int output_size);
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
 };
 
 template <typename T>
@@ -4155,7 +4277,7 @@ public:
         cout<<layer->name<<endl;
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->cols * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->cols * this->batch_size  * sizeof(T));
         }
         hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_updateable = bernoullie_w.size()-1;
@@ -4167,16 +4289,32 @@ public:
     void addLayer(Conv2D<T> *layer)
     {
         layers.push_back(layer);
+        //this size below is not right either
         loss.push_back((T *)malloc(layer->rows * sizeof(T)));
         hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
         num_layers++;
+        //The loss is the same size as the output of the layer
+        layer->name = "saved conv2d";
+        if (layer->next_loss == NULL)
+        {
+            //NOT CORRECT
+            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+        }
+
     }
     void addLayer(MaxPooling2D<T> *layer)
     {
         layers.push_back(layer);
+        //The loss is the same size as the output of the layer
         loss.push_back((T *)malloc(layer->rows * sizeof(T)));
         hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
         num_layers++;
+        layer->name = "saved maxpooling2d";
+        if (layer->next_loss == NULL)
+        {
+            //NOT CORRECT
+            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+        }
     }
     void addLayer(Sigmoid<T> *layer)
     {
@@ -6856,61 +6994,51 @@ __global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biase
 }
 
 template <typename T>
-void Conv2D<T>::forward(T *input, T *output, T *weights, T *biases, int input_size, int output_size)
+void Conv2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, output_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_weights" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_biases, filters * sizeof(T))))
     {
         cout << "Error in allocating memory for d_biases" << endl;
         exit(1);
     }
 
     // Copy input, weights, and biases from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, filters * kernel_width * kernel_height * channels * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying weights from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_biases, biases, filters * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
     }
 
     // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
-    int radius = get_cols() / 2;
-    // Launch the linear kernel
-    conv2D_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, radius, input_size, input_size);
-    if (!HandleCUDAError(cudaDeviceSynchronize()))
-    {
-        cout << "Error in synchronizing device" << endl;
-        exit(1);
-    }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * channels  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);
@@ -6945,98 +7073,88 @@ void Conv2D<T>::forward(T *input, T *output, T *weights, T *biases, int input_si
 }
 
 template <typename T>
-void Conv2D<T>::backward(T *input, T *output, T *weights, T *biases, int input_size, int output_size)
+void Conv2D<T>::backward(T * loss)
 {
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
     T *d_dweights, *d_dbiases, *d_dinput;
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, input_size * sizeof(T))))
+    T* d_loss, *d_fin_loss;
+    if(!HandleCUDAError(cudaMalloc((void **)&d_loss, batch_size * width * height * channels * sizeof(T)))){
+        cout << "Error in allocating memory for d_loss" << endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMalloc((void **)&d_fin_loss, batch_size * output_width * output_height * channels * sizeof(T)))){
+        cout << "Error in allocating memory for d_fin_loss" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, output_size * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_weights" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * cols * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_biases, filters * sizeof(T))))
     {
         cout << "Error in allocating memory for d_biases" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_dweights, rows * cols * sizeof(T))))
-    {
+    if(!HandleCUDAError(cudaMalloc((void **)&d_dweights, filters * kernel_width * kernel_height * channels * sizeof(T)))){
         cout << "Error in allocating memory for d_dweights" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_dbiases, rows * sizeof(T))))
-    {
+    if(!HandleCUDAError(cudaMalloc((void **)&d_dbiases, filters * sizeof(T)))){
         cout << "Error in allocating memory for d_dbiases" << endl;
-        exit(1);
-    }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_dinput, input_size * sizeof(T))))
-    {
-        cout << "Error in allocating memory for d_dinput" << endl;
         exit(1);
     }
 
     // Copy input, weights, and biases from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, input_size * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying input from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_weights, weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_weights, weights, filters * kernel_width * kernel_height * channels  * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying weights from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_biases, biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_biases, biases, filters * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
     }
+    if(!HandleCUDAError(cudaMemcpy(d_loss, loss, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice))){
+        cout << "Error in copying loss from host to device" << endl;
+        exit(1);
+    }
 
-    // Define grid and block dimensions
-    dim3 gridDim(1, 1, 1);
-    dim3 blockDim(cols, rows, 1);
 
-    // Launch the linear kernel
-    // Compute the gradients of the weights, biases, and input
-    conv2D_backward_kernel<<<gridDim, blockDim>>>(d_input, d_output, d_weights, d_biases, d_dweights, d_dbiases, d_dinput, input_size, output_size);
-    if (!HandleCUDAError(cudaDeviceSynchronize()))
-    {
-        cout << "Error in synchronizing device" << endl;
+
+    if(!HandleCUDAError(cudaMemcpy(this->next_loss, d_fin_loss, batch_size * output_width * output_height * channels * sizeof(T), cudaMemcpyDeviceToHost))){
+        cout << "Error in copying fin_loss from host to device" << endl;
         exit(1);
     }
     // Copy the gradients from device to host
-    if (!HandleCUDAError(cudaMemcpy(d_weights, d_dweights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(d_weights, d_dweights, filters * kernel_width * kernel_height * channels * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying dweights from device to host" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_biases, d_dbiases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpy(d_biases, d_dbiases, filters * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying dbiases from device to host" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_input, d_dinput, input_size * sizeof(T), cudaMemcpyDeviceToHost)))
-    {
-        cout << "Error in copying dinput from device to host" << endl;
-        exit(1);
-    }
-    // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, output_size * sizeof(T), cudaMemcpyDeviceToHost)))
-    {
-        cout << "Error in copying output from device to host" << endl;
-        exit(1);
-    }
+
 
     // Free device memory
     if (!HandleCUDAError(cudaFree(d_input)))
