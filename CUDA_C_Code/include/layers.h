@@ -44,6 +44,12 @@ using namespace cimg_library;
 #define WEATHER_DATA "../data/weather/weather_classification_data_cleaned.csv"
 #define HEART_DATA "../data/heart/heart_classification_data_cleaned.csv"
 #define DUMMY_DATA "../data/dummy/dummy.csv"
+#define RICE_DATA_FOLDER "../data/Rice_Image_Dataset"
+#define ARBORIO_RICE_FOLDER "/Arborio/"
+#define BASMATI_RICE_FOLDER "/Basmati/"
+#define IPSALA_RICE_FOLDER "/Ipsala/"
+#define JASMINE_RICE_FOLDER "/Jasmine/"
+#define KARACADAG_RICE_FOLDER "/Karacadag/"
 #define HEART_INPUT_SIZE 13
 #define WEATHER_INPUT_SIZE 10
 #define WEATHER_OUTPUT_SIZE 4
