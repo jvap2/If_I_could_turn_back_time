@@ -41,8 +41,8 @@ int main(int argc, char** argv){
 	Filter(ptrRGB, ptrBlur,imgRGB.height(),imgRGB.width());
 	
 	// //Display the GrayScale Image
-    CImgDisplay DispBlur(imgBlur,"Blurred Image");
-	Helper_Filter(ptrRGB, ptrBlur_GPU,greySize, blurSize,imgRGB.height(),imgRGB.width());
+    // CImgDisplay DispBlur(imgBlur,"Blurred Image");
+	// Helper_Filter(ptrRGB, ptrBlur_GPU,greySize, blurSize,imgRGB.height(),imgRGB.width());
 	CImgDisplay GPU_Blur(imgBlur_GPU, "GPU Blurred");
     cin.get();
 	return 0;
