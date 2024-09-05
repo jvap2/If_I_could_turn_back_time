@@ -7011,35 +7011,88 @@ __global__ void d_Gauss_Filter_v2(unsigned char *in, unsigned char *out, int h, 
 }
 
 template <typename T>
-__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int batch_size)
+__global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int stride, int batch_size)
 {
     /*The input has the shape of (batch_size, channel, height, width)
     The weights have the shape (filters, channel, filter_height, filter_width)
     The output has the shape of (batch_size, filter, output_height, output_width)
     We will have the dimy and dimx operate on the single image channel, i.e. deal with height and width
     For the sake of computatation, we will use the z dim to deal with batches and have them process each channel */
+    int outCol = blockIdx.x * blockDim.x + threadIdx.x;
+    int outRow = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.z*blockDim.z + threadIdx.z;
+    if(outCol < out_width && outRow < out_height && batch < batch_size){
+        for (int filter = 0; filter < filters; filter++)
+        {
+            T sum = 0;
+            for (int channel = 0; channel < channels; channel++)
+            {
+                for (int i = 0; i < kernel_height; i++)
+                {
+                    for (int j = 0; j < kernel_width; j++)
+                    {
+                        int inRow = outRow * stride + i;
+                        int inCol = outCol * stride + j;
+                        sum += input[batch * channels * width * height + channel * width * height + inRow * width + inCol] * weights[filter * channels * kernel_height * kernel_width + channel * kernel_height * kernel_width + i * kernel_width + j];
+                    }
+                }
+            }
+            output[batch * filters * out_width * out_height + filter * out_width * out_height + outRow * out_width + outCol] = sum + biases[filter];
+        }
+    }
 }
 
 
 template <typename T>
-__global__ void conv2D_backward_kernel(T *input, T *output, T *weights, T *biases, T *d_weights, T *d_biases, int radius, int width, int height, int out_width, int out_height)
+__global__ void conv2D_weight_update_kernel(T *input, T* this_loss, T* d_weights, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int stride, int batch_size)
 {
-    int outCol = blockIdx.x * blockDim.x + threadIdx.x;
-    int outRow = blockIdx.y * blockDim.y + threadIdx.y;
-    for (int i = 0; i < 2 * radius + 1; i++)
-    {
-        for (int j = 0; j < 2 * radius + 1; j++)
-        {
-            int inRow = outRow - radius + i;
-            int inCol = outCol - radius + j;
-            if (inRow >= 0 && inRow < height && inCol >= 0 && inCol < width)
-            {
-                d_weights[i * (2 * radius + 1) + j] += input[inRow * width + inCol] * output[outRow * out_width + outCol];
+    /*This kernel is tasked with finding dw for a convolutional layer
+    The equation which will be used is:
+    dW[filter,channel,k,m]= 1/(batch_size)\sum_{n=0}^{batch_size}\sum_{i=0}^{kernel_height}\sum_{j=0}^{kernel_width}x_n[channel,i+k,j+m]*thisloss_n[f,i,j]*/
+    int filter = blockIdx.x * blockDim.x + threadIdx.x;
+    int channel = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    if(filter < filters && channel < channels && k < kernel_height){
+        T sum = 0;
+        for(int m=0; m<kernel_width; m++){
+            sum = 0;
+            for(int batch = 0; batch < batch_size; batch++){
+            //This is the sum over the batch
+                for(int i = 0; i<out_height; i++){
+                    //This is the sum over the height, and we will have i+k for the input, and i for the loss
+                    for(int j = 0; j<out_width; j++){
+                        //This is the sum over the width, and we will have j+m for the input, and j for the loss
+                            sum += input[batch * channels * width * height + channel * width * height + (i+k) * width + j+m] * this_loss[batch * filters * out_width * out_height + filter * out_width * out_height + i * out_width + j];
+                    }
+                }
             }
+            d_weights[filter * channels * kernel_height * kernel_width + channel * kernel_height * kernel_width + k * kernel_width + m] = sum/batch_size;
         }
     }
-    d_biases[outRow] += output[outRow * out_width + outCol];
+    __syncthreads();
+    //How does stride play a role?
 }
+
+
+template <typename T>
+__global__ void conv2D_biases_update_kernel(T *this_loss, T* d_biases, int filters, int out_width, int out_height, int batch_size)
+{
+    int filter = blockIdx.x * blockDim.x + threadIdx.x;
+    if(filter < filters){
+        T sum = 0;
+        for(int batch = 0; batch < batch_size; batch++){
+            for(int i = 0; i<out_height; i++){
+                for(int j = 0; j<out_width; j++){
+                    sum += this_loss[batch * filters * out_width * out_height + filter * out_width * out_height + i * out_width + j];
+                }
+            }
+        }
+        d_biases[filter] = sum/batch_size;
+    }
+}
+
+
+
 
 template <typename T>
 void Conv2D<T>::forward(T *input, T *output)
@@ -7085,6 +7138,10 @@ void Conv2D<T>::forward(T *input, T *output)
     }
 
     // Define grid and block dimensions
+    int TPB = 8;
+    dim3 blockDim(TPB, TPB, TPB);
+    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
+    conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, stride, batch_size);
     // Copy the result output from device to host
     if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * channels  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
@@ -7239,22 +7296,31 @@ void Conv2D<T>::backward(T * loss)
 // }
 
 template <typename T>
-__global__ void max_pooling_kernel(T *input, T *output, int size)
+__global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (index < size)
+    int x = threadIdx.x + (blockIdx.x * blockDim.x);
+    int y = threadIdx.y + (blockIdx.y * blockDim.y);
+    int z = threadIdx.z + (blockIdx.z * blockDim.z);
+    /*x corresponds to the column, y corresponds to the row, and z corresponds to the channel and batch*/
+    int idx = z * channels * width * height + y * width + x;
+    int out_idx = z * channels * output_width * output_height + y * output_width + x;
+    if (x < output_width && y < output_height && z < batch_size * channels)
     {
-        output[index] = input[index];
-        for (int i = 0; i < size; i++)
+        T max = input[idx];
+        for (int i = 0; i < kernel_height; i++)
         {
-            if (input[i] > output[index])
+            for (int j = 0; j < kernel_width; j++)
             {
-                output[index] = input[i];
+                if (input[z * channels * width * height + (y * kernel_height + i) * width + (x * kernel_width + j)] > max)
+                {
+                    max = input[z * channels * width * height + (y * kernel_height + i) * width + (x * kernel_width + j)];
+                }
             }
         }
+        output[out_idx] = max;
     }
 }
+
 
 template <typename T>
 void MaxPooling2D<T>::forward(T *input, T *output)
@@ -7279,12 +7345,11 @@ void MaxPooling2D<T>::forward(T *input, T *output)
         exit(1);
     }
 
-    // Define grid and block dimensions
-    int block_size = 16;
-    dim3 blockDim(block_size, block_size);
+    /*The equation for this is: out(N,C,h,w)= max_{0...kernel_H}max_{0...kernel_W}input(N,C,stride[0]xh+m,stride[1]xw+n)*/
 
-    dim3 gridDim((output_size + block_size - 1) / block_size, 1, 1);
-
+    int TPB = 8;
+    dim3 blockDim(TPB, TPB, TPB);
+    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
     // Launch the max pooling kernel
     max_pooling_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, input_size);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
