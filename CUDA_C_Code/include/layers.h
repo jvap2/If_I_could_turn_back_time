@@ -7091,6 +7091,12 @@ __global__ void conv2D_biases_update_kernel(T *this_loss, T* d_biases, int filte
     }
 }
 
+template <typename T>
+__global__ void conv2D_next_loss_kernel(T *weights, T *this_loss, T *next_loss, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int stride, int batch_size)
+{
+    /*We need to find dx_n, where n corresponds to the batch*/
+}
+
 
 
 
