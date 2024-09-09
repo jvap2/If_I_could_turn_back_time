@@ -7060,7 +7060,8 @@ __global__ void conv2D_weight_update_kernel(T *input, T* this_loss, T* d_weights
 {
     /*This kernel is tasked with finding dw for a convolutional layer
     The equation which will be used is:
-    dW[filter,channel,k,m]= 1/(batch_size)\sum_{n=0}^{batch_size}\sum_{i=0}^{kernel_height}\sum_{j=0}^{kernel_width}x_n[channel,i+k,j+m]*thisloss_n[f,i,j]*/
+    dW[filter,channel,k,m]= 1/(batch_size)\sum_{n=0}^{batch_size}\sum_{i=0}^{kernel_height}\sum_{j=0}^{kernel_width}x_n[channel,i+k,j+m]*thisloss_n[f,i,j]
+    We need to dilate the current loss according to the stride*/
     int filter = blockIdx.x * blockDim.x + threadIdx.x;
     int channel = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -7107,6 +7108,9 @@ template <typename T>
 __global__ void conv2D_next_loss_kernel(T *weights, T *this_loss, T *next_loss, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int stride, int batch_size)
 {
     /*We need to find dx_n, where n corresponds to the batch*/
+    /*This will have the form of dy_n * w^T, where dy_n is padded
+    dy_n is padded according to the stride in the forward pass, namely, the amount of padding on the top/bottom and left/right is equal tot the strides
+    This allows us to recover the input size*/ 
 }
 
 
