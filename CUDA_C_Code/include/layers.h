@@ -7111,6 +7111,25 @@ __global__ void conv2D_next_loss_kernel(T *weights, T *this_loss, T *next_loss, 
     /*This will have the form of dy_n * w^T, where dy_n is padded
     dy_n is padded according to the stride in the forward pass, namely, the amount of padding on the top/bottom and left/right is equal tot the strides
     This allows us to recover the input size*/ 
+    /*The loss will be for each batch and channel- it will have the same shape as the input to this layer*/
+    int inCol = blockIdx.x * blockDim.x + threadIdx.x; //inCol w.r.t. the input size to this layer in the forward pass
+    int inRow = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.z*blockDim.z + threadIdx.z;
+    if(inCol < width && inRow < height && batch < batch_size){
+        for(int channel = 0; channel < channels; channel++){
+            for(int filter = 0; filter < filters; filter++){
+                for(int i = 0; i < kernel_height; i++){
+                    for(int j = 0; j < kernel_width; j++){
+                        int outRow = inRow - i;
+                        int outCol = inCol - j;
+                        if(outRow >= 0 && outRow < out_height && outCol >= 0 && outCol < out_width){
+                            next_loss[batch * channels * width * height + channel * width * height + inRow * width + inCol] += weights[filter * channels * kernel_height * kernel_width + channel * kernel_height * kernel_width + i * kernel_width + j] * this_loss[batch * filters * out_width * out_height + filter * out_width * out_height + outRow * out_width + outCol];
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 
@@ -7206,6 +7225,7 @@ void Conv2D<T>::backward(T * loss)
     T *d_input, *d_output, *d_weights, *d_biases;
     T *d_dweights, *d_dbiases, *d_dinput;
     T* d_loss, *d_fin_loss;
+    T* d_temp_loss, *d_w_prime;
     if(!HandleCUDAError(cudaMalloc((void **)&d_loss, batch_size * width * height * channels * sizeof(T)))){
         cout << "Error in allocating memory for d_loss" << endl;
         exit(1);
