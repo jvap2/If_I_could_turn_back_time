@@ -7056,7 +7056,7 @@ __global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int ch
 
 
 template <typename T>
-__global__ void conv2D_weight_update_kernel(T *input, T* this_loss, T* d_weights, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int stride, int batch_size)
+__global__ void conv2D_weight_update_kernel(T *input, T* this_loss, T* d_weights, int channels, int filters, int kernel_width, int kernel_height, int width, int height, int out_width, int out_height, int batch_size)
 {
     /*This kernel is tasked with finding dw for a convolutional layer
     The equation which will be used is:
@@ -7220,6 +7220,10 @@ void Conv2D<T>::forward(T *input, T *output)
     dim3 blockDim(TPB, TPB, TPB);
     dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
     conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, stride, batch_size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
     // Copy the result output from device to host
     if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * channels  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
@@ -7320,8 +7324,40 @@ void Conv2D<T>::backward(T * loss)
         cout << "Error in copying loss from host to device" << endl;
         exit(1);
     }
-
-
+    //Define the grid dimensions
+    /* For the weight update kernel
+    int filter = blockIdx.x * blockDim.x + threadIdx.x;
+    int channel = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;*/
+    int tpb_bias = filters;
+    dim3 blockDim_bias(tpb_bias);
+    dim3 gridDim_bias((filters + tpb_bias - 1) / tpb_bias);
+    int TPB = 8;
+    dim3 blockDim(TPB, TPB, TPB);
+    dim3 gridDim((filters + TPB - 1) / TPB,(channels + TPB - 1) / TPB, (height + TPB - 1) / TPB);
+    dim3 blockDim_nextloss(TPB, TPB, TPB);
+    dim3 gridDim_nextloss((width + TPB - 1) / TPB,(height + TPB - 1) / TPB, (batch_size + TPB - 1) / TPB);
+    conv2D_weight_update_kernel<T><<<gridDim, blockDim>>>(d_input, d_loss, d_dweights, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, batch_size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
+    /*For the bias update
+    int filter = blockIdx.x * blockDim.x + threadIdx.x;*/
+    conv2D_biases_update_kernel<T><<<gridDim_bias, blockDim_bias>>>(d_loss, d_dbiases, filters, out_width, out_height, batch_size);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
+    /* For Next loss 
+    int inCol = blockIdx.x * blockDim.x + threadIdx.x; //inCol w.r.t. the input size to this layer in the forward pass
+    int inRow = blockIdx.y * blockDim.y + threadIdx.y;
+    int batch = blockIdx.z*blockDim.z + threadIdx.z;*/
+    conv2D_next_loss_kernel<T><<<gridDim_nextloss, blockDim_nextloss>>>(d_weights, d_loss, d_fin_loss, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, stride, batch_size);   
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
 
     if(!HandleCUDAError(cudaMemcpy(this->next_loss, d_fin_loss, batch_size * output_width * output_height * channels * sizeof(T), cudaMemcpyDeviceToHost))){
         cout << "Error in copying fin_loss from host to device" << endl;
@@ -7368,11 +7404,7 @@ void Conv2D<T>::backward(T * loss)
     }
 }
 
-// template <typename T>
-// void Conv2D<T>::update_weights(T learning_rate){
-//     this->weights = this->weights - learning_rate * this->dweights;
-//     this->biases = this->biases - learning_rate * this->dbiases;
-// }
+
 
 template <typename T>
 __global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels)
