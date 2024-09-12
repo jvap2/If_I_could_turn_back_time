@@ -7182,7 +7182,7 @@ void Conv2D<T>::forward(T *input, T *output)
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * channels * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * filters * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
@@ -7266,13 +7266,21 @@ void Conv2D<T>::backward(T * loss)
     T *d_input, *d_output, *d_weights, *d_biases;
     T *d_dweights, *d_dbiases, *d_dinput;
     T* d_loss, *d_fin_loss;
-    T* d_temp_loss, *d_w_prime;
+    T* d_temp_loss_dilate, *d_temp_loss_d_pad, *d_w_prime;
     if(!HandleCUDAError(cudaMalloc((void **)&d_loss, batch_size * width * height * channels * sizeof(T)))){
         cout << "Error in allocating memory for d_loss" << endl;
         exit(1);
     }
-    if(!HandleCUDAError(cudaMalloc((void **)&d_fin_loss, batch_size * output_width * output_height * channels * sizeof(T)))){
+    if(!HandleCUDAError(cudaMalloc((void **)&d_fin_loss, batch_size * output_width * output_height * filters * sizeof(T)))){
         cout << "Error in allocating memory for d_fin_loss" << endl;
+        exit(1);
+    } 
+    if(!HandleCUDAError(cudaMalloc((void **)&d_temp_loss_dilate, batch_size * (output_width+(stride-1)) * (output_height+(stride-1)) * filters * sizeof(T)))){
+        cout << "Error in allocating memory for d_temp_loss_dilate" << endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMalloc((void **)&d_temp_loss_d_pad, batch_size * (output_width+(stride-1)+2*(kernel_width-1)) * (output_height+(stride-1)+2*(kernel_width-1)) * filters * sizeof(T)))){
+        cout << "Error in allocating memory for d_temp_loss_d_pad" << endl;
         exit(1);
     }
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
@@ -7320,10 +7328,21 @@ void Conv2D<T>::backward(T * loss)
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
     }
-    if(!HandleCUDAError(cudaMemcpy(d_loss, loss, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice))){
+    if(!HandleCUDAError(cudaMemcpy(d_fin_loss, loss, batch_size * output_width * output_height * channels * sizeof(T), cudaMemcpyHostToDevice))){
         cout << "Error in copying loss from host to device" << endl;
         exit(1);
     }
+
+    /*Need to dilate the loss, as well as dilate and pad the loss for different components of the backward pass
+    
+    conv2D_dilate_loss(T* loss, T* loss_padded, int batch_size, int channels, int width, int height, int dilate_width, int dilate_height)
+    conv2D_dilate_pad_loss(T* loss, T* loss_padded, int batch_size, int channels, int width, int height, int dilate_width, int dilate_height, int pad_width, int pad_height)
+    int inCol = blockIdx.x * blockDim.x + threadIdx.x;
+    int inRow = blockIdx.y * blockDim.y + threadIdx.y;
+    int channel = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    
+    */
     //Define the grid dimensions
     /* For the weight update kernel
     int filter = blockIdx.x * blockDim.x + threadIdx.x;
