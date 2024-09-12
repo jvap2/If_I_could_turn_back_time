@@ -7298,6 +7298,10 @@ void Conv2D<T>::backward(T * loss)
         cout << "Error in allocating memory for d_weights" << endl;
         exit(1);
     }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_w_prime, filters * kernel_width * kernel_height * channels * sizeof(T)))){
+        cout << "Error in allocating memory for d_w_prime" << endl;
+        exit(1);
+    }
     if (!HandleCUDAError(cudaMalloc((void **)&d_biases, filters * sizeof(T))))
     {
         cout << "Error in allocating memory for d_biases" << endl;
@@ -7340,14 +7344,42 @@ void Conv2D<T>::backward(T * loss)
     int inCol = blockIdx.x * blockDim.x + threadIdx.x;
     int inRow = blockIdx.y * blockDim.y + threadIdx.y;
     int channel = blockIdx.z * blockDim.z + threadIdx.z;
+
+
+    conv2D_rotate_filter(T *weights, T *weights_rot, int channels, int filters, int kernel_width, int kernel_height)
+
+    int filter = blockIdx.x * blockDim.x + threadIdx.x;
+    int channel = blockIdx.y * blockDim.y + threadIdx.y;
+    int i = blockIdx.z * blockDim.z + threadIdx.z;
     
     
     */
+    int TPB_padding = 8;
+    dim3 blockDim_padding(TPB_padding, TPB_padding, TPB_padding);
+    dim3 gridDim_padding((output_width + TPB_padding - 1) / TPB_padding,(output_height + TPB_padding - 1) / TPB_padding, (channels + TPB_padding - 1) / TPB_padding);
+    dim3 blockDim_rotate(TPB_padding, TPB_padding, TPB_padding);
+    dim3 gridDim_rotate((filter+ TPB_padding - 1) / TPB_padding, (channel + TPB_padding - 1) / TPB_padding, (kernel_height + TPB_padding - 1) / TPB_padding);
+    conv2D_dilate_loss<T><<<gridDim_padding, blockDim_padding>>>(d_fin_loss, d_temp_loss_dilate, batch_size, channels, output_width, output_height, stride, stride);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
+    conv2D_dilate_pad_loss<T><<<gridDim_padding, blockDim_padding>>>(d_fin_loss, d_temp_loss_d_pad, batch_size, channels, output_width, output_height, stride, stride, kernel_width-1, kernel_height-1);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
+    conv2D_rotate_filter<T><<<gridDim_rotate, blockDim_rotate>>>(d_weights, d_w_prime, channels, filters, kernel_width, kernel_height);
+    if(!HandleCUDAError(cudaDeviceSynchronize())){
+        cout<<"Error in running kernel"<<endl;
+        exit(1);
+    }
     //Define the grid dimensions
     /* For the weight update kernel
     int filter = blockIdx.x * blockDim.x + threadIdx.x;
     int channel = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;*/
+
     int tpb_bias = filters;
     dim3 blockDim_bias(tpb_bias);
     dim3 gridDim_bias((filters + tpb_bias - 1) / tpb_bias);
