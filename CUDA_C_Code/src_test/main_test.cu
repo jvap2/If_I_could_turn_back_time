@@ -12,7 +12,7 @@ int main(int argc, char** argv){
 	//We use the place holder to say we want to work with unsigned characters
 	// One windows side, black slash is escape sequence, hence we need two backslashes. On linux side, they use forward slash
 	//CImg<unsigned char> imgRGB = CImg<>("D:\\Classes\\GPGPU\\Codes\\ImageProcessing\\Images\\cat.png");
-	CImg<unsigned char> imgRGB = CImg<>("/home/sureshm/Senior_Design_HPC/GPU/ImageProcessing/Gray_Scale/grey-pistol-pete-mascot-pointing.jpg");
+	CImg<unsigned char> imgRGB = CImg<>();
 	
 	//Display Image
 	CImgDisplay dispRGB(imgRGB, "Grey");//We can create display object, which is CImgDisplay, and we can use dispRBG to display

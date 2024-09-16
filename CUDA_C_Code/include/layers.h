@@ -7164,7 +7164,7 @@ __global__ void conv2D_dilate_pad_loss(T* loss, T* loss_padded, int batch_size, 
     int channel = blockIdx.z * blockDim.z + threadIdx.z;
     if(inCol < width && inRow < height && channel < channels){
         for(int i = 0; i<batch_size;i++){
-            loss_padded[i * channels * width * height + channel * width * height + (inRow + pad_height) * (width*(dilate_width+1)) + ((inCol + pad_width)*(dilate_height+1))] = loss[i * channels * dilate_width * dilate_height + channel * dilate_width * dilate_height + inRow * dilate_width + inCol];
+            loss_padded[i * channels * width * height + channel * width * height + (inRow + pad_height) * (width*(dilate_width+1)-dilate_width) + ((inCol)*(dilate_height+1))+pad_width] = loss[i * channels * dilate_width * dilate_height + channel * dilate_width * dilate_height + inRow * dilate_width + inCol];
             //double check
         }
     }
@@ -7388,14 +7388,14 @@ void Conv2D<T>::backward(T * loss)
     dim3 gridDim((filters + TPB - 1) / TPB,(channels + TPB - 1) / TPB, (height + TPB - 1) / TPB);
     dim3 blockDim_nextloss(TPB, TPB, TPB);
     dim3 gridDim_nextloss((width + TPB - 1) / TPB,(height + TPB - 1) / TPB, (batch_size + TPB - 1) / TPB);
-    conv2D_weight_update_kernel<T><<<gridDim, blockDim>>>(d_input, d_loss, d_dweights, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, batch_size);
+    conv2D_weight_update_kernel<T><<<gridDim, blockDim>>>(d_input, d_temp_loss_dilate, d_dweights, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
     }
     /*For the bias update
     int filter = blockIdx.x * blockDim.x + threadIdx.x;*/
-    conv2D_biases_update_kernel<T><<<gridDim_bias, blockDim_bias>>>(d_loss, d_dbiases, filters, out_width, out_height, batch_size);
+    conv2D_biases_update_kernel<T><<<gridDim_bias, blockDim_bias>>>(d_temp_loss_d_pad, d_dbiases, filters, out_width, out_height, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
@@ -7404,13 +7404,13 @@ void Conv2D<T>::backward(T * loss)
     int inCol = blockIdx.x * blockDim.x + threadIdx.x; //inCol w.r.t. the input size to this layer in the forward pass
     int inRow = blockIdx.y * blockDim.y + threadIdx.y;
     int batch = blockIdx.z*blockDim.z + threadIdx.z;*/
-    conv2D_next_loss_kernel<T><<<gridDim_nextloss, blockDim_nextloss>>>(d_weights, d_loss, d_fin_loss, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, stride, batch_size);   
+    conv2D_next_loss_kernel<T><<<gridDim_nextloss, blockDim_nextloss>>>(d_w_prime, d_loss, d_temp_loss_d_pad, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, stride, batch_size);   
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
     }
 
-    if(!HandleCUDAError(cudaMemcpy(this->next_loss, d_fin_loss, batch_size * output_width * output_height * channels * sizeof(T), cudaMemcpyDeviceToHost))){
+    if(!HandleCUDAError(cudaMemcpy(this->next_loss, d_loss, batch_size * width * height * channels * sizeof(T), cudaMemcpyDeviceToHost))){
         cout << "Error in copying fin_loss from host to device" << endl;
         exit(1);
     }
