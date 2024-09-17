@@ -38,6 +38,7 @@
 #include <cusolverDn.h>
 #include <cmath>
 #include "GPUErrors.h"
+#define cimg_use_jpeg
 #include "CImg.h"
 using namespace cimg_library;
 
@@ -50,12 +51,18 @@ using namespace cimg_library;
 #define IPSALA_RICE_FOLDER "/Ipsala/"
 #define JASMINE_RICE_FOLDER "/Jasmine/"
 #define KARACADAG_RICE_FOLDER "/Karacadag/"
-#define ARBORIO_FILE RICE_DATA_FOLDER + ARBORIO_RICE_FOLDER + "Arborio ("
-#define BASMATI_FILE RICE_DATA_FOLDER + BASMATI_RICE_FOLDER + "Basmati ("
-#define IPSALA_FILE RICE_DATA_FOLDER + IPSALA_RICE_FOLDER + "Ipsala ("
-#define JASMINE_FILE RICE_DATA_FOLDER + JASMINE_RICE_FOLDER + "Jasmine ("
-#define KARACADAG_FILE RICE_DATA_FOLDER + KARACADAG_RICE_FOLDER + "Karacadag ("
+#define ARBORIO_FILE "../data/Rice_Image_Dataset/Arborio/Arborio ("
+#define BASMATI_FILE "../data/Rice_Image_Dataset/Basmati/basmati ("
+#define IPSALA_FILE "../data/Rice_Image_Dataset/Ipsala/Ipsala ("
+#define JASMINE_FILE "../data/Rice_Image_Dataset/Jasmine/Jasmine ("
+#define KARACADAG_FILE "../data/Rice_Image_Dataset/Karacadag/Karacadag ("
+#define IMAGE_HEIGHT 250
+#define IMAGE_WIDTH 250
+#define MNIST_HEIGHT 28
+#define MNIST_WIDTH 28
+#define MNIST_SIZE 70000
 #define RICE_TYPE_SIZE 15000
+#define NUM_RICE 5
 #define HEART_INPUT_SIZE 13
 #define WEATHER_INPUT_SIZE 10
 #define WEATHER_OUTPUT_SIZE 4
@@ -304,6 +311,62 @@ void Read_Dummy_Data(T **data, T **output)
     }
 }
 
+
+template <typename T>
+void Read_Rice_Data(T **data, T **output, int input_size, int output_size)
+{
+    int row = 0;
+    int col = 0;
+    int col_max = input_size;
+    int classes = output_size;
+    for (int i = 0; i < NUM_RICE; i++)
+    {
+        std::string file;
+        switch (i)
+        {
+        case 0:
+            file = ARBORIO_FILE;
+            break;
+        case 1:
+            file = BASMATI_FILE;
+            break;
+        case 2:
+            file = IPSALA_FILE;
+            break;
+        case 3:
+            file = JASMINE_FILE;
+            break;
+        case 4:
+            file = KARACADAG_FILE;
+            break;
+        }
+        for (int j = 1; j <= RICE_TYPE_SIZE; j++)
+        {
+            std::string file_name = file + std::to_string(j) + ").jpg";
+            CImg<float> image(file_name.c_str());
+            for (int k = 0; k < IMAGE_HEIGHT; k++)
+            {
+                for (int l = 0; l < IMAGE_WIDTH; l++)
+                {
+                    data[row][k * IMAGE_WIDTH + l] = image(l, k, 0, 0);
+                }
+            }
+            for (int k = 0; k < classes; k++)
+            {
+                output[row][k] = (k == i) ? 1.0f : 0.0f;
+            }
+            row++;
+        }
+    }
+}
+
+template <typename T>
+void Read_MNIST_data(T **data, T **output, int size, int input_size, int output_size)
+{
+    //Need to read in npy files
+}
+
+
 template <typename T>
 void Train_Split_Test(T **data, T **output, T **train_data, T **train_output, T **test_data, T **test_output, int training_size, int test_size, int size, int input_size, int output_size)
 {
@@ -404,7 +467,7 @@ void InitMatrix_He(T* matrix, int ny, int nx){
 template <typename T>
 void ZeroMatrix(T *temp, const int ny, const int nx)
 {
-    float *p = temp;
+    T *p = temp;
 
     for (int i = 0; i < ny; i++)
     {
@@ -417,7 +480,7 @@ void ZeroMatrix(T *temp, const int ny, const int nx)
 }
 
 template <typename T>
-void InitializeVector(float *vec, int n)
+void InitializeVector(T *vec, int n)
 {
     for (int i = 0; i < n; i++)
     {
@@ -3662,6 +3725,7 @@ public:
     virtual ~Loss(){};
     virtual void forward(T *input, T *output) override {};
     virtual void backward(T *loss) override {};
+    virtual void set_labels(T *labels)  {};
 };
 
 template <typename T>
@@ -7219,7 +7283,7 @@ void Conv2D<T>::forward(T *input, T *output)
     int TPB = 8;
     dim3 blockDim(TPB, TPB, TPB);
     dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
-    conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, out_width, out_height, stride, batch_size);
+    conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, stride, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
@@ -7358,7 +7422,7 @@ void Conv2D<T>::backward(T * loss)
     dim3 blockDim_padding(TPB_padding, TPB_padding, TPB_padding);
     dim3 gridDim_padding((output_width + TPB_padding - 1) / TPB_padding,(output_height + TPB_padding - 1) / TPB_padding, (channels + TPB_padding - 1) / TPB_padding);
     dim3 blockDim_rotate(TPB_padding, TPB_padding, TPB_padding);
-    dim3 gridDim_rotate((filter+ TPB_padding - 1) / TPB_padding, (channel + TPB_padding - 1) / TPB_padding, (kernel_height + TPB_padding - 1) / TPB_padding);
+    dim3 gridDim_rotate((filters+ TPB_padding - 1) / TPB_padding, (channels + TPB_padding - 1) / TPB_padding, (kernel_height + TPB_padding - 1) / TPB_padding);
     conv2D_dilate_loss<T><<<gridDim_padding, blockDim_padding>>>(d_fin_loss, d_temp_loss_dilate, batch_size, channels, output_width, output_height, stride, stride);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
@@ -7395,7 +7459,7 @@ void Conv2D<T>::backward(T * loss)
     }
     /*For the bias update
     int filter = blockIdx.x * blockDim.x + threadIdx.x;*/
-    conv2D_biases_update_kernel<T><<<gridDim_bias, blockDim_bias>>>(d_temp_loss_d_pad, d_dbiases, filters, out_width, out_height, batch_size);
+    conv2D_biases_update_kernel<T><<<gridDim_bias, blockDim_bias>>>(d_temp_loss_d_pad, d_dbiases, filters, output_width, output_height, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
@@ -7513,7 +7577,7 @@ void MaxPooling2D<T>::forward(T *input, T *output)
     dim3 blockDim(TPB, TPB, TPB);
     dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
     // Launch the max pooling kernel
-    max_pooling_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, input_size);
+    max_pooling_kernel<T><<<gridDim, blockDim>>>(input, output, kernel_width, kernel_height, width, height, output_width, output_height, batch_size, padding, channels);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;

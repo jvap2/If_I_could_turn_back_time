@@ -1,7 +1,7 @@
 # NVCC_FLAGS := --extended-lambda -Xcompiler -O3 -rdc=true -gencode arch=compute_89,code=sm_89
-NVCC_FLAGS := --extended-lambda -g -O0 -G -Xcompiler -Wall -rdc=true -gencode arch=compute_89,code=sm_89
+NVCC_FLAGS := --extended-lambda --expt-relaxed-constexpr -g -O0 -G -Xcompiler -Wall -rdc=true -gencode arch=compute_89,code=sm_89
 LINK_FLAGS := -arch=sm_89  
-INC_FLAGS := -lcudadevrt -lcurand -lcusparse -lcublas -lnvToolsExt -lcusolver -lcudart -lpthread -L/usr/lib/X11 -lX11 -I/usr/local/CImg-3.4.2
+INC_FLAGS := -lcudadevrt -lcurand -lcusparse -lcublas -lnvToolsExt -lcusolver -lcudart -lpthread -L/usr/lib/X11 -lX11 -I/usr/local/CImg-3.4.2 -ljpeg
 # C_FLAGS := -std=c++11 
 NVCC := nvcc
 
