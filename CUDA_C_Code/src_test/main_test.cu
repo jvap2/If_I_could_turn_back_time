@@ -70,33 +70,28 @@ int main(int argc, char** argv){
     }
 	Read_Rice_Data(input, target,input_size, output_size);
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
+    int kernel_width = 3;
+    int kernel_height = 3;
+    int stride = 1;
+    int padding = 1;
+    int filters = 1;
+    int channels = 1;
     // AdamOptimizer<char>* optimizer = new AdamOptimizer<char>(.001, .9, .999, 1e-8);
     // AdamOptimizer<char>* optimizer = new AdamOptimizer<char>(.0001, .9, .999, 1e-8);
-    // AdamOptimizer <char>* optimizer = new AdamOptimizer<char>(.001, .9, .999, 1e-8);
-    // Network<char> net(input_size, output_size, optimizer,Q,batch_size);
-    // net.addLayer(new Linear<char>(input_size, 128,batch_size));
-    // net.addLayer(new Tanh<char>(128,batch_size));
-    // net.addLayer(new Linear<char>(128, 256, batch_size));
-    // net.addLayer(new Tanh<char>(256,batch_size));
-    // net.addLayer(new Linear<char>(256, 64, batch_size));
-    // net.addLayer(new Tanh<char>(64,batch_size));
-    // net.addLayer(new Linear<char>(64, output_size, batch_size));
-    // net.addLayer(new Softmax<char>(output_size,batch_size));
-    // if(strcmp(argv[1],"weather")==0){
-    //     cout<<"Adding Categorical Loss"<<endl;
-    //     net.addLoss(new Categorical<char>(output_size,batch_size));
-    // }
-    // if(strcmp(argv[1],"heart")==0){
-    //     cout<<"Adding Binary Cross Entropy Loss"<<endl;
-    //     net.addLoss(new Binary_CrossEntropy<char>(output_size,batch_size));
-    // }
-    // if(strcmp(argv[1],"dummy")==0){
-    //     cout<<"Adding MSE Loss"<<endl;
-    //     net.addLoss(new Binary_CrossEntropy<char>(output_size,batch_size));
-    // }
-    // //Print out the size of the categorical layer
-
-    // net.train(train_input, train_target, 75, .001, training_size);
+    AdamOptimizer <char>* optimizer = new AdamOptimizer<char>(.001, .9, .999, 1e-8);
+    Network<char> net(input_size, output_size, optimizer,Q,batch_size);
+    net.addLayer(new Conv2D<char>(width, height, channels, kernel_width, kernel_height, stride, padding, filters, batch_size));
+    net.addLayer(new RELU_layer<char>(height-2, width-2, filters, batch_size));
+    net.addLayer(new MaxPooling2D<char>(kernel_width, kernel_height, stride, padding, width-2, height-2, filters, batch_size));  
+    net.addLayer(new Conv2D<char>((height-2)/2, (width-2)/2, filters, kernel_width, kernel_height, stride, padding, filters, batch_size));
+    net.addLayer(new RELU_layer<char>((height-2)/2, (width-2)/2, filters, batch_size));
+    net.addLayer(new MaxPooling2D<char>(kernel_width, kernel_height, stride, padding, (width-2)/2, (height-2)/2, filters, batch_size));
+    net.addLayer(new Flatten<char>((width-2)/4, (height-2)/4,filters, batch_size);
+    net.addLayer(new Linear<char>((height-2)/4*(width-2)/4*filters, 64, batch_size));
+    net.addLayer(new RELU_layer<char>(64, batch_size));
+    net.addLayer(new Softmax<char>(64, batch_size));
+    net.addLoss(new Categorical<char>(64, batch_size));
+    net.train(train_input, train_target, 75, .001, training_size);
     // cout<<"Training Complete"<<endl;
     // // cout<<"Results on Training Data"<<endl;
     // // net.predict(train_input,train_target, training_size);

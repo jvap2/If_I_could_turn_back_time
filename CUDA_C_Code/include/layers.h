@@ -536,6 +536,7 @@ public:
     {
         this->rows = rows;
         this->cols = cols;
+        this->channels = 1;
         this->weights = (T *)malloc(rows * cols * sizeof(T));
         this->biases = (T *)malloc(rows * sizeof(T));
         this->hidden_output = (T *)malloc(rows * sizeof(T));
@@ -624,6 +625,7 @@ public:
     int rows;
     int cols;
     int batch_size;
+    int channels;
     T *weights;
     T *biases;
     T *d_weights;
@@ -930,6 +932,17 @@ public:
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         this->name = "Sigmoid";
     }
+    Sigmoid(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * batch_size * cols * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * cols * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * cols * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * cols * batch_size * sizeof(T));
+        ZeroVector<T>(this->input, rows * batch_size * cols * batch_size);
+        ZeroVector<T>(this->hidden_output, rows * batch_size * cols * batch_size);
+        this->name = "Sigmoid";
+    }
     ~Sigmoid()
     {
         free(this->input);
@@ -958,6 +971,17 @@ public:
         this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
         ZeroVector<T>(this->input, rows*batch_size);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
+        this->name = "Tanh";
+    }
+    Tanh(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector<T>(this->input, rows*cols*channels*batch_size);
+        ZeroVector<T>(this->hidden_output, rows*cols*channels*batch_size);
         this->name = "Tanh";
     }
     ~Tanh()
@@ -991,6 +1015,19 @@ public:
         ZeroVector(this->hidden_output, rows*batch_size);
         ZeroVector(this->loss, rows*batch_size);
         ZeroVector(this->next_loss, rows*batch_size);
+        this->name = "RELU";
+    }
+    RELU_layer(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector(this->input, rows * cols * channels* batch_size);
+        ZeroVector(this->hidden_output, rows * cols * channels* batch_size);
+        ZeroVector(this->loss, rows * cols * channels* batch_size);
+        ZeroVector(this->next_loss, rows * cols * channels* batch_size);
         this->name = "RELU";
     }
     ~RELU_layer()
@@ -1111,6 +1148,17 @@ public:
         this->name = "LeakyRELU";
     }
     T alpha = 0.01;
+    LeakyRELU_layer(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector(this->input, rows * cols * channels* batch_size);
+        ZeroVector(this->hidden_output, rows * cols * channels* batch_size);
+        this->name = "LeakyRELU";
+    }
     ~LeakyRELU_layer()
     {
         free(this->input);
@@ -1142,6 +1190,17 @@ public:
         this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
         ZeroVector(this->input, rows*batch_size);
         ZeroVector(this->hidden_output, rows*batch_size);
+        this->name = "ELU";
+    }
+    ELU_layer(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector(this->input, rows * cols * channels* batch_size);
+        ZeroVector(this->hidden_output, rows * cols * channels* batch_size);
         this->name = "ELU";
     }
     T alpha = 0.01;
@@ -1179,6 +1238,17 @@ public:
         this->name = "ELU";
     }
     T alpha = 0.01;
+    SLU_layer(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector(this->input, rows * cols * channels* batch_size);
+        ZeroVector(this->hidden_output, rows * cols * channels* batch_size);
+        this->name = "ELU";
+    }
     ~SLU_layer()
     {
         free(this->input);
@@ -3610,6 +3680,34 @@ public:
 };
 
 template <typename T>
+class Flatten : public Matrix<T>
+{
+public:
+    Flatten(int width, int height, int channels, int batch_size)
+    {
+        this->width = width;
+        this->height = height;
+        this->channels = channels;
+        this->batch_size = batch_size;
+        this->rows = width * height * channels;
+        this->cols = 1;
+        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        this->hidden_output = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+    }
+    int width;
+    int height;
+    int channels;
+    int batch_size;
+    int rows;
+    int cols;
+    T *input;
+    T *hidden_output;
+    ~Flatten();
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+};
+
+template <typename T>
 __global__ void Binary_Cross_Entropy_Kernel(T *label, T *output, T *loss, int size, int batch_size)
 {
     int index = blockIdx.y * blockDim.y + threadIdx.y;
@@ -4577,6 +4675,17 @@ public:
         }
         num_layers++;
         layer->batch_size = this->batch_size;
+    }
+    void addLayer(Flatten<T> *layer)
+    {
+        layers.push_back(layer);
+        loss.push_back((T *)malloc(layer->rows * layer->cols * layer->channels * this->batch_size * sizeof(T)));
+        layer->name = "saved flatten";
+        if (layer->next_loss == NULL)
+        {
+            layer->next_loss = (T *)malloc(layer->rows * layer->cols * layer->channels * this->batch_size * sizeof(T));
+        }
+        num_layers++;
     }
     void train(T *input, T *output, int epochs, T learning_rate);
     void train(T **input, T **output, int epochs, T learning_rate, int size);
