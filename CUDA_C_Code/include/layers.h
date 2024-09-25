@@ -343,12 +343,12 @@ void Read_Rice_Data(T **data, T **output, int input_size, int output_size)
         for (int j = 1; j <= RICE_TYPE_SIZE; j++)
         {
             std::string file_name = file + std::to_string(j) + ").jpg";
-            CImg<float> image(file_name.c_str());
+            CImg<T> image(file_name.c_str());
             for (int k = 0; k < IMAGE_HEIGHT; k++)
             {
                 for (int l = 0; l < IMAGE_WIDTH; l++)
                 {
-                    data[row][k * IMAGE_WIDTH + l] = image(l, k, 0, 0);
+                    data[row][k * IMAGE_WIDTH + l] = image(l, k, 0, 0); //goes x,y,z,c
                 }
             }
             for (int k = 0; k < classes; k++)
@@ -3640,6 +3640,21 @@ public:
 };
 
 template <typename T>
+__global__ void MaxPooling2D_Backward_Kernel(int* d_max_indices, T* d_loss, T* d_next_loss, int output_width, int output_height, int channels, int batch_size){
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int z = blockIdx.z * blockDim.z + threadIdx.z;
+    if(x < output_width && y < output_height && z < channels) {
+        for(int batch = 0; batch < batch_size; batch++) {
+            int index = x + y * output_width + z * output_width * output_height + batch * output_width * output_height * channels;
+            int max_index = d_max_indices[index];
+            d_next_loss[max_index] = d_loss[index];
+        }
+    }
+}
+
+
+template <typename T>
 class MaxPooling2D : public Matrix<T>
 {
 public:
@@ -3658,6 +3673,8 @@ public:
         this->output_width = floor((width - 2 * padding - (kernel_width-1) - 1) / stride + 1);
         this->output_height = floor((height - 2 * padding - (kernel_height-1) - 1) / stride + 1);
         this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        this->loss = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(width * height * channels * batch_size * sizeof(T));
         this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
         this->max_indices = (int *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(int));
     }
@@ -3676,7 +3693,13 @@ public:
     int* max_indices;
     T *input;
     T *hidden_output;
-    ~MaxPooling2D();
+    ~MaxPooling2D(){
+        free(this->max_indices);
+        free(this->input);
+        free(this->hidden_output);
+        free(this->next_loss);
+        free(this->loss);
+    }
     void forward(T *input, T *output) override;
     void backward(T *loss) override{
         /*For this, we need to only pass the gradient to the coordinates of max coordinates*/
@@ -3705,11 +3728,11 @@ public:
             cout<<"Error in copying loss from host to device"<<endl;
             exit(1);
         }
-        TPB = 8;
+        int TPB = 8;
         //Define grid and block dimensions
         //We want to have the coordinates correlate to the max indices
         dim3 blockDim3D(TPB, TPB, TPB);
-        dim3 gridDim_padding((output_width + TPB_padding - 1) / TPB_padding,(output_height + TPB_padding - 1) / TPB_padding, (channels + TPB_padding - 1) / TPB_padding);
+        dim3 gridDim_padding((output_width + TPB - 1) / TPB,(output_height + TPB - 1) / TPB, (channels + TPB - 1) / TPB);
 
         //Launch the kernel
         MaxPooling2D_Backward_Kernel<T><<<gridDim_padding, blockDim3D>>>(d_max_indices, d_loss, d_next_loss, output_width, output_height, channels, batch_size);
@@ -3737,6 +3760,7 @@ public:
             cout<<"Error in resetting device"<<endl;
             exit(1);
         }
+    }
 };
 
 template <typename T>
@@ -3762,7 +3786,10 @@ public:
     int cols;
     T *input;
     T *hidden_output;
-    ~Flatten();
+    ~Flatten(){
+        free(this->input);
+        free(this->hidden_output);
+    }
     void forward(T *input, T *output) override{
         for(int i = 0; i < this->rows * this->batch_size; i++){
             output[i] = input[i];
@@ -7275,7 +7302,7 @@ __global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int ch
     For the sake of computatation, we will use the z dim to deal with batches and have them process each channel */
     int outCol = blockIdx.x * blockDim.x + threadIdx.x;
     int outRow = blockIdx.y * blockDim.y + threadIdx.y;
-    int batch = blockIdx.z*blockDim.z + threadIdx.z;
+    int batch = blockIdx.z * blockDim.z + threadIdx.z;
     if(outCol < out_width && outRow < out_height && batch < batch_size){
         for (int filter = 0; filter < filters; filter++)
         {
@@ -7288,6 +7315,8 @@ __global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int ch
                     {
                         int inRow = outRow * stride + i;
                         int inCol = outCol * stride + j;
+                        printf("Input[%d][%d][%d][%d]: \n", batch, channel, inRow, inCol);
+                        printf("Weights[%d][%d][%d][%d]: \n", filter, channel, i, j);
                         sum += input[batch * channels * width * height + channel * width * height + inRow * width + inCol] * weights[filter * channels * kernel_height * kernel_width + channel * kernel_height * kernel_width + i * kernel_width + j];
                     }
                 }
@@ -7461,7 +7490,7 @@ void Conv2D<T>::forward(T *input, T *output)
     // Define grid and block dimensions
     int TPB = 8;
     dim3 blockDim(TPB, TPB, TPB);
-    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
+    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size + TPB - 1) / TPB);
     conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, stride, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
@@ -7701,7 +7730,7 @@ void Conv2D<T>::backward(T * loss)
 
 
 template <typename T>
-__global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels, int coordinates)
+__global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels, int* coordinates)
 {
     int x = threadIdx.x + (blockIdx.x * blockDim.x);
     int y = threadIdx.y + (blockIdx.y * blockDim.y);
@@ -7710,8 +7739,8 @@ __global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int ke
     if (x < output_width && y < output_height && z < channels)
     {
         for(int batch = 0; batch < batch_size; batch++){
-            idx = batch * channels * width * height + z * width * height + y * width + x;
-            out_idx = batch * channels * output_width * output_height + z * output_width * output_height + y * output_width + x;
+            int idx = batch * channels * width * height + z * width * height + y * width + x;
+            int out_idx = batch * channels * output_width * output_height + z * output_width * output_height + y * output_width + x;
             T max = input[idx];
             int coord = 0;
             for (int i = 0; i < kernel_height; i++)
@@ -7720,7 +7749,7 @@ __global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int ke
                 {
                     if(input[batch * channels * width * height + z * width * height + (y + i) * width + x + j] > max){
                         max = input[batch * channels * width * height + z * width * height + (y + i) * width + x + j];
-                        coord = batch * channels * width * height + z * width * height + (y + i) * width + x + j
+                        coord = batch * channels * width * height + z * width * height + (y + i) * width + x + j;
                     }
                 }
             }
@@ -7764,7 +7793,7 @@ void MaxPooling2D<T>::forward(T *input, T *output)
     dim3 blockDim(TPB, TPB, TPB);
     dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
     // Launch the max pooling kernel
-    max_pooling_kernel<T><<<gridDim, blockDim>>>(input, output, kernel_width, kernel_height, width, height, output_width, output_height, batch_size, padding, channels);
+    max_pooling_kernel<T><<<gridDim, blockDim>>>(input, output, kernel_width, kernel_height, width, height, output_width, output_height, batch_size, padding, channels, d_coordinates);
     if (!HandleCUDAError(cudaDeviceSynchronize()))
     {
         cout << "Error in synchronizing device" << endl;

@@ -50,47 +50,47 @@ int main(int argc, char** argv){
 	batch_size = 128;
 	Q = 128;
     // Create a network
-    char** input = new char*[size];
-    char** target = new char*[size];
+    float** input = new float*[size];
+    float** target = new float*[size];
     for(int i = 0; i < size; i++){
-        input[i] = new char[input_size]{};
-        target[i] = new char[output_size]{};
+        input[i] = new float[input_size]{};
+        target[i] = new float[output_size]{};
     }
-    char** test_input = new char*[test_size];
-    char** test_target = new char*[test_size];
+    float** test_input = new float*[test_size];
+    float** test_target = new float*[test_size];
     for(int i = 0; i < test_size; i++){
-        test_input[i] = new char[input_size]{};
-        test_target[i] = new char[output_size]{};
+        test_input[i] = new float[input_size]{};
+        test_target[i] = new float[output_size]{};
     }
-    char** train_input = new char*[training_size];
-    char** train_target = new char*[training_size];
+    float** train_input = new float*[training_size];
+    float** train_target = new float*[training_size];
     for(int i = 0; i < training_size; i++){
-        train_input[i] = new char[input_size]{};
-        train_target[i] = new char[output_size]{};
+        train_input[i] = new float[input_size]{};
+        train_target[i] = new float[output_size]{};
     }
-	Read_Rice_Data(input, target,input_size, output_size);
-    Train_Split_Test(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
+	Read_Rice_Data<float>(input, target,input_size, output_size);
+    Train_Split_Test<float>(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     int kernel_width = 3;
     int kernel_height = 3;
     int stride = 1;
     int padding = 1;
     int filters = 1;
     int channels = 1;
-    // AdamOptimizer<char>* optimizer = new AdamOptimizer<char>(.001, .9, .999, 1e-8);
-    // AdamOptimizer<char>* optimizer = new AdamOptimizer<char>(.0001, .9, .999, 1e-8);
-    AdamOptimizer <char>* optimizer = new AdamOptimizer<char>(.001, .9, .999, 1e-8);
-    Network<char> net(input_size, output_size, optimizer,Q,batch_size);
-    net.addLayer(new Conv2D<char>(width, height, channels, kernel_width, kernel_height, stride, padding, filters, batch_size));
-    net.addLayer(new RELU_layer<char>(height-2, width-2, filters, batch_size));
-    net.addLayer(new MaxPooling2D<char>(kernel_width, kernel_height, stride, padding, width-2, height-2, filters, batch_size));  
-    net.addLayer(new Conv2D<char>((height-2)/2, (width-2)/2, filters, kernel_width, kernel_height, stride, padding, filters, batch_size));
-    net.addLayer(new RELU_layer<char>((height-2)/2, (width-2)/2, filters, batch_size));
-    net.addLayer(new MaxPooling2D<char>(kernel_width, kernel_height, stride, padding, (width-2)/2, (height-2)/2, filters, batch_size));
-    net.addLayer(new Flatten<char>((width-2)/4, (height-2)/4,filters, batch_size);
-    net.addLayer(new Linear<char>((height-2)/4*(width-2)/4*filters, 64, batch_size));
-    net.addLayer(new RELU_layer<char>(64, batch_size));
-    net.addLayer(new Softmax<char>(64, batch_size));
-    net.addLoss(new Categorical<char>(64, batch_size));
+    // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
+    // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
+    AdamOptimizer <float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
+    Network<float> net(input_size, output_size, optimizer,Q,batch_size);
+    net.addLayer(new Conv2D<float>(width, height, channels, kernel_width, kernel_height, stride, padding, filters, batch_size));
+    net.addLayer(new RELU_layer<float>(height-2, width-2, filters, batch_size));
+    net.addLayer(new MaxPooling2D<float>(kernel_width, kernel_height, stride, padding, width-2, height-2, filters, batch_size));  
+    net.addLayer(new Conv2D<float>((height-2)/2, (width-2)/2, filters, kernel_width, kernel_height, stride, padding, filters, batch_size));
+    net.addLayer(new RELU_layer<float>((height-2)/2, (width-2)/2, filters, batch_size));
+    net.addLayer(new MaxPooling2D<float>(kernel_width, kernel_height, stride, padding, (width-2)/2, (height-2)/2, filters, batch_size));
+    net.addLayer(new Flatten<float>((width-2)/4, (height-2)/4,filters, batch_size));
+    net.addLayer(new Linear<float>((height-2)/4*(width-2)/4*filters, 64, batch_size));
+    net.addLayer(new RELU_layer<float>(64, batch_size));
+    net.addLayer(new Softmax<float>(64, batch_size));
+    net.addLoss(new Categorical<float>(64, batch_size));
     net.train(train_input, train_target, 75, .001, training_size);
     // cout<<"Training Complete"<<endl;
     // // cout<<"Results on Training Data"<<endl;
