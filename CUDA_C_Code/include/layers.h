@@ -3680,7 +3680,63 @@ public:
     void forward(T *input, T *output) override;
     void backward(T *loss) override{
         /*For this, we need to only pass the gradient to the coordinates of max coordinates*/
-    }
+        int* d_max_indices;
+        T* d_loss;
+        T* d_next_loss;
+        int size = this->output_width * this->output_height * this->channels * this->batch_size;
+        int next_size = this->width * this->height * this->channels * this->batch_size;
+        if(!HandleCUDAError(cudaMalloc((void **)&d_max_indices, size * sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_max_indices"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_loss, size * sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_loss"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_next_loss, next_size * sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_next_loss"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_max_indices, this->max_indices, size * sizeof(int), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying max_indices from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_loss, loss, size * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying loss from host to device"<<endl;
+            exit(1);
+        }
+        TPB = 8;
+        //Define grid and block dimensions
+        //We want to have the coordinates correlate to the max indices
+        dim3 blockDim3D(TPB, TPB, TPB);
+        dim3 gridDim_padding((output_width + TPB_padding - 1) / TPB_padding,(output_height + TPB_padding - 1) / TPB_padding, (channels + TPB_padding - 1) / TPB_padding);
+
+        //Launch the kernel
+        MaxPooling2D_Backward_Kernel<T><<<gridDim_padding, blockDim3D>>>(d_max_indices, d_loss, d_next_loss, output_width, output_height, channels, batch_size);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(this->next_loss, d_next_loss, next_size * sizeof(T), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying next_loss from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_max_indices))) {
+            cout<<"Error in freeing d_max_indices"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_loss))) {
+            cout<<"Error in freeing d_loss"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_next_loss))) {
+            cout<<"Error in freeing d_next_loss"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaDeviceReset())) {
+            cout<<"Error in resetting device"<<endl;
+            exit(1);
+        }
 };
 
 template <typename T>
