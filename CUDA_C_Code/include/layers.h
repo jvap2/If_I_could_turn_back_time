@@ -3659,6 +3659,7 @@ public:
         this->output_height = floor((height - 2 * padding - (kernel_height-1) - 1) / stride + 1);
         this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
         this->hidden_output = (T *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(T));
+        this->max_indices = (int *)malloc(this->output_width * this->output_height * channels * batch_size * sizeof(int));
     }
     int kernel_width;
     int kernel_height;
@@ -3672,11 +3673,14 @@ public:
     int cols;
     int output_width;
     int output_height;
+    int* max_indices;
     T *input;
     T *hidden_output;
     ~MaxPooling2D();
     void forward(T *input, T *output) override;
-    void backward(T *loss) override;
+    void backward(T *loss) override{
+        /*For this, we need to only pass the gradient to the coordinates of max coordinates*/
+    }
 };
 
 template <typename T>
@@ -3703,25 +3707,19 @@ public:
     T *input;
     T *hidden_output;
     ~Flatten();
-    void forward(T *input, T *output) override;
-    void backward(T *loss) override;
+    void forward(T *input, T *output) override{
+        for(int i = 0; i < this->rows * this->batch_size; i++){
+            output[i] = input[i];
+        }
+    }
+    void backward(T *loss) override{
+        for(int i = 0; i < this->rows * this->batch_size; i++){
+            this->next_loss[i]= loss[i];
+        }
+    }
 };
 
 
-
-template <typename T>
-void Flatten<T>::forward(T *input, T *output){
-    for(int i = 0; i < this->rows * this->batch_size; i++){
-        output[i] = input[i];
-    }
-}
-
-template <typename T>
-void Flatten<T>::backward(T* loss){
-    for(int i = 0; i < this->rows * this->batch_size; i++){
-        this->next_loss[i]= loss[i];
-    }
-}
 
 template <typename T>
 __global__ void Binary_Cross_Entropy_Kernel(T *label, T *output, T *loss, int size, int batch_size)
@@ -7647,28 +7645,32 @@ void Conv2D<T>::backward(T * loss)
 
 
 template <typename T>
-__global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels)
+__global__ void max_pooling_kernel(T *input, T *output, int kernel_width, int kernel_height, int width, int height, int output_width, int output_height, int batch_size, int padding, int channels, int coordinates)
 {
     int x = threadIdx.x + (blockIdx.x * blockDim.x);
     int y = threadIdx.y + (blockIdx.y * blockDim.y);
     int z = threadIdx.z + (blockIdx.z * blockDim.z);
     /*x corresponds to the column, y corresponds to the row, and z corresponds to the channel and batch*/
-    int idx = z * channels * width * height + y * width + x;
-    int out_idx = z * channels * output_width * output_height + y * output_width + x;
-    if (x < output_width && y < output_height && z < batch_size * channels)
+    if (x < output_width && y < output_height && z < channels)
     {
-        T max = input[idx];
-        for (int i = 0; i < kernel_height; i++)
-        {
-            for (int j = 0; j < kernel_width; j++)
+        for(int batch = 0; batch < batch_size; batch++){
+            idx = batch * channels * width * height + z * width * height + y * width + x;
+            out_idx = batch * channels * output_width * output_height + z * output_width * output_height + y * output_width + x;
+            T max = input[idx];
+            int coord = 0;
+            for (int i = 0; i < kernel_height; i++)
             {
-                if (input[z * channels * width * height + (y * kernel_height + i) * width + (x * kernel_width + j)] > max)
+                for (int j = 0; j < kernel_width; j++)
                 {
-                    max = input[z * channels * width * height + (y * kernel_height + i) * width + (x * kernel_width + j)];
+                    if(input[batch * channels * width * height + z * width * height + (y + i) * width + x + j] > max){
+                        max = input[batch * channels * width * height + z * width * height + (y + i) * width + x + j];
+                        coord = batch * channels * width * height + z * width * height + (y + i) * width + x + j
+                    }
                 }
             }
+            output[out_idx] = max;
+            coordinates[out_idx] = coord;
         }
-        output[out_idx] = max;
     }
 }
 
@@ -7678,6 +7680,7 @@ void MaxPooling2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input and output
     T *d_input, *d_output;
+    int *d_coordinates;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
@@ -7688,7 +7691,10 @@ void MaxPooling2D<T>::forward(T *input, T *output)
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-
+    if(!HandleCUDAError(cudaMalloc((void **)&d_coordinates, batch_size * output_width * output_height * channels * sizeof(int)))){
+        cout << "Error in allocating memory for d_coordinates" << endl;
+        exit(1);
+    }
     // Copy input from host to device
     if (!HandleCUDAError(cudaMemcpy(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice)))
     {
