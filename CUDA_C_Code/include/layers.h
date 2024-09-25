@@ -62,6 +62,7 @@ using namespace cimg_library;
 #define MNIST_WIDTH 28
 #define MNIST_SIZE 70000
 #define RICE_TYPE_SIZE 15000
+#define RICE_TYPE_SIZE_SMALL 100
 #define NUM_RICE 5
 #define HEART_INPUT_SIZE 13
 #define WEATHER_INPUT_SIZE 10
@@ -340,7 +341,7 @@ void Read_Rice_Data(T **data, T **output, int input_size, int output_size)
             file = KARACADAG_FILE;
             break;
         }
-        for (int j = 1; j <= RICE_TYPE_SIZE; j++)
+        for (int j = 1; j <= RICE_TYPE_SIZE_SMALL; j++)
         {
             std::string file_name = file + std::to_string(j) + ").jpg";
             CImg<T> image(file_name.c_str());
@@ -626,6 +627,7 @@ public:
     int cols;
     int batch_size;
     int channels;
+    int filters;
     T *weights;
     T *biases;
     T *d_weights;
@@ -4619,30 +4621,44 @@ public:
     {
         layers.push_back(layer);
         //this size below is not right either
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        hidden.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
         num_layers++;
         //The loss is the same size as the output of the layer
         layer->name = "saved conv2d";
         if (layer->next_loss == NULL)
         {
-            //NOT CORRECT
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->width * layer->height * layer->channels * this->batch_size * sizeof(T));
         }
+        layerMetadata.push_back(LayerMetadata(num_layers,num_updateable, true));
+        layer->batch_size = this->batch_size;
 
     }
     void addLayer(MaxPooling2D<T> *layer)
     {
         layers.push_back(layer);
         //The loss is the same size as the output of the layer
-        loss.push_back((T *)malloc(layer->rows * sizeof(T)));
-        hidden.push_back((T *)malloc(layer->rows * sizeof(T)));
+        loss.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        hidden.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
         num_layers++;
         layer->name = "saved maxpooling2d";
         if (layer->next_loss == NULL)
         {
             //NOT CORRECT
-            layer->next_loss = (T *)malloc(layer->rows * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->width * layer->height * layer->channels * this->batch_size * sizeof(T));
+        }
+    }
+    void addLayer(AvePooling2D<T> *layer){
+        layers.push_back(layer);
+        //The loss is the same size as the output of the layer
+        loss.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        hidden.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        num_layers++;
+        layer->name = "saved avepooling2d";
+        if (layer->next_loss == NULL)
+        {
+            //NOT CORRECT
+            layer->next_loss = (T *)malloc(layer->width * layer->height * layer->channels * this->batch_size * sizeof(T));
         }
     }
     void addLayer(Sigmoid<T> *layer)
@@ -7315,8 +7331,8 @@ __global__ void conv2D_kernel(T *input, T *output, T *weights, T *biases, int ch
                     {
                         int inRow = outRow * stride + i;
                         int inCol = outCol * stride + j;
-                        printf("Input[%d][%d][%d][%d]: \n", batch, channel, inRow, inCol);
-                        printf("Weights[%d][%d][%d][%d]: \n", filter, channel, i, j);
+                        // printf("Input[%d][%d][%d][%d]: \n", batch, channel, inRow, inCol);
+                        // printf("Weights[%d][%d][%d][%d]: \n", filter, channel, i, j);
                         sum += input[batch * channels * width * height + channel * width * height + inRow * width + inCol] * weights[filter * channels * kernel_height * kernel_width + channel * kernel_height * kernel_width + i * kernel_width + j];
                     }
                 }
@@ -7454,7 +7470,7 @@ void Conv2D<T>::forward(T *input, T *output)
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * filters * sizeof(T))))
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * filters  * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
@@ -7481,7 +7497,7 @@ void Conv2D<T>::forward(T *input, T *output)
         cout << "Error in copying weights from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_biases, biases, filters * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, filters * sizeof(T), cudaMemcpyHostToDevice)))
     {
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
@@ -7490,14 +7506,16 @@ void Conv2D<T>::forward(T *input, T *output)
     // Define grid and block dimensions
     int TPB = 8;
     dim3 blockDim(TPB, TPB, TPB);
-    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size + TPB - 1) / TPB);
-    conv2D_kernel<T><<<gridDim,blockDim>>>(input, output, weights, biases, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, stride, batch_size);
+    dim3 gridDim((output_width + TPB - 1) / TPB,(output_height + TPB - 1) / TPB, (batch_size + TPB - 1) / TPB);
+    conv2D_kernel<T><<<gridDim,blockDim>>>(d_input, d_output, d_weights, d_biases, channels, filters, kernel_width, kernel_height, width, height, output_width, output_height, stride, batch_size);
     if(!HandleCUDAError(cudaDeviceSynchronize())){
         cout<<"Error in running kernel"<<endl;
         exit(1);
     }
+    cout<<"Kernel ran successfully"<<endl;
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * channels  * sizeof(T), cudaMemcpyDeviceToHost)))
+    cout<<"The size of the output is "<<sizeof(output)<<endl;
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * filters  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);

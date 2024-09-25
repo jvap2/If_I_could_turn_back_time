@@ -26,20 +26,9 @@ int main(int argc, char** argv){
     // Store RGB image size in bytes
     unsigned int greySize = imgRGB.width() * imgRGB.height() * sizeof(unsigned char);
     unsigned int blurSize = (imgRGB.width() - 2) * (imgRGB.height() - 2) * sizeof(unsigned char);
-
-    // Initialize a pointer to the RGB image data stored by CImg
-    unsigned char* ptrRGB = imgRGB.data();
-
-    // Create an empty image with a single channel - GrayScale
-    CImg<unsigned char> imgGrayScale(imgRGB.width(), imgRGB.height());
-
-    // Create an empty image for blurring
-    CImg<unsigned char> imgBlur(imgRGB.width() - 2, imgRGB.height() - 2);
-    CImg<unsigned char> imgBlur_GPU(imgRGB.width() - 2, imgRGB.height() - 2);
 	int input_size, output_size, training_size, test_size, num_layers, batch_size, Q, size;
-
-	cout<<argv[1]<<endl;
-	size = NUM_RICE*RICE_TYPE_SIZE;
+    batch_size = 128;
+	size = NUM_RICE*RICE_TYPE_SIZE_SMALL;
 	input_size = height*width*depth;
 	output_size = NUM_RICE;
 	training_size = (int)size*TRAIN;
@@ -47,7 +36,6 @@ int main(int argc, char** argv){
 	num_layers = 3;
 	int* hidden_layers = new int[num_layers-2];
 	hidden_layers[0] = 16;
-	batch_size = 128;
 	Q = 128;
     // Create a network
     float** input = new float*[size];
@@ -68,12 +56,14 @@ int main(int argc, char** argv){
         train_input[i] = new float[input_size]{};
         train_target[i] = new float[output_size]{};
     }
+    cout<<"Reading Data"<<endl;
 	Read_Rice_Data<float>(input, target,input_size, output_size);
+    cout<<"Splitting Data"<<endl;
     Train_Split_Test<float>(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     int kernel_width = 3;
     int kernel_height = 3;
     int stride = 1;
-    int padding = 1;
+    int padding = 0;
     int filters = 1;
     int channels = 1;
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
@@ -91,6 +81,7 @@ int main(int argc, char** argv){
     net.addLayer(new RELU_layer<float>(64, batch_size));
     net.addLayer(new Softmax<float>(64, batch_size));
     net.addLoss(new Categorical<float>(64, batch_size));
+    cout<<"Training Network"<<endl;
     net.train(train_input, train_target, 75, .001, training_size);
     // cout<<"Training Complete"<<endl;
     // // cout<<"Results on Training Data"<<endl;
