@@ -3707,6 +3707,22 @@ public:
     void backward(T *loss) override;
 };
 
+
+
+template <typename T>
+void Flatten<T>::forward(T *input, T *output){
+    for(int i = 0; i < this->rows * this->batch_size; i++){
+        output[i] = input[i];
+    }
+}
+
+template <typename T>
+void Flatten<T>::backward(T* loss){
+    for(int i = 0; i < this->rows * this->batch_size; i++){
+        this->next_loss[i]= loss[i];
+    }
+}
+
 template <typename T>
 __global__ void Binary_Cross_Entropy_Kernel(T *label, T *output, T *loss, int size, int batch_size)
 {
