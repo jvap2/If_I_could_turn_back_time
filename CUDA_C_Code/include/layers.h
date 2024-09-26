@@ -380,12 +380,11 @@ void Read_MNIST_train_data(T **data, T **output, int input_size, int output_size
     int col = 0;
     int col_max = MNIST_HEIGHT * MNIST_WIDTH;
     int classes = 10;
-
+    int label;
     while (std::getline(file_train, line))
     {
         std::stringstream ss(line);
         std::string value;
-        int label;
         if (row == 0)
         {
             // Skip header or initial row if necessary
@@ -436,7 +435,7 @@ void Read_MNIST_train_data(T **data, T **output, int input_size, int output_size
 }
 
 template <typename T>
-void Read_MNIST_test_data(T **data, T **output, int size, int input_size, int output_size)
+void Read_MNIST_test_data(T **data, T **output, int input_size, int output_size)
 {
     //Read the csv files which have the columns label,file_name
     //Read the images and store them in the data array
@@ -447,7 +446,7 @@ void Read_MNIST_test_data(T **data, T **output, int size, int input_size, int ou
     int col = 0;
     int col_max = MNIST_HEIGHT * MNIST_WIDTH;
     int classes = 10;
-
+    int label;
     while (std::getline(file_test, line))
     {
         std::stringstream ss(line);
@@ -658,13 +657,7 @@ class Matrix
 public:
     T *input;
     string name;
-    Matrix()
-    {
-        // this->rows = 0;
-        // this->cols = 0;
-        // this->weights = NULL;
-        // this->biases = NULL;
-    }
+    Matrix(){};
     Matrix(int cols, int rows)
     {
         this->rows = rows;
@@ -735,6 +728,43 @@ public:
         this->input = (T *)malloc(cols * sizeof(T));
         this->name = "matrix";
     }
+    Matrix(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size): Matrix<T>()
+    {
+        this->width = width;
+        this->height = height;
+        this->channels = channels;
+        this->kernel_width = kernel_width;
+        this->kernel_height = kernel_height;
+        this->stride = stride;
+        this->padding = padding;
+        this->filters = filters;
+        this->rows = filters;
+        this->cols = width * height;
+        this->weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
+        this->biases = (T *)malloc(filters * sizeof(T));
+        this->B_weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
+        this->B_biases = (T *)malloc(filters * sizeof(T));
+        this->W_dW_weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
+        this->W_dW_biases = (T *)malloc(filters * sizeof(T));
+        InitMatrix_He<T>(this->weights, filters * kernel_width * kernel_height * channels,1);
+        InitMatrix_He<T>(this->biases, filters,1);
+        this->batch_size = batch_size;
+        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
+        // Calculate output dimensions
+        this->output_width = (width - kernel_width + 2 * padding) / stride + 1;
+        this->output_height = (height - kernel_height + 2 * padding) / stride + 1;
+
+        // Allocate memory for the output
+        this->hidden_output = (T*)malloc(output_width * output_height * filters * batch_size);
+        std::cout << "Output dimensions: " << output_width << "x" << output_height << "x" << filters << "x" << batch_size << std::endl;
+        if (this->hidden_output == nullptr) {
+            std::cerr << "Hidden output is null" << std::endl;
+        } else {
+            std::cout << "Hidden output allocated successfully" << std::endl;
+        }
+        cout<<"Conv2D constructor called"<<endl;
+        this->name = "Conv2D";
+    }
     virtual ~Matrix()
     {
         free(this->weights);
@@ -760,6 +790,14 @@ public:
     int batch_size;
     int channels;
     int filters;
+    int kernel_width;
+    int kernel_height;
+    int stride;
+    int padding;
+    int width;
+    int height;
+    int output_width;
+    int output_height;
     T *weights;
     T *biases;
     T *d_weights;
@@ -3638,41 +3676,7 @@ template <typename T>
 class Conv2D : public Matrix<T>
 {
 public:
-    Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size): Matrix<T>()
-    {
-        this->width = width;
-        this->height = height;
-        this->channels = channels;
-        this->kernel_width = kernel_width;
-        this->kernel_height = kernel_height;
-        this->stride = stride;
-        this->padding = padding;
-        this->filters = filters;
-        this->rows = filters;
-        this->cols = width * height;
-        this->weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
-        this->biases = (T *)malloc(filters * sizeof(T));
-        InitMatrix_He<T>(this->weights, filters * kernel_width * kernel_height * channels,1);
-        InitMatrix_He<T>(this->biases, filters,1);
-        this->batch_size = batch_size;
-        this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
-        // Calculate output dimensions
-        this->output_width = (width - kernel_width + 2 * padding) / stride + 1;
-        this->output_height = (height - kernel_height + 2 * padding) / stride + 1;
-
-        // Allocate memory for the output
-        this->hidden_output = (T*)malloc(output_width * output_height * filters * batch_size);
-        if (this->hidden_output == nullptr) {
-            std::cerr << "Memory allocation failed" << std::endl;
-            exit(EXIT_FAILURE);
-        }
-        for(int i = 0; i < output_width * output_height * filters * batch_size; i++) {
-            this->hidden_output[i] = 0;
-            cout<<i<<endl;
-        }
-        cout<<"Conv2D constructor called"<<endl;
-        this->name = "Conv2D";
-    }
+    Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size): Matrix<T>(width,height,channels,kernel_width,kernel_height,stride,padding,filters,batch_size){}
     int rows;
     int cols;
     int width;
@@ -4771,18 +4775,25 @@ public:
     }
     void addLayer(Conv2D<T> *layer)
     {
+        //Examine the layers structure
+
         layers.push_back(layer);
-        //this size below is not right either
-        loss.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
-        hidden.push_back((T*)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
-        num_layers++;
-        //The loss is the same size as the output of the layer
-        layer->name = "saved conv2d";
+        loss.push_back((T *)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        if(this->optim->name == "AdamWBernoulli"){
+            bernoullie_w.push_back((Loc_Layer<T> *)malloc(layer->kernel_width * layer->kernel_height * layer->filters * layer->channels * sizeof(Loc_Layer<T>)));
+            bernoullie_b.push_back((Loc_Layer<T> *)malloc(layer->filters* sizeof(Loc_Layer<T>)));
+        }
+        layer->name = "saved conv2D";
+        cout<<layer->name<<endl;
         if (layer->next_loss == NULL)
         {
-            layer->next_loss = (T *)malloc(layer->width * layer->height * layer->channels * this->batch_size * sizeof(T));
+            layer->next_loss = (T *)malloc(layer->cols * this->batch_size  * sizeof(T));
         }
-        layerMetadata.push_back(LayerMetadata(num_layers,num_updateable, true));
+        hidden.push_back((T *)malloc(layer->output_width * layer->output_height * layer->filters * this->batch_size * sizeof(T)));
+        num_updateable = bernoullie_w.size()-1;
+        layerMetadata.push_back(LayerMetadata(num_layers,num_updateable, true)); // Assuming Linear layers are updateable
+        num_layers++;
+        num_derv++;
         layer->batch_size = this->batch_size;
 
     }
@@ -4967,6 +4978,10 @@ public:
     int get_output_size();
     void forward(T *input, T *output)
     {
+        if(layers[0]->hidden_output == nullptr){
+            cout<<"Hidden output is null"<<endl;
+            exit(1);
+        }
         layers[0]->forward(input, layers[0]->hidden_output);
         // cout<< "Layer 0 output"<<endl;
         //     for(int j = 0; j<layers[0]->rows; j++){
@@ -7619,26 +7634,22 @@ void Conv2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
-    if(output == NULL){
-        cout<<"Output is null"<<endl;
-        output = (T*)malloc(batch_size * output_width * output_height * filters * sizeof(T));
-    }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
+    if (!HandleCUDAError(cudaMallocManaged((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_output, batch_size * output_width * output_height * filters  * sizeof(T))))
+    if (!HandleCUDAError(cudaMallocManaged((void **)&d_output, batch_size * output_width * output_height * filters  * sizeof(T))))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T))))
+    if (!HandleCUDAError(cudaMallocManaged((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_weights" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMalloc((void **)&d_biases, filters * sizeof(T))))
+    if (!HandleCUDAError(cudaMallocManaged((void **)&d_biases, filters * sizeof(T))))
     {
         cout << "Error in allocating memory for d_biases" << endl;
         exit(1);
@@ -7965,7 +7976,7 @@ void MaxPooling2D<T>::forward(T *input, T *output)
 
     int TPB = 8;
     dim3 blockDim(TPB, TPB, TPB);
-    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (batch_size*channels + TPB - 1) / TPB);
+    dim3 gridDim((output_height + TPB - 1) / TPB,(output_width + TPB - 1) / TPB, (channels + TPB - 1) / TPB);
     // Launch the max pooling kernel
     max_pooling_kernel<T><<<gridDim, blockDim>>>(input, output, kernel_width, kernel_height, width, height, output_width, output_height, batch_size, padding, channels, d_coordinates);
     if (!HandleCUDAError(cudaDeviceSynchronize()))

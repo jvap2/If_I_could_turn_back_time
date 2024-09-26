@@ -7,7 +7,7 @@ int main(int argc, char** argv){
     int height = MNIST_HEIGHT;
     int width = MNIST_WIDTH;
     int depth = 1;
-    batch_size = 8;
+    batch_size = 4;
 	input_size = height*width*depth;
 	output_size = 10;
 	training_size = MNIST_TRAIN_DATA;
@@ -50,7 +50,7 @@ int main(int argc, char** argv){
     net.addLayer(new RELU_layer<float>(64, batch_size));
     net.addLayer(new Softmax<float>(64, batch_size));
     net.addLoss(new Categorical<float>(64, batch_size));
-    cout<<"Training Network"<<endl;
+    // cout<<"Training Network"<<endl;
     net.train(train_input, train_target, 75, .001, training_size);
     // cout<<"Training Complete"<<endl;
     // // cout<<"Results on Training Data"<<endl;
