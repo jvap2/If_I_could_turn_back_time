@@ -3,47 +3,18 @@
 
 
 int main(int argc, char** argv){
-    double cpuComputeTime = 0.0f;
-    double gpuComputeTime = 0.0f;
-    char mask[]={0,-1,0,-1,5,-1,0,-1};
-    cout << "Loading Images" << endl;
-
-    int imageIndex = 1;
-    std::string filePath = std::string(ARBORIO_FILE) + std::to_string(imageIndex) + ").jpg";
-    CImg<unsigned char> imgRGB(filePath.c_str());
-
-    // Display Image
-    // CImgDisplay dispRGB(imgRGB, "Grey");
-
-    // Display Image Size
-    cout << "Image Height: " << imgRGB.height() << " pixels" << endl;
-    cout << "Image Width: " << imgRGB.width() << " pixels" << endl;
-	cout << "Image Depth: " << imgRGB.depth() << " pixels" << endl;
-	int height = imgRGB.height();
-	int width = imgRGB.width();
-	int depth = imgRGB.depth();
-
-    // Store RGB image size in bytes
-    unsigned int greySize = imgRGB.width() * imgRGB.height() * sizeof(unsigned char);
-    unsigned int blurSize = (imgRGB.width() - 2) * (imgRGB.height() - 2) * sizeof(unsigned char);
 	int input_size, output_size, training_size, test_size, num_layers, batch_size, Q, size;
-    batch_size = 32;
-	size = NUM_RICE*RICE_TYPE_SIZE_SMALL;
+    int height = MNIST_HEIGHT;
+    int width = MNIST_WIDTH;
+    int depth = 1;
+    batch_size = 8;
 	input_size = height*width*depth;
-	output_size = NUM_RICE;
-	training_size = (int)size*TRAIN;
-	test_size = size-training_size;
-	num_layers = 3;
-	int* hidden_layers = new int[num_layers-2];
-	hidden_layers[0] = 16;
+	output_size = 10;
+	training_size = MNIST_TRAIN_DATA;
+	test_size = MNIST_TEST_DATA;
+    size = training_size + test_size;
 	Q = 128;
     // Create a network
-    float** input = new float*[size];
-    float** target = new float*[size];
-    for(int i = 0; i < size; i++){
-        input[i] = new float[input_size]{};
-        target[i] = new float[output_size]{};
-    }
     float** test_input = new float*[test_size];
     float** test_target = new float*[test_size];
     for(int i = 0; i < test_size; i++){
@@ -56,16 +27,14 @@ int main(int argc, char** argv){
         train_input[i] = new float[input_size]{};
         train_target[i] = new float[output_size]{};
     }
-    cout<<"Reading Data"<<endl;
-	Read_Rice_Data<float>(input, target,input_size, output_size);
-    cout<<"Splitting Data"<<endl;
-    Train_Split_Test<float>(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     int kernel_width = 3;
     int kernel_height = 3;
     int stride = 1;
     int padding = 0;
     int filters = 1;
     int channels = 1;
+    Read_MNIST_train_data(train_input, train_target, input_size,output_size);
+    Read_MNIST_test_data(test_input, test_target, input_size,output_size);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     AdamOptimizer <float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);

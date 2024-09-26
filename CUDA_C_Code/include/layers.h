@@ -56,6 +56,12 @@ using namespace cimg_library;
 #define IPSALA_FILE "../data/Rice_Image_Dataset/Ipsala/Ipsala ("
 #define JASMINE_FILE "../data/Rice_Image_Dataset/Jasmine/Jasmine ("
 #define KARACADAG_FILE "../data/Rice_Image_Dataset/Karacadag/Karacadag ("
+#define MNIST_CSV_TRAIN "../data/mnist/MNISTDatasetJPG/mnist_file_info_training.csv"
+#define MNIST_CSV_TEST "../data/mnist/MNISTDatasetJPG/mnist_file_info_testing.csv"
+#define MNIST_TRAIN "../data/mnist/MNISTDatasetJPG/training/"
+#define MNIST_TEST "../data/mnist/MNISTDatasetJPG/testing/"
+#define MNIST_TEST_DATA 10000
+#define MNIST_TRAIN_DATA 60000
 #define IMAGE_HEIGHT 250
 #define IMAGE_WIDTH 250
 #define MNIST_HEIGHT 28
@@ -362,9 +368,137 @@ void Read_Rice_Data(T **data, T **output, int input_size, int output_size)
 }
 
 template <typename T>
-void Read_MNIST_data(T **data, T **output, int size, int input_size, int output_size)
+void Read_MNIST_train_data(T **data, T **output, int input_size, int output_size)
 {
-    //Need to read in npy files
+    //Read the csv files which have the columns label,file_name
+    //Read the images and store them in the data array
+    //Store the labels in the output array
+    std::ifstream file_train(MNIST_CSV_TRAIN);
+    std::ifstream file_test(MNIST_CSV_TEST);
+    std::string line;
+    int row = 0;
+    int col = 0;
+    int col_max = MNIST_HEIGHT * MNIST_WIDTH;
+    int classes = 10;
+
+    while (std::getline(file_train, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        int label;
+        if (row == 0)
+        {
+            // Skip header or initial row if necessary
+            row++;
+            continue;
+        }
+        while (std::getline(ss, value, ','))
+        {
+            try
+            {
+                if (col < col_max)
+                {
+                    // Convert string to float safely
+                    label = std::stoi(value);
+                }
+                else
+                {
+                    // Convert string to int safely and update output array
+                    int temp = std::stoi(value);
+                    //Take label and read the image
+                    std::string file_name = MNIST_TRAIN + std::to_string(temp) + "/" + std::to_string(label) + ".jpg";
+                    CImg<T> image(file_name.c_str());
+                    for (int i = 0; i < MNIST_HEIGHT; i++)
+                    {
+                        for (int j = 0; j < MNIST_WIDTH; j++)
+                        {
+                            data[row - 1][i * MNIST_WIDTH + j] = image(j, i, 0, 0); //goes x,y,z,c
+                        }
+                    }
+                    for (int i = 0; i < classes; i++)
+                    {
+                        output[row - 1][i] = (i == temp) ? 1.0f : 0.0f;
+                    }
+                    
+                }
+            }
+            catch (const std::exception &e)
+            {
+                // Handle or log conversion error
+                std::cerr << "Conversion error: " << e.what() << '\n';
+                // Consider setting a default value or skipping this value
+            }
+            col++;
+        }
+        col = 0;
+        row++;
+    }
+}
+
+template <typename T>
+void Read_MNIST_test_data(T **data, T **output, int size, int input_size, int output_size)
+{
+    //Read the csv files which have the columns label,file_name
+    //Read the images and store them in the data array
+    //Store the labels in the output array
+    std::ifstream file_test(MNIST_CSV_TEST);
+    std::string line;
+    int row = 0;
+    int col = 0;
+    int col_max = MNIST_HEIGHT * MNIST_WIDTH;
+    int classes = 10;
+
+    while (std::getline(file_test, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        if (row == 0)
+        {
+            // Skip header or initial row if necessary
+            row++;
+            continue;
+        }
+        while (std::getline(ss, value, ','))
+        {
+            try
+            {
+                if (col < col_max)
+                {
+                    // Convert string to float safely
+                    label = std::stoi(value);
+                }
+                else
+                {
+                    // Convert string to int safely and update output array
+                    int temp = std::stoi(value);
+                    //Take label and read the image
+                    std::string file_name = MNIST_TRAIN + std::to_string(temp) + "/" + std::to_string(label) + ".jpg";
+                    CImg<T> image(file_name.c_str());
+                    for (int i = 0; i < MNIST_HEIGHT; i++)
+                    {
+                        for (int j = 0; j < MNIST_WIDTH; j++)
+                        {
+                            data[row - 1][i * MNIST_WIDTH + j] = image(j, i, 0, 0); //goes x,y,z,c
+                        }
+                    }
+                    for (int i = 0; i < classes; i++)
+                    {
+                        output[row - 1][i] = (i == temp) ? 1.0f : 0.0f;
+                    }
+                    
+                }
+            }
+            catch (const std::exception &e)
+            {
+                // Handle or log conversion error
+                std::cerr << "Conversion error: " << e.what() << '\n';
+                // Consider setting a default value or skipping this value
+            }
+            col++;
+        }
+        col = 0;
+        row++;
+    }
 }
 
 
@@ -3531,6 +3665,10 @@ public:
         if (this->hidden_output == nullptr) {
             std::cerr << "Memory allocation failed" << std::endl;
             exit(EXIT_FAILURE);
+        }
+        for(int i = 0; i < output_width * output_height * filters * batch_size; i++) {
+            this->hidden_output[i] = 0;
+            cout<<i<<endl;
         }
         cout<<"Conv2D constructor called"<<endl;
         this->name = "Conv2D";
