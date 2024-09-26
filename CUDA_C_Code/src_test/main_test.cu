@@ -27,7 +27,7 @@ int main(int argc, char** argv){
     unsigned int greySize = imgRGB.width() * imgRGB.height() * sizeof(unsigned char);
     unsigned int blurSize = (imgRGB.width() - 2) * (imgRGB.height() - 2) * sizeof(unsigned char);
 	int input_size, output_size, training_size, test_size, num_layers, batch_size, Q, size;
-    batch_size = 128;
+    batch_size = 32;
 	size = NUM_RICE*RICE_TYPE_SIZE_SMALL;
 	input_size = height*width*depth;
 	output_size = NUM_RICE;

@@ -20,3 +20,5 @@ line 5346 has been changed to deal with the transpose- double check maybe tho
 Alter the tanh forward and backward
 
 Not all of the loss is getting passed in ReLU
+
+Malloc is not allocating enough for the Conv2D

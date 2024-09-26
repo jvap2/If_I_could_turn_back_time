@@ -526,12 +526,10 @@ public:
     string name;
     Matrix()
     {
-        this->rows = 0;
-        this->cols = 0;
-        this->weights = NULL;
-        this->biases = NULL;
-        cout << "Calling default constructor" << endl;
-        // this->name = "default matrix";
+        // this->rows = 0;
+        // this->cols = 0;
+        // this->weights = NULL;
+        // this->biases = NULL;
     }
     Matrix(int cols, int rows)
     {
@@ -1031,12 +1029,15 @@ public:
         ZeroVector(this->loss, rows * cols * channels* batch_size);
         ZeroVector(this->next_loss, rows * cols * channels* batch_size);
         this->name = "RELU";
+        this->batch_size = batch_size;
+        this->size = rows * cols * channels;
     }
     ~RELU_layer()
     {
         free(this->input);
         free(this->hidden_output);
     }
+    int size;
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
 };
@@ -3503,7 +3504,7 @@ template <typename T>
 class Conv2D : public Matrix<T>
 {
 public:
-    Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size)
+    Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size): Matrix<T>()
     {
         this->width = width;
         this->height = height;
@@ -3515,13 +3516,24 @@ public:
         this->filters = filters;
         this->rows = filters;
         this->cols = width * height;
-        this->output_width = (width - kernel_width + 2 * padding) / stride + 1;
-        this->output_height = (height - kernel_height + 2 * padding) / stride + 1;
         this->weights = (T *)malloc(filters * kernel_width * kernel_height * channels * sizeof(T));
         this->biases = (T *)malloc(filters * sizeof(T));
+        InitMatrix_He<T>(this->weights, filters * kernel_width * kernel_height * channels,1);
+        InitMatrix_He<T>(this->biases, filters,1);
         this->batch_size = batch_size;
         this->input = (T *)malloc(width * height * channels * batch_size * sizeof(T));
-        this->hidden_output = (T *)malloc(output_width * output_height * filters * batch_size * sizeof(T));
+        // Calculate output dimensions
+        this->output_width = (width - kernel_width + 2 * padding) / stride + 1;
+        this->output_height = (height - kernel_height + 2 * padding) / stride + 1;
+
+        // Allocate memory for the output
+        this->hidden_output = (T*)malloc(output_width * output_height * filters * batch_size);
+        if (this->hidden_output == nullptr) {
+            std::cerr << "Memory allocation failed" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        cout<<"Conv2D constructor called"<<endl;
+        this->name = "Conv2D";
     }
     int rows;
     int cols;
@@ -3544,6 +3556,8 @@ public:
     {
         free(this->weights);
         free(this->biases);
+        free(this->input);
+        free(this->hidden_output);
     }
     void forward(T *input, T *output) override;
     void backward(T *loss) override;
@@ -4793,12 +4807,14 @@ public:
     {
         layers.push_back(layer);
         loss.push_back((T *)malloc(layer->rows * layer->cols * layer->channels * this->batch_size * sizeof(T)));
+        hidden.push_back((T *)malloc(layer->rows * layer->cols * layer->channels * this->batch_size * sizeof(T)));
         layer->name = "saved flatten";
         if (layer->next_loss == NULL)
         {
             layer->next_loss = (T *)malloc(layer->rows * layer->cols * layer->channels * this->batch_size * sizeof(T));
         }
         num_layers++;
+        layer->batch_size = this->batch_size;
     }
     void train(T *input, T *output, int epochs, T learning_rate);
     void train(T **input, T **output, int epochs, T learning_rate, int size);
@@ -6204,7 +6220,7 @@ template <typename T>
 void RELU_layer<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input and output
-    int size = this->rows;
+    int size = this->size;
     int batch_size = this->batch_size;
     // this->input = input;
     if (input == NULL)
@@ -7465,6 +7481,10 @@ void Conv2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
+    if(output == NULL){
+        cout<<"Output is null"<<endl;
+        output = (T*)malloc(batch_size * output_width * output_height * filters * sizeof(T));
+    }
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
     {
         cout << "Error in allocating memory for d_input" << endl;
@@ -7512,9 +7532,7 @@ void Conv2D<T>::forward(T *input, T *output)
         cout<<"Error in running kernel"<<endl;
         exit(1);
     }
-    cout<<"Kernel ran successfully"<<endl;
     // Copy the result output from device to host
-    cout<<"The size of the output is "<<sizeof(output)<<endl;
     if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * filters  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
