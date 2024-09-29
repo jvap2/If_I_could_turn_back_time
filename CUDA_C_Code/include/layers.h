@@ -785,6 +785,7 @@ public:
     virtual void set_labels(float *labels) {};
     virtual void set_Bernoulli(int row, int col) {};
     virtual void Fill_Bernoulli(){};
+    virtual void Fill_Activ() {};
     int rows;
     int cols;
     int batch_size;
@@ -833,6 +834,7 @@ public:
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_AdamActive(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void find_Loss_Metric() {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
@@ -2551,6 +2553,15 @@ public:
             this->B_biases[i] = 0;
         }
     }
+    void Fill_Activ() override{
+        // Only fill with 0's and 1's at random
+        for(int i = 0; i<this->rows * this->cols; i++) {
+            this->B_weights[i] = 0;
+        }
+        for(int i = 0; i<this->rows; i++) {
+            this->B_biases[i] = 0;
+        }
+    }
     void set_Bernoulli(int row, int col) override{
         this->B_weights[row*(this->cols) + col] = 1;
     }
@@ -3352,6 +3363,54 @@ public:
         }
 
     }
+    void update_weights_AdamActiv(T learning_rate, T beta1, T beta2, T epsilon, int epochs) override {
+        /*
+        Algorithm:
+        m = beta1 * m + (1 - beta1) * d_weights
+        v = beta2 * v + (1 - beta2) * d_weights^2
+        m_hat = m / (1 - beta1^t)
+        v_hat = v / (1 - beta2^t)
+        weights = weights - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
+        
+        
+        */
+        T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases, *d_m_weights, *d_m_biases;
+        T *d_A_weights, *d_A_biases;
+        int cols = this->cols;
+        int rows = this->rows;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T)))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_v_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_v_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_v_biases, rows * sizeof(T)))
+        {
+            cout << "Error in allocating memory for d_v_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_m_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_m_weights
     void update_weights_SGD(T learning_rate) override
     {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
@@ -7202,6 +7261,25 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         
         
     }
+    if(this->optim->name == "AdamActiv"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric();
+                        Fill_Bern(this->layers[layerMetadata[i].layerNumber], layerMetadata[i].LinNumber);
+                    }
+                }
+            }
+        }
+    }
 
     // Iterate over each entry in the layerMetadata vector
     for (int i = 0; i < layerMetadata.size(); i++)
@@ -7231,6 +7309,10 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     else if(this->optim->name == "AdamWBernoulli"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWBernoulli(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
+                    }
+                    else if(this->optim->name == "AdamActiv"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamActiv(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Activ();
                     }
                     else{
                         cout<<"Optimizer not found"<<endl;
@@ -7634,39 +7716,48 @@ void Conv2D<T>::forward(T *input, T *output)
 {
     // Allocate device memory for input, output, weights, and biases
     T *d_input, *d_output, *d_weights, *d_biases;
-    if (!HandleCUDAError(cudaMallocManaged((void **)&d_input, batch_size * width * height * channels * sizeof(T))))
+    if(input == nullptr){
+        cout<<"Input is null"<<endl;
+        exit(1);
+    }
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    if (!prop.canMapHostMemory)
+        cout << "Device cannot map host memory" << endl;
+    cudaSetDeviceFlags(cudaDeviceMapHost);
+    if (!HandleCUDAError(cudaHostAlloc((void **)&d_input, batch_size * width * height * channels * sizeof(T), cudaHostAllocMapped)))
     {
         cout << "Error in allocating memory for d_input" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMallocManaged((void **)&d_output, batch_size * output_width * output_height * filters  * sizeof(T))))
+    if (!HandleCUDAError(cudaHostAlloc((void **)&d_output, batch_size * output_width * output_height * filters  * sizeof(T), cudaHostAllocMapped)))
     {
         cout << "Error in allocating memory for d_output" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMallocManaged((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T))))
+    if (!HandleCUDAError(cudaHostAlloc((void **)&d_weights, filters * kernel_width * kernel_height * channels * sizeof(T),  cudaHostAllocMapped)))
     {
         cout << "Error in allocating memory for d_weights" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMallocManaged((void **)&d_biases, filters * sizeof(T))))
+    if (!HandleCUDAError(cudaHostAlloc((void **)&d_biases, filters * sizeof(T), cudaHostAllocMapped)))
     {
         cout << "Error in allocating memory for d_biases" << endl;
         exit(1);
     }
 
     // Copy input, weights, and biases from host to device
-    if (!HandleCUDAError(cudaMemcpy(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpyAsync(d_input, input, batch_size * width * height * channels * sizeof(T), cudaMemcpyHostToDevice,0)))
     {
         cout << "Error in copying input from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, filters * kernel_width * kernel_height * channels * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpyAsync(d_weights, weights, filters * kernel_width * kernel_height * channels * sizeof(T), cudaMemcpyHostToDevice,0)))
     {
         cout << "Error in copying weights from host to device" << endl;
         exit(1);
     }
-    if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, filters * sizeof(T), cudaMemcpyHostToDevice)))
+    if (!HandleCUDAError(cudaMemcpyAsync(d_biases, biases, filters * sizeof(T), cudaMemcpyHostToDevice,0)))
     {
         cout << "Error in copying biases from host to device" << endl;
         exit(1);
@@ -7682,7 +7773,7 @@ void Conv2D<T>::forward(T *input, T *output)
         exit(1);
     }
     // Copy the result output from device to host
-    if (!HandleCUDAError(cudaMemcpy(output, d_output, batch_size * output_width * output_height * filters  * sizeof(T), cudaMemcpyDeviceToHost)))
+    if (!HandleCUDAError(cudaMemcpyAsync(output, d_output, batch_size * output_width * output_height * filters  * sizeof(T), cudaMemcpyDeviceToHost)))
     {
         cout << "Error in copying output from device to host" << endl;
         exit(1);

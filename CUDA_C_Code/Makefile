@@ -12,8 +12,8 @@ T_SRC := src_test
 BIN := bin
 
 
-IMM: $(BIN)/IMM
-test: $(BIN)/test
+IMM: clean $(BIN)/IMM
+test: clean $(BIN)/test
 
 
 $(BIN)/test: $(OBJ)/test.o $(OBJ)/err.o
