@@ -834,7 +834,7 @@ public:
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
-    virtual void update_weights_AdamActive(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_AdamActiv(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void find_Loss_Metric() {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
@@ -1159,6 +1159,47 @@ public:
         this->name = "Tanh";
     }
     ~Tanh()
+    {
+        free(this->input);
+        free(this->hidden_output);
+    }
+    void forward(T *input, T *output) override;
+    void backward(T *loss) override;
+};
+
+
+template <typename>
+class SoftPlus : public Matrix<T>
+{
+    public:
+    SoftPlus(int rows) : Matrix<T>(rows)
+    {
+        ZeroVector<T>(this->input, rows);
+        ZeroVector<T>(this->hidden_output, rows);
+        this->name = "SoftPlus";
+    }
+    SoftPlus(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
+    {
+        this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
+        ZeroVector<T>(this->input, rows*batch_size);
+        ZeroVector<T>(this->hidden_output, rows*batch_size);
+        this->name = "SoftPlus";
+    }
+    SoftPlus(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
+    {
+        this->channels = channels;
+        this->hidden_output = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->input = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        this->next_loss = (T *)malloc(rows * cols * channels* batch_size * sizeof(T));
+        ZeroVector<T>(this->input, rows * cols * channels* batch_size);
+        ZeroVector<T>(this->hidden_output, rows * cols * channels* batch_size);
+        this->name = "SoftPlus";
+    }
+    ~SoftPlus()
     {
         free(this->input);
         free(this->hidden_output);
@@ -3393,7 +3434,7 @@ public:
             cout << "Error in allocating memory for d_d_weights" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T)))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T))))
         {
             cout << "Error in allocating memory for d_d_biases" << endl;
             exit(1);
@@ -3403,14 +3444,222 @@ public:
             cout << "Error in allocating memory for d_v_weights" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_v_biases, rows * sizeof(T)))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_v_biases, rows * sizeof(T))))
         {
             cout << "Error in allocating memory for d_v_biases" << endl;
             exit(1);
         }
         if (!HandleCUDAError(cudaMalloc((void **)&d_m_weights, rows * cols * sizeof(T))))
         {
-            cout << "Error in allocating memory for d_m_weights
+            cout << "Error in allocating memory for d_m_weights"<<endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_m_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_m_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_A_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_A_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_A_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_A_biases" << endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(d_d_biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_v_weights, this->v_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying v_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_v_biases, this->v_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying v_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_weights, this->m_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_biases, this->m_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_A_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying A_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_A_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying A_biases from host to device" << endl;
+            exit(1);
+        }
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+
+        //Follow the algorithm  from line 1529 to 1538
+
+        //Calculate m = beta1 * m + (1 - beta1) * d_weights using thrust
+
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+        Adam_Update_Weights_Activ<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_weights, d_d_weights, d_m_weights, d_v_weights, d_A_weights, beta1, beta2, epsilon, learning_rate, cols, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        Adam_Update_Bias_Activ<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_biases, d_d_biases, d_m_biases, d_v_biases, d_A_biases, beta1, beta2, epsilon, learning_rate, rows, epochs);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        // Copy the result weights and biases from device to host
+
+        if (!HandleCUDAError(cudaMemcpy(this->weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying biases from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->v_weights, d_v_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying v_weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->v_biases, d_v_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying v_biases from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->m_weights, d_m_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_weights from device to host" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(this->m_biases, d_m_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_biases from device to host" << endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(d_weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaFree(d_d_weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_v_weights)))
+        {
+            cout << "Error in freeing d_v_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_v_biases)))
+        {
+            cout << "Error in freeing d_v_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_m_weights)))
+        {
+            cout << "Error in freeing d_m_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_m_biases)))
+        {
+            cout << "Error in freeing d_m_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_A_weights)))
+        {
+            cout << "Error in freeing d_A_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_A_biases)))
+        {
+            cout << "Error in freeing d_A_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaDeviceReset()))
+        {
+            cout << "Error in resetting device" << endl;
+            exit(1);
+        }
+
+    }
     void update_weights_SGD(T learning_rate) override
     {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
@@ -6425,6 +6674,174 @@ __global__ void RELU_kernel(T *input, T *output, int size, int batch_size)
     if (index < size && batch < batch_size)
     {
         output[index*batch_size + batch] = input[index*batch_size + batch] > 0 ? input[index*batch_size + batch] : 0;
+    }
+}
+
+template <typename T>
+void SoftPlus<T>::forward(T* input, T* output){
+    // Allocate device memory for input and output
+    int size = this->rows;
+    T *d_input, *d_output;
+    // this->input = input;
+    int batch_size = this->batch_size;
+    if (input == NULL)
+    {
+        cout << "Input SoftPlus is NULL" << endl;
+        input = (T *)malloc(size * batch_size * sizeof(T));
+        if (input == NULL)
+        {
+            cout << "Input of SoftPlus is NULL" << endl;
+            exit(1);
+        }
+    }
+    if (output == NULL)
+    {
+        cout << "Output of SoftPlus is NULL" << endl;
+        output = (T *)malloc(size * batch_size * sizeof(T));
+        if (output == NULL)
+        {
+            cout << "Output of SoftPlus is NULL" << endl;
+            exit(1);
+        }
+    }
+    memcpy(this->input, input, size * batch_size * sizeof(T));
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, size * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_output" << endl;
+        exit(1);
+    }
+
+    // Copy input from host to device
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, size * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device" << endl;
+        exit(1);
+    }
+
+    // Define grid and block dimensions
+    int threadsPerBlock = 16;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    int batchPerGrid = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(batchPerGrid, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+    // Launch the SoftPlus kernel
+    SoftPlus_kernel<T><<<gridDim, blockDim>>>(d_input, d_output, size, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" <<endl;
+    }
+    // Copy the result output from device to host
+    if (!HandleCUDAError(cudaMemcpy(output, d_output, size * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+
+    // Free device memory
+    if (!HandleCUDAError(cudaFree(d_input)))
+    {
+        cout << "Error in freeing d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_output)))
+    {
+        cout << "Error in freeing d_output" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaDeviceReset()))
+    {
+        cout << "Error in resetting device" << endl;
+        exit(1);
+    }
+}
+
+template <typename T>
+void SoftPlus<T>::backward(T* loss){
+    T *d_input, *d_output;
+    T *d_loss;
+    T *input = this->hidden_output;
+    T* d_fin_loss;
+    int rows = this->rows;
+    int batch_size = this->batch_size;
+
+    if (!HandleCUDAError(cudaMalloc((void **)&d_input, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_output, rows * batch_size * sizeof(T))))
+    {
+        cout << "Error in allocating memory for d_output" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaMalloc((void **)&d_loss, rows * batch_size * sizeof(T)))
+    {
+        cout << "Error in allocating memory for d_loss_mat" << endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMalloc((void**)&d_fin_loss, rows * batch_size * sizeof(T)))
+    {
+        cout << "Error in allocating memory for d_fin_loss" << endl;
+        exit(1);
+    }
+
+    // Copy input from host to device
+    if (!HandleCUDAError(cudaMemcpy(d_input, input, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying input from host to device, SoftPlus loss" << endl;
+        exit(1);
+    }
+    if(!HandleCUDAError(cudaMemcpy(d_loss, loss, rows * batch_size * sizeof(T), cudaMemcpyHostToDevice)))
+    {
+        cout << "Error in copying loss from host to device" << endl;
+        exit(1);
+    }
+
+    // Define grid and block dimensions
+    int threadsPerBlock = 16;
+    int blocksPerGrid = (rows + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid2 = (batch_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    dim3 gridDim(blocksPerGrid2, blocksPerGrid, 1);
+    dim3 blockDim(threadsPerBlock, threadsPerBlock, 1);
+
+    // Launch the SoftPlus derivative kernel
+    SoftPlus_derivative_kernel<T><<<gridDim, blockDim>>>(d_input, d_loss, d_fin_loss, rows, batch_size);
+    if (!HandleCUDAError(cudaDeviceSynchronize()))
+    {
+        cout << "Error in synchronizing device" << endl;
+        exit(1);
+    }
+
+    // Copy the result output from device to host
+    if (!HandleCUDAError(cudaMemcpy(loss, d_fin_loss, rows * batch_size * sizeof(T), cudaMemcpyDeviceToHost)))
+    {
+        cout << "Error in copying output from device to host" << endl;
+        exit(1);
+    }
+
+    // Free device memory
+    if (!HandleCUDAError(cudaFree(d_input)))
+    {
+        cout << "Error in freeing d_input" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_output)))
+    {
+        cout << "Error in freeing d_output" << endl;
+        exit(1);
+    }
+    if (!HandleCUDAError(cudaFree(d_loss)))
+    {
+        cout << "Error in freeing d_loss_mat" << endl;
+        exit(1);
     }
 }
 
