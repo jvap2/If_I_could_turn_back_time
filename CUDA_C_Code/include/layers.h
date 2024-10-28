@@ -2152,6 +2152,36 @@ __global__ void softmax_derivative_kernel(T *input, T *output, int size, int bat
     }
 }
 
+
+template <typename T>
+__global__ void Fill_Jenks_Device(Loc_Layer<T>* loc, T* d_Wdw, T* d_Bbw, int cols, int rows){
+    int col = blockIdx.x*blockDim.x + threadIdx.x;
+    int row = blockIdx.y*blockDim.y + threadIdx.y;
+    if(col < cols && row < rows){
+        loc[row*cols+col].row = row;
+        loc[row*cols+col].col = col;
+        loc[row*cols+col].weights_dW = d_Wdw[row*cols+col];
+    }   
+    else if(col == cols && row < rows){
+        loc[row*cols+col].row = row;
+        loc[row*cols+col].col = cols;
+        loc[row*cols+col].weights_dW= d_Bbw[row];
+    }
+}
+
+template <typename T>
+__global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int cols){
+
+    int col = blockIdx.x*blockDim.x + threadIdx.x;
+    int row = blockIdx.y*blockDim.y + threadIdx.y;
+    if(col < cols && row < rows){
+        d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
+    }
+    else if(col == cols && row < rows){
+        d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
+    }
+}
+
 template <typename T>
 class Softmax : public Matrix<T>
 {
@@ -4304,9 +4334,9 @@ public:
             exit(1);
         }
 
-        int TPB_2 = 256;
-        dim3 blockDim2D(TPB_2, 1, 1);
-        dim3 gridDim2D((rows * (cols + 1) + TPB_2 - 1) / TPB_2, 1, 1);       
+        int TPB_2 = 16;
+        dim3 blockDim2D(TPB_2, TPB_2, 1);
+        dim3 gridDim2D((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
 
         Fill_Jenks_Device<T><<<gridDim2D, blockDim2D>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
@@ -4325,6 +4355,12 @@ public:
             cout << "Error in allocating memory for d_WB" << endl;
             exit(1);
         }
+
+        Fill_WB_device<T><<<gridDim2D, blockDim2D>>>(d_WB, d_Loss_Data, rows, cols);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
         //Take the weights and biases from the Loss_Data structure and put them in the WB structure
 
 
@@ -4339,10 +4375,23 @@ public:
             cout << "Error in allocating memory for d_var" << endl;
             exit(1);
         }
-
+        int TPB_3 = 256;
+        dim3 blockDim2D(TPB_3,1, 1);
+        dim3 gridDim2D((rows*(cols+1) + TPB_2 - 1) / TPB_2, 1, 1);  
 
         //Launch the kernel
-        Jenks_Optimization<T><<<gridDim2D, blockDim2D>>>(d_WB, d_Loss_Data, rows, cols + 1);
+        Jenks_Optimization<T><<<gridDim2D, blockDim2D>>>(d_WB, d_var, rows, cols);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        //Find the minimum of d_var
+        int* d_min;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_min, (rows*(cols+1))*sizeof(int))))
+        {
+            cout << "Error in allocating memory for d_min" << endl;
+            exit(1);
+        }
 
 
 
