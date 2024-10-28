@@ -4303,27 +4303,46 @@ public:
             cout << "Error in allocating memory for d_Loss_Data" << endl;
             exit(1);
         }
-        //Use thrust to fill the weights then the biases
-        if(!HandleCUDAError(cudaMemcpy(d_Loss_Data, this->Loss_Data, (rows * cols + rows) * sizeof(Loc_Layer<T>), cudaMemcpyHostToDevice))) {
-            cout<<"Error in copying Loss_Data from host to device"<<endl;
+
+        int TPB_2 = 256;
+        dim3 blockDim2D(TPB_2, 1, 1);
+        dim3 gridDim2D((rows * (cols + 1) + TPB_2 - 1) / TPB_2, 1, 1);       
+
+        Fill_Jenks_Device<T><<<gridDim2D, blockDim2D>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
 
         //Fill the WB structure
+        thrust::sort(d_Loss_Data, d_Loss_Data+(rows*(cols+1)), CompareBernoulliWeights<T>());
 
 
 
         T* d_WB;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_WB, (rows * cols + rows) * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_WB, rows * (cols + 1) * sizeof(T))))
         {
             cout << "Error in allocating memory for d_WB" << endl;
             exit(1);
         }
-        //Use thrust to fill the weights then the biases
-        thrust::device_ptr<T> dev_ptr_WB(d_WB);
+        //Take the weights and biases from the Loss_Data structure and put them in the WB structure
 
-        thrust::copy(dev_Weights, dev_Weights + rows * cols, dev_ptr_WB);
-        thrust::copy(dev_Biases, dev_Biases + rows, dev_ptr_WB + rows * cols);
+
+
+        //Perfrom the Jenks natural breaks optimization
+        //Define the threads and block size
+        //We will launch a kernel with as many threads as there are entries in the matrix
+        T* d_var;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_var, (rows*(cols+1)) * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_var" << endl;
+            exit(1);
+        }
+
+
+        //Launch the kernel
+        Jenks_Optimization<T><<<gridDim2D, blockDim2D>>>(d_WB, d_Loss_Data, rows, cols + 1);
 
 
 
