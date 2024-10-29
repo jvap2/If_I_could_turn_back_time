@@ -847,6 +847,7 @@ public:
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamActiv(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_AdamWJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void find_Loss_Metric() {};
     virtual void find_Loss_Metric_Jenks() {};   
     void train(T *input, T *output, int epochs, T learning_rate) {};
@@ -889,6 +890,13 @@ class AdamOptimizer : public Optimizer<T>
 {
 public:
     AdamOptimizer(T learning_rate, T beta1, T beta2, T epsilon) : Optimizer<T>(learning_rate, 0.0, 0.0, beta1, beta2, epsilon) {this->name = "Adam";};
+};
+
+template <typename T>
+class AdamJenksOptimizer : public Optimizer<T>
+{
+    public:
+    AdamJenksOptimizer(T learning_rate, T beta1, T beta2, T epsilon) : Optimizer<T>(learning_rate, 0.0, 0.0, beta1, beta2, epsilon) {this->name = "AdamJenks";};
 };
 
 template <typename T>
@@ -2175,7 +2183,7 @@ __global__ void Fill_Jenks_Device(Loc_Layer<T>* loc, T* d_Wdw, T* d_Bbw, int col
     }   
     else if(col == cols && row < rows){
         loc[row*cols+col].row = row;
-        loc[row*cols+col].col = cols;
+        loc[row*cols+col].col = col;
         loc[row*cols+col].weights_dW= d_Bbw[row];
     }
 }
@@ -2196,8 +2204,8 @@ __global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int
 template <typename T>
 __global__ void Jenks_Optimization(T* d_WB, T* d_var, int rows, int cols){
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    T mean_1,mean_2;
     if(idx < (rows*(cols+1))){
-        T mean_1,mean_2;
         // Now, we want to use the index to decide where the break is for calculation sake
         // For the first grouping, the idx will be the break point
         //We will calculate the mean of the first group
@@ -4374,7 +4382,7 @@ public:
 
         //Fill the Loss_Data structure
         Loc_Layer<T> *d_Loss_Data;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_Loss_Data, (rows * cols + rows) * sizeof(Loc_Layer<T>))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_Loss_Data, (rows * (cols + 1)) * sizeof(Loc_Layer<T>))))
         {
             cout << "Error in allocating memory for d_Loss_Data" << endl;
             exit(1);
@@ -4391,7 +4399,7 @@ public:
         }
 
         //Fill the WB structure
-        thrust::sort(d_Loss_Data, d_Loss_Data+(rows*(cols+1)), CompareBernoulliWeights<T>());
+        thrust::sort(thrust::device, d_Loss_Data, d_Loss_Data+(rows*(cols+1)), CompareBernoulliWeights<T>());
 
 
 
@@ -4472,6 +4480,7 @@ public:
             if(c_r == this->cols) {
                 this->B_biases[r_r] = 1;
             } else {
+                cout<<r_r<<" "<<c_r<<endl;
                 this->B_weights[r_r * this->cols + c_r] = 1;
             }
         }
@@ -4518,6 +4527,26 @@ public:
         if (!HandleCUDAError(cudaFree(d_bDb)))
         {
             cout << "Error in freeing d_bDb" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_Loss_Data))) {
+            cout<<"Error in freeing d_Loss_Data"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_WB))) {
+            cout<<"Error in freeing d_WB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_var))) {
+            cout<<"Error in freeing d_var"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min))) {
+            cout<<"Error in freeing d_min"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaDeviceReset())) {
+            cout<<"Error in resetting device"<<endl;
             exit(1);
         }
     }
@@ -8252,7 +8281,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         
         
     }
-    if(this->optim->name == "AdamWJenks"){
+    if(this->optim->name == "AdamJenks"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds
@@ -8304,7 +8333,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamActiv(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Activ();
                     }
-                    else if(this->optim->name == "AdamWJenks"){
+                    else if(this->optim->name == "AdamJenks"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
                     }
