@@ -8304,6 +8304,10 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamActiv(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Activ();
                     }
+                    else if(this->optim->name == "AdamWJenks"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
+                    }
                     else{
                         cout<<"Optimizer not found"<<endl;
                     }
