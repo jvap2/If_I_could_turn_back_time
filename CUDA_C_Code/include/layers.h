@@ -554,6 +554,17 @@ struct Loc_Layer
     int rank;
 };
 
+
+
+template <typename T>
+struct CompareBernoulliWeights {
+    __host__ __device__
+    bool operator()(const Loc_Layer<T>& lhs, const Loc_Layer<T>& rhs) const {
+        // Assuming Loc_Layer has a member function or variable to get the weight
+        return lhs.weights_dW > rhs.weights_dW; // Sort in ascending order
+    }
+};
+
 template <typename T>
 void InitializeMatrix(T *matrix, int ny, int nx)
 {
@@ -2179,6 +2190,41 @@ __global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int
     }
     else if(col == cols && row < rows){
         d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
+    }
+}
+
+template <typename T>
+__global__ void Jenks_Optimization(T* d_WB, T* d_var, int rows, int cols){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if(idx < (rows*(cols+1))){
+        T mean_1,mean_2;
+        // Now, we want to use the index to decide where the break is for calculation sake
+        // For the first grouping, the idx will be the break point
+        //We will calculate the mean of the first group
+        mean_1 = 0;
+        for(int i = 0; i<idx; i++){
+            mean_1 += d_WB[i];
+        }
+        if(idx != 0){
+            mean_1 = mean_1/idx;
+        }
+        //We will calculate the mean of the second group
+        mean_2 = 0;
+        for(int i = idx; i<rows*(cols+1); i++){
+            mean_2 += d_WB[i];
+        }
+        mean_2 = mean_2/(rows*(cols+1)-idx);
+    }
+    __syncthreads();
+    if(idx<rows*(cols+1)){
+        T var = 0;
+        for(int i = 0; i<idx; i++){
+            var += (d_WB[i] - mean_1)*(d_WB[i] - mean_1);
+        }
+        for(int i = idx; i<rows*(cols+1); i++){
+            var += (d_WB[i] - mean_2)*(d_WB[i] - mean_2);
+        }
+        d_var[idx] = var;
     }
 }
 
@@ -4335,10 +4381,10 @@ public:
         }
 
         int TPB_2 = 16;
-        dim3 blockDim2D(TPB_2, TPB_2, 1);
-        dim3 gridDim2D((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
+        dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
+        dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
 
-        Fill_Jenks_Device<T><<<gridDim2D, blockDim2D>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
+        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -4361,7 +4407,6 @@ public:
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-        //Take the weights and biases from the Loss_Data structure and put them in the WB structure
 
 
 
@@ -4376,11 +4421,11 @@ public:
             exit(1);
         }
         int TPB_3 = 256;
-        dim3 blockDim2D(TPB_3,1, 1);
-        dim3 gridDim2D((rows*(cols+1) + TPB_2 - 1) / TPB_2, 1, 1);  
+        dim3 blockDim(TPB_3,1, 1);
+        dim3 gridDim((rows*(cols+1) + TPB_2 - 1) / TPB_2, 1, 1);  
 
         //Launch the kernel
-        Jenks_Optimization<T><<<gridDim2D, blockDim2D>>>(d_WB, d_var, rows, cols);
+        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -4392,6 +4437,9 @@ public:
             cout << "Error in allocating memory for d_min" << endl;
             exit(1);
         }
+        thrust::sequence(thrust::device, d_min, d_min + rows*(cols+1));
+        thrust::sort_by_key(thrust::device, d_var, d_var + rows*(cols+1), d_min);   
+        //Take the minimum of d_var
 
 
 
@@ -8122,14 +8170,6 @@ int Network<T>::get_output_size()
     return output_size;
 }
 
-template <typename T>
-struct CompareBernoulliWeights {
-    __host__ __device__
-    bool operator()(const Loc_Layer<T>& lhs, const Loc_Layer<T>& rhs) const {
-        // Assuming Loc_Layer has a member function or variable to get the weight
-        return lhs.weights_dW > rhs.weights_dW; // Sort in ascending order
-    }
-};
 
 template <typename T>
 struct CompareBernoulliLayers {
