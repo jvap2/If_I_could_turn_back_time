@@ -4455,8 +4455,25 @@ public:
         int break_point = h_min[0];
         //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
         //We will do this serially, and save in this->B_weights and this->B_biases
+        int r_r, c_r;
         for(int i =0; i<break_point;i++){
-            //Now we need to use 
+            //Now we need to use this->loss_data which has been sorted according to the loss values
+            r_r = this->loss_data[i].row;
+            c_r = this->loss_data[i].col;
+            if(c_r == this->cols) {
+                this->B_biases[r_r] = 0;
+            } else {
+                this->B_weights[r_r * this->cols + c_r] = 0;
+            }
+        }
+        for(int i=break_point; i<(this->rows*(this->cols+1));i++){
+            r_r = this->loss_data[i].row;
+            c_r = this->loss_data[i].col;
+            if(c_r == this->cols) {
+                this->B_biases[r_r] = 1;
+            } else {
+                this->B_weights[r_r * this->cols + c_r] = 1;
+            }
         }
 
 
