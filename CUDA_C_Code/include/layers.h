@@ -2569,8 +2569,9 @@ __global__ void Adam_Update_Weights_Bernoulli(T *weights, T *d_weights, T *m_wei
         v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * d_weights[row * input_size + col] * d_weights[row * input_size + col];
         T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
         T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
-        T temp = weights[row * input_size + col];
-        weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon)+ temp);
+        // T temp = weights[row * input_size + col];
+        // weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon)+ temp);
+        weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon));
     }
 }
 
@@ -2601,8 +2602,7 @@ __global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, 
         v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * d_biases[index] * d_biases[index];
         T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
         T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
-        T temp = biases[index];
-        biases[index] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon) + temp);
+        biases[index] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon));
     }
 }
 
@@ -4461,6 +4461,7 @@ public:
         }
 
         int break_point = h_min[0];
+        cout<<"The break point is "<<break_point<<endl;
         //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
         //We will do this serially, and save in this->B_weights and this->B_biases
         int r_r, c_r;
@@ -4468,19 +4469,18 @@ public:
             //Now we need to use this->loss_data which has been sorted according to the loss values
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
-            if(c_r == this->cols) {
+            if(c_r == cols) {
                 this->B_biases[r_r] = 0;
             } else {
                 this->B_weights[r_r * this->cols + c_r] = 0;
             }
         }
-        for(int i=break_point; i<(this->rows*(this->cols+1));i++){
+        for(int i=break_point; i<(rows*(cols+1));i++){
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
-            if(c_r == this->cols) {
+            if(c_r == cols) {
                 this->B_biases[r_r] = 1;
             } else {
-                cout<<r_r<<" "<<c_r<<endl;
                 this->B_weights[r_r * this->cols + c_r] = 1;
             }
         }
