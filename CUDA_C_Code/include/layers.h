@@ -4447,10 +4447,17 @@ public:
             cout<<"Error in copying d_min from device to host"<<endl;
             exit(1);
         }
+        if(!HandleCUDAError(cudaMemcpy(this->loss_data, d_Loss_Data, (rows*(cols+1))*sizeof(Loc_Layer<T>), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_Loss_Data from device to host"<<endl;
+            exit(1);
+        }
 
         int break_point = h_min[0];
         //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
-        //We will do this serially
+        //We will do this serially, and save in this->B_weights and this->B_biases
+        for(int i =0; i<break_point;i++){
+            //Now we need to use 
+        }
 
 
         //Transfer the result to host
