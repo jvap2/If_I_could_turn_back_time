@@ -4439,12 +4439,18 @@ public:
         }
         thrust::sequence(thrust::device, d_min, d_min + rows*(cols+1));
         thrust::sort_by_key(thrust::device, d_var, d_var + rows*(cols+1), d_min);   
-        //Take the minimum of d_var
+        //The first entry of d_min will be the index of the minimum value of d_var
+        // This will be the break point
 
+        int* h_min = (int*)malloc(rows*(cols+1)*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_min, d_min, rows*(cols+1)*sizeof(int), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_min from device to host"<<endl;
+            exit(1);
+        }
 
-
-
-
+        int break_point = h_min[0];
+        //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
+        //We will do this serially
 
 
         //Transfer the result to host
