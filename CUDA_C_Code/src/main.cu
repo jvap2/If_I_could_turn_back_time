@@ -20,7 +20,7 @@ int main(int argc, char** argv){
         num_layers = 3;
         int* hidden_layers = new int[num_layers-2];
         hidden_layers[0] = 16;
-        batch_size = 128;
+        batch_size = 256;
         Q = 128;
         weather = true;
     }
@@ -34,7 +34,7 @@ int main(int argc, char** argv){
         num_layers = 3;
         int* hidden_layers = new int[num_layers-2];
         hidden_layers[0] = 16;
-        batch_size = 128;
+        batch_size = 256;
         Q = 128;
         weather = false;
         cout<<"Heart"<<endl;
@@ -92,14 +92,14 @@ int main(int argc, char** argv){
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
-    AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.0001, .9, .999, 1e-8);
+    AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.00005, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size);
     net.addLayer(new Linear<float>(input_size, 128,batch_size));
-    net.addLayer(new Tanh<float>(128,batch_size));
+    net.addLayer(new RELU_layer<float>(128,batch_size));
     net.addLayer(new Linear<float>(128, 256, batch_size));
-    net.addLayer(new Tanh<float>(256,batch_size));
+    net.addLayer(new RELU_layer<float>(256,batch_size));
     net.addLayer(new Linear<float>(256, 64, batch_size));
-    net.addLayer(new Tanh<float>(64,batch_size));
+    net.addLayer(new RELU_layer<float>(64,batch_size));
     net.addLayer(new Linear<float>(64, output_size, batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(strcmp(argv[1],"weather")==0){
@@ -116,7 +116,7 @@ int main(int argc, char** argv){
     }
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 100, .0001, training_size);
+    net.train(train_input, train_target, 500, .00005, training_size);
     cout<<"Training Complete"<<endl;
     // cout<<"Results on Training Data"<<endl;
     // net.predict(train_input,train_target, training_size);

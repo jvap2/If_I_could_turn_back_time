@@ -552,6 +552,8 @@ struct Loc_Layer
     int layer;
     T weights_dW;
     int rank;
+    int num_zeros;
+    int num_ones;
 };
 
 
@@ -953,6 +955,29 @@ __global__ void vector_elementwise_multiply_kernel(T *A, T *B, T *C, int size)
 }
 
 template <typename T>
+__global__ void matrix_elementwise_multiply_kernel(T *A, int *B, T *C, int rows, int cols)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rows && col < cols)
+    {
+        C[row * cols + col] = A[row * cols + col] * B[row * cols + col];
+    }
+}
+
+template <typename T>
+__global__ void vector_elementwise_multiply_kernel(T *A, int *B, T *C, int size)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size)
+    {
+        C[index] = A[index] * B[index];
+    }
+}
+
+template <typename T>
 __global__ void matrix_multiply(T *A, T *B, T *C, int rows, int cols, int inter_size)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1243,16 +1268,14 @@ public:
     }
     RELU_layer(int rows, int batch_size) : Matrix<T>(1, rows, batch_size)
     {
-        cout<<"ReLU layer constructor"<<endl;
         this->hidden_output = (T *)malloc(rows * batch_size * sizeof(T));
         this->input = (T *)malloc(rows * batch_size * sizeof(T));
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(rows * batch_size * sizeof(T));
-        ZeroVector(this->input, rows*batch_size);
-        ZeroVector(this->hidden_output, rows*batch_size);
-        ZeroVector(this->loss, rows*batch_size);
-        ZeroVector(this->next_loss, rows*batch_size);
-        this->name = "RELU";
+        ZeroVector<T>(this->input, rows*batch_size);
+        ZeroVector<T>(this->hidden_output, rows*batch_size);
+        this->name = "Tanh";
+        this->size = rows;
     }
     RELU_layer(int rows, int cols, int channels, int batch_size) : Matrix<T>(cols, rows, channels*batch_size)
     {
@@ -4470,6 +4493,7 @@ public:
             //Now we need to use this->loss_data which has been sorted according to the loss values
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
+            this->loss_data[i].num_zeros+=1;
             if(c_r == cols) {
                 this->B_biases[r_r] = 0;
             } else {
@@ -4479,6 +4503,7 @@ public:
         for(int i=break_point; i<(rows*(cols+1));i++){
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
+            this->loss_data[i].num_ones+=1;
             if(c_r == cols) {
                 this->B_biases[r_r] = 1;
             } else {
@@ -7728,6 +7753,14 @@ void RELU_layer<T>::forward(T *input, T *output)
             exit(1);
         }
     }
+    if(this->input == NULL){
+        cout<<"Input of RELU is NULL"<<endl;
+        this->input = (T*)malloc(size * batch_size * sizeof(T));
+        if(this->input == NULL){
+            cout<<"Input of RELU is NULL"<<endl;
+            exit(1);
+        }
+    }
     if (output == NULL)
     {
         cout << "Output of RELU is NULL" << endl;
@@ -7738,6 +7771,7 @@ void RELU_layer<T>::forward(T *input, T *output)
             exit(1);
         }
     }
+    //Set this->input equal to input
     memcpy(this->input, input, size * batch_size * sizeof(T));
     T *d_input, *d_output;
     if (!HandleCUDAError(cudaMalloc((void **)&d_input, size * batch_size * sizeof(T))))
