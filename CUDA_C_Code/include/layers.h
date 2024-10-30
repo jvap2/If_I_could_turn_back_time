@@ -5918,6 +5918,8 @@ public:
     int Q;
     int batch_size;
     int num_updateable;
+    float accuracy;
+    float compression_ratio;
     T *input;
     T *prediction;
     Optimizer<T>* optim;
@@ -6246,6 +6248,7 @@ public:
         }
         return result;
     }
+    void Save_Data_to_CSV();
 };
 
 
@@ -8458,12 +8461,75 @@ void Network<T>::predict(T **input, T **output, int size)
             cout<<"Prediction: "<<max_index<<" Output: "<<max_index_output<<endl;
         }
     }
-    float accuracy = sum / size;
-    cout << "Accuracy: " << accuracy << endl;
+    this->accuracy = sum / size;
+    cout << "Accuracy: " << this->accuracy << endl;
     this->batch_size = temp;
     for(int i=0; i<layers.size(); i++){
         layers[i]->batch_size = temp;
     }
+}
+
+
+template <typename T>
+void Network<T>::Save_Data_to_CSV(){
+    /*Save for later
+    Need to save the weights and biases of each layer
+    Need to save the activation function of each layer
+    Need to save the loss function of each layer
+    Need to save the optimizer of the network
+    Need to save the learning rate of the network
+    Need to save the batch size of the network
+    Need to save the number of epochs of the network
+    Main things to help differentiate is the compression ratio of the network, the num of ones and zeros saved in each layers loss_data structure*/
+
+    /*Need to create a new name for the folders everytime we run
+    Folder Name:(involve the time of the run)
+        - Info.csv holds loss function, optimizer, epochs, learning rate, batch size, compression ratio, and accuracy
+        - Layer_Info.csv holds the activation function of each layer, as well as Linear layers, with sizes
+        - Layer_Weights.csv holds the weights of each layer, as well as the biases, and the num of zeros and ones in the loss_data
+    */
+    //Create the folder
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    string folder_name = "Run_";
+    folder_name += to_string(1900 + ltm->tm_year);
+    folder_name += "_";
+    folder_name += to_string(1 + ltm->tm_mon);
+    folder_name += "_";
+    folder_name += to_string(ltm->tm_mday);
+    folder_name += "_";
+    folder_name += to_string(ltm->tm_hour);
+    folder_name += "_";
+    folder_name += to_string(ltm->tm_min);
+    folder_name += "_";
+    folder_name += to_string(ltm->tm_sec);
+    if(mkdir(folder_name.c_str(),0777) == -1){
+        cout<<"Error in creating directory"<<endl;
+        exit(1);
+    }
+    //Create the Info.csv file
+    ofstream info_file;
+    info_file.open(folder_name+"/Info.csv");
+    info_file<<"Loss Function,Optimizer,Epochs,Learning Rate,Batch Size,Compression Ratio,Accuracy"<<endl;
+    info_file<<this->loss_function<<","<<this->optim->name<<","<<this->epochs<<","<<this->learning_rate<<","<<this->batch_size<<","<<this->compression_ratio<<","<<this->accuracy<<endl;
+    info_file.close();
+
+    //Create the Layer_Info.csv file
+    ofstream layer_info_file;
+    layer_info_file.open(folder_name+"/Layer_Info.csv");
+    layer_info_file<<"Layer,Name,Rows,Cols"<<endl;
+    for(int i=0; i<layers.size(); i++){
+        layer_info_file<<i<<","<<layers[i]->name<<","<<layers[i]->rows<< "," <<layers[i]->cols<<endl;
+    }
+    layer_info_file.close();
+
+    //Create the Layer_Weights.csv file
+    ofstream layer_weights_file;
+    layer_weights_file.open(folder_name+"/Layer_Weights.csv");
+    layer_weights_file<<"Layer,Row,Col,Weight,Bias,Num_Zeros,Num_Ones"<<endl;
+    //Can only do this for the linear layers
+
+    
 }
 
 template <typename T>

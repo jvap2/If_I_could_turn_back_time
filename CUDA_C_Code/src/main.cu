@@ -121,7 +121,9 @@ int main(int argc, char** argv){
     // cout<<"Results on Training Data"<<endl;
     // net.predict(train_input,train_target, training_size);
     cout<<"Results on Test Data"<<endl;
+    float* test_accuracy = 0;
     net.predict(test_input,test_target, test_size);
+    net.Save_Data_to_CSV();
 
 
     return 0;
