@@ -8407,6 +8407,26 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         backward(batch_input, batch_output);
         update_weights(learning_rate, i, this->Q);
     }
+    // If the optimizer is AdamJenks, we need to prune the weight at the end of the training
+    if(this->optim->name == "AdamJenks"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        //Something to this nature
+                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks();     
+                    }
+                }
+            }
+        }
+    }
 }
 
 
