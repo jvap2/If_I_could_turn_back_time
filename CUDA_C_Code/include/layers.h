@@ -705,6 +705,7 @@ public:
         this->B_biases = (int *)malloc(rows * sizeof(int));
         this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
         this->W_dW_biases = (T *)malloc(rows * sizeof(T));
+        this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
         // Create random weights and biases
         // InitializeMatrix<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->weights, rows, cols);
@@ -812,6 +813,7 @@ public:
     int height;
     int output_width;
     int output_height;
+    Loc_Layer<T> *loss_data;
     T *weights;
     T *biases;
     T *d_weights;
@@ -2660,7 +2662,7 @@ public:
         this->input = (T *)malloc(cols * batch_size * sizeof(T));
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
-        this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
+
         InitMatrix_He<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->biases, rows,1);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
@@ -5894,7 +5896,7 @@ public:
         }
         this->Q = Q;
     }
-    Network(int input_size, int output_size, Optimizer<T>* optimizer, int Q, int batch_size){
+    Network(int input_size, int output_size, Optimizer<T>* optimizer, int Q, int batch_size, string name){
         this->input_size = input_size;
         this->output_size = output_size;
         this->num_layers = 0;
@@ -5907,6 +5909,7 @@ public:
         }
         this->Q = Q;
         this->batch_size = batch_size;
+        this->data_set = name;
     }
     ~Network(){};
     int input_size;
@@ -5918,8 +5921,12 @@ public:
     int Q;
     int batch_size;
     int num_updateable;
+    string data_set;
     float accuracy;
     float compression_ratio;
+    string loss_function;
+    int epochs;
+    T learning_rate;
     T *input;
     T *prediction;
     Optimizer<T>* optim;
@@ -6125,6 +6132,7 @@ public:
         hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
+        this->loss_function = "Binary_Cross_Entropy";
     }
     void addLoss(Mean_Squared_Error<T> *layer)
     {
@@ -6138,6 +6146,7 @@ public:
         hidden.push_back((T *)malloc(layer->rows * this->batch_size * sizeof(T)));
         num_layers++;
         layer->batch_size = this->batch_size;
+        this->loss_function = "Mean_Squared_Error";
     }
     void addLoss(Categorical<T> *layer)
     {
@@ -6150,6 +6159,7 @@ public:
         }
         num_layers++;
         layer->batch_size = this->batch_size;
+        this->loss_function = "Categorical";
     }
     void addLayer(Flatten<T> *layer)
     {
@@ -8491,7 +8501,8 @@ void Network<T>::Save_Data_to_CSV(){
     //Create the folder
     time_t now = time(0);
     tm *ltm = localtime(&now);
-    string folder_name = "Run_";
+    string folder_name = "../../exp_data/Run_";
+    folder_name += this->data_set;
     folder_name += to_string(1900 + ltm->tm_year);
     folder_name += "_";
     folder_name += to_string(1 + ltm->tm_mon);
@@ -8526,10 +8537,32 @@ void Network<T>::Save_Data_to_CSV(){
     //Create the Layer_Weights.csv file
     ofstream layer_weights_file;
     layer_weights_file.open(folder_name+"/Layer_Weights.csv");
-    layer_weights_file<<"Layer,Row,Col,Weight,Bias,Num_Zeros,Num_Ones"<<endl;
+    layer_weights_file<<"Layer,Row,Col,Value,Num_Zeros,Num_Ones"<<endl;
     //Can only do this for the linear layers
-
-    
+    for (int i = 0; i < layerMetadata.size(); i++)
+    {
+        // Validate layerNumber is within bounds
+        if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+        {
+            // Check if the layer pointer is not null
+            if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+            {
+                // Check if the current layer is marked as updateable
+                if (layerMetadata[i].isUpdateable)
+                {
+                    for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
+                        for(int k=0; k<layers[layerMetadata[i].layerNumber]->cols; k++){
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<k<<","<<layers[layerMetadata[i].layerNumber]->weights[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_ones<<endl;
+                        }
+                    }
+                    //Save the biases
+                    for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<layers[layerMetadata[i].layerNumber]->cols<<","<<layers[layerMetadata[i].layerNumber]->biases[j]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_ones<<endl;
+                    }
+                }
+            }
+        }
+    }
 }
 
 template <typename T>
@@ -8733,6 +8766,8 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
 {
     // Find a random list of indices for the batch size
     //  Create a thrust vector of indices
+    this->learning_rate = learning_rate;
+    this->epochs = epochs;
     int* indices = (int*)malloc(batch_size*sizeof(int));
     // Fill the vector with random_indices
     // Iterate through the indices and train the network

@@ -10,6 +10,7 @@ int main(int argc, char** argv){
         std::cout << "Usage: ./main <dataset>" << std::endl;
         return 1;
     }
+    string dataset;
     if(strcmp(argv[1],"weather")==0){
         cout<<argv[1]<<endl;
         size = WEATHER_SIZE;
@@ -23,6 +24,7 @@ int main(int argc, char** argv){
         batch_size = 256;
         Q = 128;
         weather = true;
+        dataset = "Weather";
     }
     else if(strcmp(argv[1],"heart")==0){
         cout<<argv[1]<<endl;
@@ -38,6 +40,7 @@ int main(int argc, char** argv){
         Q = 128;
         weather = false;
         cout<<"Heart"<<endl;
+        dataset = "Heart";
     }
     else if(strcmp(argv[1],"dummy")==0){
         cout<<argv[1]<<endl;
@@ -93,7 +96,7 @@ int main(int argc, char** argv){
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.00005, .9, .999, 1e-8);
-    Network<float> net(input_size, output_size, optimizer,Q,batch_size);
+    Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
     net.addLayer(new Linear<float>(input_size, 128,batch_size));
     net.addLayer(new RELU_layer<float>(128,batch_size));
     net.addLayer(new Linear<float>(128, 256, batch_size));
