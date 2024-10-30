@@ -850,6 +850,7 @@ public:
     virtual void update_weights_AdamWJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void find_Loss_Metric() {};
     virtual void find_Loss_Metric_Jenks() {};   
+    virtual void void find_Loss_Metric_Jenks_Prune() {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
     int get_cols();
@@ -4261,6 +4262,296 @@ public:
         }
     }
     void find_Loss_Metric_Jenks() override {
+        T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
+        T *d_wDw, *d_bDb;
+
+        int cols = this->cols;
+        int rows = this->rows;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_wDw, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_bDb, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_bDb" << endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(dev_Biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_Weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(d_d_Biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_wDw, this->W_dW_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying wDw from host to device"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_bDb, this->W_dW_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying bDb from host to device"<<endl;
+            exit(1);
+        }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+
+        //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
+
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(dev_Weights, d_d_Weights, d_wDw, cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(dev_Biases, d_d_Biases, d_bDb, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        //Delete streams
+        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
+        {
+            cout << "Error in destroying stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
+        {
+            cout << "Error in destroying stream for bias" << endl;
+            exit(1);
+        }
+        // Now we need to sort the weights and biases in descending order, and then perform Jenks natural breaks optimization
+        //We will want to use Loc_Layers to keep track of the weights and biases
+
+        //Fill the Loss_Data structure
+        Loc_Layer<T> *d_Loss_Data;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_Loss_Data, (rows * (cols + 1)) * sizeof(Loc_Layer<T>))))
+        {
+            cout << "Error in allocating memory for d_Loss_Data" << endl;
+            exit(1);
+        }
+
+        int TPB_2 = 16;
+        dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
+        dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
+
+        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        //Fill the WB structure
+        thrust::sort(thrust::device, d_Loss_Data, d_Loss_Data+(rows*(cols+1)), CompareBernoulliWeights<T>());
+
+
+
+        T* d_WB;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_WB, rows * (cols + 1) * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_WB" << endl;
+            exit(1);
+        }
+
+        Fill_WB_device<T><<<gridDim2D, blockDim2D>>>(d_WB, d_Loss_Data, rows, cols);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+
+
+        //Perfrom the Jenks natural breaks optimization
+        //Define the threads and block size
+        //We will launch a kernel with as many threads as there are entries in the matrix
+        T* d_var;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_var, (rows*(cols+1)) * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_var" << endl;
+            exit(1);
+        }
+        int TPB_3 = 256;
+        dim3 blockDim(TPB_3,1, 1);
+        dim3 gridDim((rows*(cols+1) + TPB_2 - 1) / TPB_2, 1, 1);  
+
+        //Launch the kernel
+        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var, rows, cols);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        //Find the minimum of d_var
+        int* d_min;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_min, (rows*(cols+1))*sizeof(int))))
+        {
+            cout << "Error in allocating memory for d_min" << endl;
+            exit(1);
+        }
+        thrust::sequence(thrust::device, d_min, d_min + rows*(cols+1));
+        thrust::sort_by_key(thrust::device, d_var, d_var + rows*(cols+1), d_min);   
+        //The first entry of d_min will be the index of the minimum value of d_var
+        // This will be the break point
+
+        int* h_min = (int*)malloc(rows*(cols+1)*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_min, d_min, rows*(cols+1)*sizeof(int), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_min from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(this->loss_data, d_Loss_Data, (rows*(cols+1))*sizeof(Loc_Layer<T>), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_Loss_Data from device to host"<<endl;
+            exit(1);
+        }
+
+        int break_point = h_min[0];
+        cout<<"The break point is "<<break_point<<endl;
+        //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
+        //We will do this serially, and save in this->B_weights and this->B_biases
+        int r_r, c_r;
+        for(int i =0; i<break_point;i++){
+            //Now we need to use this->loss_data which has been sorted according to the loss values
+            r_r = this->loss_data[i].row;
+            c_r = this->loss_data[i].col;
+            if(c_r == cols) {
+                this->B_biases[r_r] = 0;
+            } else {
+                this->B_weights[r_r * this->cols + c_r] = 0;
+            }
+        }
+        for(int i=break_point; i<(rows*(cols+1));i++){
+            r_r = this->loss_data[i].row;
+            c_r = this->loss_data[i].col;
+            if(c_r == cols) {
+                this->B_biases[r_r] = 1;
+            } else {
+                this->B_weights[r_r * this->cols + c_r] = 1;
+            }
+        }
+
+
+        //Transfer the result to host
+        if (!HandleCUDAError(cudaMemcpy(this->W_dW_weights, d_wDw, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying wDw from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->W_dW_biases, d_bDb, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying bDb from device to host" << endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(dev_Weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(dev_Biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_wDw)))
+        {
+            cout << "Error in freeing d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_bDb)))
+        {
+            cout << "Error in freeing d_bDb" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_Loss_Data))) {
+            cout<<"Error in freeing d_Loss_Data"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_WB))) {
+            cout<<"Error in freeing d_WB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_var))) {
+            cout<<"Error in freeing d_var"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min))) {
+            cout<<"Error in freeing d_min"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaDeviceReset())) {
+            cout<<"Error in resetting device"<<endl;
+            exit(1);
+        }
+    }
+    void find_Loss_Metric_Jenks_Prune() override {
         T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
         T *d_wDw, *d_bDb;
 
