@@ -4552,8 +4552,7 @@ public:
         }
     }
     void find_Loss_Metric_Jenks_Prune() override {
-        T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
-        T *d_wDw, *d_bDb;
+        T *dev_Weights, *dev_Biases;
 
         int cols = this->cols;
         int rows = this->rows;
@@ -4568,26 +4567,7 @@ public:
             cout << "Error in allocating memory for d_biases" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Weights, rows * cols * sizeof(T))))
-        {
-            cout << "Error in allocating memory for d_d_weights" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Biases, rows * sizeof(T))))
-        {
-            cout << "Error in allocating memory for d_d_biases" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_wDw, rows * cols * sizeof(T))))
-        {
-            cout << "Error in allocating memory for d_wDw" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMalloc((void **)&d_bDb, rows * sizeof(T))))
-        {
-            cout << "Error in allocating memory for d_bDb" << endl;
-            exit(1);
-        }
+
 
         // Copy weights, biases, d_weights, and d_biases from host to device
         if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
@@ -4600,25 +4580,7 @@ public:
             cout << "Error in copying biases from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_d_Weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
-        {
-            cout << "Error in copying d_weights from host to device" << endl;
-            exit(1);
-        }
 
-        if (!HandleCUDAError(cudaMemcpy(d_d_Biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
-        {
-            cout << "Error in copying d_biases from host to device" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMemcpy(d_wDw, this->W_dW_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))) {
-            cout<<"Error in copying wDw from host to device"<<endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaMemcpy(d_bDb, this->W_dW_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
-            cout<<"Error in copying bDb from host to device"<<endl;
-            exit(1);
-        }
 
         // Define grid and block dimensions
         int block_size = 16;
@@ -4629,45 +4591,6 @@ public:
         int TPB = 256;
         dim3 blockDim1D(TPB, 1, 1);
         dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
-        cudaStream_t stream_weights;
-        cudaStream_t stream_bias;
-
-        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
-        {
-            cout << "Error in creating stream for weights" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
-        {
-            cout << "Error in creating stream for bias" << endl;
-            exit(1);
-        }
-
-
-        //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
-
-        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(dev_Weights, d_d_Weights, d_wDw, cols, rows);
-        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
-            cout<<"Error in synchronizing device"<<endl;
-            exit(1);
-        }
-        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(dev_Biases, d_d_Biases, d_bDb, rows);
-        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
-            cout<<"Error in synchronizing device"<<endl;
-            exit(1);
-        }
-
-        //Delete streams
-        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
-        {
-            cout << "Error in destroying stream for weights" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
-        {
-            cout << "Error in destroying stream for bias" << endl;
-            exit(1);
-        }
         // Now we need to sort the weights and biases in descending order, and then perform Jenks natural breaks optimization
         //We will want to use Loc_Layers to keep track of the weights and biases
 
@@ -4683,7 +4606,7 @@ public:
         dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
         dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
 
-        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
+        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,dev_Weights,dev_Biases, cols, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -4776,16 +4699,60 @@ public:
             }
         }
 
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
 
-        //Transfer the result to host
-        if (!HandleCUDAError(cudaMemcpy(this->W_dW_weights, d_wDw, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
         {
-            cout << "Error in copying wDw from device to host" << endl;
+            cout << "Error in creating stream for weights" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(this->W_dW_biases, d_bDb, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
         {
-            cout << "Error in copying bDb from device to host" << endl;
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+        int* d_B_Weights, *d_B_biases;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_B_Weights, rows * cols * sizeof(int))))
+        {
+            cout << "Error in allocating memory for d_B_Weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(int))))
+        {
+            cout << "Error in allocating memory for d_B_biases" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_B_Weights, this->B_weights, rows * cols * sizeof(int), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying B_weights from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(int), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying B_biases from host to device"<<endl;
+            exit(1);
+        }
+        //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
+
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(dev_Weights, d_B_Weights, dev_Weights, cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(dev_Biases, d_B_biases, dev_Biases, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+
+        //Transfer the result to host
+        if(!HandleCUDAError(cudaMemcpy(this->weights, dev_Weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying weights from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(this->biases, dev_Biases, rows * sizeof(T), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying biases from device to host"<<endl;
             exit(1);
         }
 
@@ -4798,26 +4765,6 @@ public:
         if (!HandleCUDAError(cudaFree(dev_Biases)))
         {
             cout << "Error in freeing d_biases" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaFree(d_d_Weights)))
-        {
-            cout << "Error in freeing d_d_weights" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaFree(d_d_Biases)))
-        {
-            cout << "Error in freeing d_d_biases" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaFree(d_wDw)))
-        {
-            cout << "Error in freeing d_wDw" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaFree(d_bDb)))
-        {
-            cout << "Error in freeing d_bDb" << endl;
             exit(1);
         }
         if(!HandleCUDAError(cudaFree(d_Loss_Data))) {
@@ -4834,6 +4781,14 @@ public:
         }
         if(!HandleCUDAError(cudaFree(d_min))) {
             cout<<"Error in freeing d_min"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_B_Weights))) {
+            cout<<"Error in freeing d_B_Weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_B_biases))) {
+            cout<<"Error in freeing d_B_biases"<<endl;
             exit(1);
         }
         if(!HandleCUDAError(cudaDeviceReset())) {
