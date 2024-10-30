@@ -679,8 +679,8 @@ public:
         this->hidden_output = (T *)malloc(rows * sizeof(T));
         this->input = (T *)malloc(cols * sizeof(T));
         this->loss = (T *)malloc(rows * sizeof(T));
-        this->B_weights = (T *)malloc(rows * cols * sizeof(T));
-        this->B_biases = (T *)malloc(rows * sizeof(T));
+        this->B_weights = (int *)malloc(rows * cols * sizeof(int));
+        this->B_biases = (int *)malloc(rows * sizeof(int));
         this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
         this->W_dW_biases = (T *)malloc(rows * sizeof(T));
         // Create random weights and biases
@@ -699,8 +699,8 @@ public:
         this->cols = cols;
         this->weights = (T *)malloc(rows * cols * sizeof(T));
         this->biases = (T *)malloc(rows * sizeof(T));
-        this->B_weights = (T *)malloc(rows * cols * sizeof(T));
-        this->B_biases = (T *)malloc(rows * sizeof(T));
+        this->B_weights = (int *)malloc(rows * cols * sizeof(int));
+        this->B_biases = (int *)malloc(rows * sizeof(int));
         this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
         this->W_dW_biases = (T *)malloc(rows * sizeof(T));
         // Create random weights and biases
@@ -817,8 +817,8 @@ public:
     T *hidden_output;
     T *loss;
     T *next_loss;
-    T* B_weights;
-    T* B_biases;
+    int* B_weights;
+    int* B_biases;
     T* W_dW_weights;
     T* W_dW_biases;
     void matrix_multiply(T *A, T *B, T *C);
@@ -2179,12 +2179,12 @@ __global__ void Fill_Jenks_Device(Loc_Layer<T>* loc, T* d_Wdw, T* d_Bbw, int col
     if(col < cols && row < rows){
         loc[row*cols+col].row = row;
         loc[row*cols+col].col = col;
-        loc[row*cols+col].weights_dW = d_Wdw[row*cols+col];
+        loc[row*cols+col].weights_dW = fabsf(d_Wdw[row*cols+col]);
     }   
     else if(col == cols && row < rows){
         loc[row*cols+col].row = row;
         loc[row*cols+col].col = col;
-        loc[row*cols+col].weights_dW= d_Bbw[row];
+        loc[row*cols+col].weights_dW= fabsf(d_Bbw[row]);
     }
 }
 
@@ -2544,34 +2544,34 @@ __global__ void Adam_Update_Weights(T *weights, T *d_weights, T *m_weights, T *v
         T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
         T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
         weights[row * input_size + col] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
-        if(weights[row * input_size + col] != weights[row * input_size + col]) {
-            printf("NAN detected in weights\n");
-            printf("m_hat: %f\n", m_hat);
-            printf("v_hat: %f\n", v_hat);
-            printf("weights: %f\n", weights[row * input_size + col]);
-            printf("d_weights: %f\n", d_weights[row * input_size + col]);
-            printf("m_weights: %f\n", m_weights[row * input_size + col]);
-            printf("v_weights: %f\n", v_weights[row * input_size + col]);
-        }
+        // if(weights[row * input_size + col] != weights[row * input_size + col]) {
+        //     printf("NAN detected in weights\n");
+        //     printf("m_hat: %f\n", m_hat);
+        //     printf("v_hat: %f\n", v_hat);
+        //     printf("weights: %f\n", weights[row * input_size + col]);
+        //     printf("d_weights: %f\n", d_weights[row * input_size + col]);
+        //     printf("m_weights: %f\n", m_weights[row * input_size + col]);
+        //     printf("v_weights: %f\n", v_weights[row * input_size + col]);
+        // }
     }
 }
 
 template <typename T>
-__global__ void Adam_Update_Weights_Bernoulli(T *weights, T *d_weights, T *m_weights, T *v_weights, T *B_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
+__global__ void Adam_Update_Weights_Bernoulli(T *weights, T *d_weights, T *m_weights, T *v_weights, int *B_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
+
     if (row < output_size && col < input_size)
     {
-        d_weights[row * input_size + col] = B_weights[row * input_size + col] * d_weights[row * input_size + col];
-        m_weights[row * input_size + col] = beta1 * m_weights[row * input_size + col] + (1 - beta1) * d_weights[row * input_size + col];
-        v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * d_weights[row * input_size + col] * d_weights[row * input_size + col];
+        T temp = B_weights[row * input_size + col] * d_weights[row * input_size + col];
+        // printf("B_weights[%d][%d] = %d\n", row, col, B_weights[row * input_size + col]);
+        m_weights[row * input_size + col] = beta1 * m_weights[row * input_size + col] + (1 - beta1) * temp;
+        v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * temp * temp;
         T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
         T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
-        // T temp = weights[row * input_size + col];
-        // weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon)+ temp);
-        weights[row * input_size + col] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon));
+        weights[row * input_size + col] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
     }
 }
 
@@ -2591,18 +2591,18 @@ __global__ void Adam_Update_Bias(T *biases, T *d_biases, T *m_biases, T *v_biase
 }
 
 template <typename T>
-__global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, T *v_biases, T *B_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
+__global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, T *v_biases, int *B_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < size)
     {
-        d_biases[index] = B_biases[index] * d_biases[index];
-        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * d_biases[index];
-        v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * d_biases[index] * d_biases[index];
+        T temp = B_biases[index] * d_biases[index];
+        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * temp;
+        v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * temp * temp;
         T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
         T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
-        biases[index] -= learning_rate * (m_hat / (sqrt(v_hat) + epsilon));
+        biases[index] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
     }
 }
 
@@ -3263,7 +3263,7 @@ public:
         
         */
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases, *d_m_weights, *d_m_biases;
-        T *d_B_weights, *d_B_biases;
+        int *d_B_weights, *d_B_biases;
         int cols = this->cols;
         int rows = this->rows;
         if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
@@ -3305,11 +3305,11 @@ public:
             cout<<"Error in allocating memory for d_m_biases"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(T)))) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(int)))) {
             cout<<"Error in allocating memory for d_B_weights"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(T)))) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(int)))) {
             cout<<"Error in allocating memory for d_B_biases"<<endl;
             exit(1);
         }
@@ -3356,12 +3356,12 @@ public:
             cout << "Error in copying m_biases from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying B_weights from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying B_biases from host to device" << endl;
             exit(1);
@@ -3601,12 +3601,12 @@ public:
             cout << "Error in copying m_biases from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_A_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_A_weights, this->B_weights, rows * cols * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying A_weights from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_A_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_A_biases, this->B_biases, rows * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying A_biases from host to device" << endl;
             exit(1);
@@ -3869,7 +3869,7 @@ public:
         
         */
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases, *d_m_weights, *d_m_biases;
-        T *d_B_weights, *d_B_biases;
+        int *d_B_weights, *d_B_biases;
         int cols = this->cols;
         int rows = this->rows;
         if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
@@ -3911,11 +3911,11 @@ public:
             cout<<"Error in allocating memory for d_m_biases"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(T)))) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(int)))) {
             cout<<"Error in allocating memory for d_B_weights"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(T)))) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(int)))) {
             cout<<"Error in allocating memory for d_B_biases"<<endl;
             exit(1);
         }
@@ -3962,12 +3962,12 @@ public:
             cout << "Error in copying m_biases from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying B_weights from host to device" << endl;
             exit(1);
         }
-        if (!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        if (!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(int), cudaMemcpyHostToDevice)))
         {
             cout << "Error in copying B_biases from host to device" << endl;
             exit(1);
@@ -8334,7 +8334,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                         this->layers[layerMetadata[i].layerNumber]->Fill_Activ();
                     }
                     else if(this->optim->name == "AdamJenks"){
-                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamWJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
                     }
                     else{
