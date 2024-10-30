@@ -850,7 +850,7 @@ public:
     virtual void update_weights_AdamWJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void find_Loss_Metric() {};
     virtual void find_Loss_Metric_Jenks() {};   
-    virtual void void find_Loss_Metric_Jenks_Prune() {};
+    virtual void find_Loss_Metric_Jenks_Prune() {};
     void train(T *input, T *output, int epochs, T learning_rate) {};
     int get_rows();
     int get_cols();
