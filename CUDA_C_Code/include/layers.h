@@ -2702,10 +2702,7 @@ public:
     Loc_Layer<T>* loss_data;
     void Fill_Loss_data() override{
         for(int i = 0; i< this->rows*(this->cols+1); i++) {
-            loss_data[i].row = 0;
-            loss_data[i].col = 0;
-            loss_data[i].weights_dW = 0;
-            loss_data[i].num_zeros=0;
+            this->num_ones[i] = 0;   
         }
     }
     void Fill_Bernoulli() override{
