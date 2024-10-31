@@ -553,7 +553,6 @@ struct Loc_Layer
     T weights_dW;
     int rank;
     int num_zeros;
-    int num_ones;
 };
 
 
@@ -699,13 +698,13 @@ public:
         this->batch_size = batch_size;
         this->rows = rows;
         this->cols = cols;
+        cout<<"Rows: "<<rows<<" Cols: "<<cols<<endl;
         this->weights = (T *)malloc(rows * cols * sizeof(T));
         this->biases = (T *)malloc(rows * sizeof(T));
         this->B_weights = (int *)malloc(rows * cols * sizeof(int));
         this->B_biases = (int *)malloc(rows * sizeof(int));
         this->W_dW_weights = (T *)malloc(rows * cols * sizeof(T));
         this->W_dW_biases = (T *)malloc(rows * sizeof(T));
-        this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
         // Create random weights and biases
         // InitializeMatrix<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->weights, rows, cols);
@@ -2219,12 +2218,12 @@ __global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int
 
     int col = blockIdx.x*blockDim.x + threadIdx.x;
     int row = blockIdx.y*blockDim.y + threadIdx.y;
-    if(col < cols && row < rows){
+    if(col <= cols && row < rows){
         d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
     }
-    else if(col == cols && row < rows){
-        d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
-    }
+    // else if(col == cols && row < rows){
+    //     d_WB[row*cols+col] = d_Loss_Data[row*cols+col].weights_dW;
+    // }
 }
 
 template <typename T>
@@ -2662,7 +2661,7 @@ public:
         this->input = (T *)malloc(cols * batch_size * sizeof(T));
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
-
+        this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
         InitMatrix_He<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->biases, rows,1);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
@@ -4495,6 +4494,12 @@ public:
             //Now we need to use this->loss_data which has been sorted according to the loss values
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
+            if (r_r > this->rows || c_r > this->cols) {
+                cout<<"Error in accessing loss_data"<<endl;
+                cout<<"r_r: "<<r_r<<endl;
+                cout<<"c_r: "<<c_r<<endl;
+                exit(1);
+            }
             this->loss_data[i].num_zeros+=1;
             if(c_r == cols) {
                 this->B_biases[r_r] = 0;
@@ -4505,7 +4510,6 @@ public:
         for(int i=break_point; i<(rows*(cols+1));i++){
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
-            this->loss_data[i].num_ones+=1;
             if(c_r == cols) {
                 this->B_biases[r_r] = 1;
             } else {
@@ -8552,12 +8556,12 @@ void Network<T>::Save_Data_to_CSV(){
                 {
                     for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
                         for(int k=0; k<layers[layerMetadata[i].layerNumber]->cols; k++){
-                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<k<<","<<layers[layerMetadata[i].layerNumber]->weights[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_ones<<endl;
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<k<<","<<layers[layerMetadata[i].layerNumber]->weights[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<","<<epochs-layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<endl;
                         }
                     }
                     //Save the biases
                     for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
-                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<layers[layerMetadata[i].layerNumber]->cols<<","<<layers[layerMetadata[i].layerNumber]->biases[j]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_ones<<endl;
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<layers[layerMetadata[i].layerNumber]->cols<<","<<layers[layerMetadata[i].layerNumber]->biases[j]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<","<<epochs-layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<endl;
                     }
                 }
             }
