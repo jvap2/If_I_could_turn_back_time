@@ -552,7 +552,6 @@ struct Loc_Layer
     int layer;
     T weights_dW;
     int rank;
-    int num_zeros;
 };
 
 
@@ -799,6 +798,7 @@ public:
     virtual void set_Bernoulli(int row, int col) {};
     virtual void Fill_Bernoulli(){};
     virtual void Fill_Activ() {};
+    virtual void Fill_Loss_data() {};
     int rows;
     int cols;
     int batch_size;
@@ -812,6 +812,7 @@ public:
     int height;
     int output_width;
     int output_height;
+    int* num_ones;
     Loc_Layer<T> *loss_data;
     T *weights;
     T *biases;
@@ -2670,6 +2671,7 @@ public:
         v_biases = (T*)malloc(rows * sizeof(T));
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
+        this->num_ones = (int*)malloc(rows * (cols+1) * sizeof(int));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
@@ -2698,6 +2700,14 @@ public:
     T* m_weights;
     T* m_biases;
     Loc_Layer<T>* loss_data;
+    void Fill_Loss_data() override{
+        for(int i = 0; i< this->rows*(this->cols+1); i++) {
+            loss_data[i].row = 0;
+            loss_data[i].col = 0;
+            loss_data[i].weights_dW = 0;
+            loss_data[i].num_zeros=0;
+        }
+    }
     void Fill_Bernoulli() override{
         // Only fill with 0's and 1's at random
         for(int i = 0; i<this->rows * this->cols; i++) {
@@ -4500,7 +4510,6 @@ public:
                 cout<<"c_r: "<<c_r<<endl;
                 exit(1);
             }
-            this->loss_data[i].num_zeros+=1;
             if(c_r == cols) {
                 this->B_biases[r_r] = 0;
             } else {
@@ -4510,6 +4519,7 @@ public:
         for(int i=break_point; i<(rows*(cols+1));i++){
             r_r = this->loss_data[i].row;
             c_r = this->loss_data[i].col;
+            this->num_ones[r_r*cols + c_r]++;
             if(c_r == cols) {
                 this->B_biases[r_r] = 1;
             } else {
@@ -8505,8 +8515,9 @@ void Network<T>::Save_Data_to_CSV(){
     //Create the folder
     time_t now = time(0);
     tm *ltm = localtime(&now);
-    string folder_name = "../../exp_data/Run_";
+    string folder_name = "../exp_data/Run_";
     folder_name += this->data_set;
+    folder_name += "_";
     folder_name += to_string(1900 + ltm->tm_year);
     folder_name += "_";
     folder_name += to_string(1 + ltm->tm_mon);
@@ -8518,6 +8529,7 @@ void Network<T>::Save_Data_to_CSV(){
     folder_name += to_string(ltm->tm_min);
     folder_name += "_";
     folder_name += to_string(ltm->tm_sec);
+    cout<<"Folder Name: "<<folder_name<<endl;
     if(mkdir(folder_name.c_str(),0777) == -1){
         cout<<"Error in creating directory"<<endl;
         exit(1);
@@ -8556,12 +8568,12 @@ void Network<T>::Save_Data_to_CSV(){
                 {
                     for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
                         for(int k=0; k<layers[layerMetadata[i].layerNumber]->cols; k++){
-                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<k<<","<<layers[layerMetadata[i].layerNumber]->weights[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<","<<epochs-layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + k].num_zeros<<endl;
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<k<<","<<layers[layerMetadata[i].layerNumber]->weights[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<epochs-layers[layerMetadata[i].layerNumber]->num_ones[j*layers[layerMetadata[i].layerNumber]->cols + k]<<","<<layers[layerMetadata[i].layerNumber]->num_ones[j*layers[layerMetadata[i].layerNumber]->cols + k]<<endl;
                         }
                     }
                     //Save the biases
                     for(int j=0; j<layers[layerMetadata[i].layerNumber]->rows; j++){
-                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<layers[layerMetadata[i].layerNumber]->cols<<","<<layers[layerMetadata[i].layerNumber]->biases[j]<<","<<layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<","<<epochs-layers[layerMetadata[i].layerNumber]->loss_data[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols].num_zeros<<endl;
+                            layer_weights_file<<layerMetadata[i].layerNumber<<","<<j<<","<<layers[layerMetadata[i].layerNumber]->cols<<","<<layers[layerMetadata[i].layerNumber]->biases[j]<<","<<epochs-layers[layerMetadata[i].layerNumber]->num_ones[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols]<<","<<layers[layerMetadata[i].layerNumber]->num_ones[j*layers[layerMetadata[i].layerNumber]->cols + layers[layerMetadata[i].layerNumber]->cols]<<endl;
                     }
                 }
             }
@@ -8780,6 +8792,25 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int sum = 0;
     T* batch_input = (T*)malloc(input_size*batch_size*sizeof(T));
     T* batch_output = (T*)malloc(output_size*batch_size*sizeof(T));
+    if(this->optim->name == "AdamJenks"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        //Something to this nature
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Loss_data();     
+                    }
+                }
+            }
+        }
+    }
     for (int i = 0; i < epochs; i++)
     {
         cout<< "Epoch: " << i << endl;
@@ -8806,7 +8837,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
                     if (layerMetadata[i].isUpdateable)
                     {
                         //Something to this nature
-                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks();     
+                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Prune();     
                     }
                 }
             }
