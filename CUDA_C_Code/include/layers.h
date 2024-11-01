@@ -2215,6 +2215,29 @@ __global__ void Fill_Jenks_Device(Loc_Layer<T>* loc, T* d_Wdw, T* d_Bbw, int col
 }
 
 template <typename T>
+__global__ void Fill_Jenks_Device_Prune(Loc_Layer<T>* loc, T* d_Wdw_agg, int cols, int rows){
+    int col = blockIdx.x*blockDim.x + threadIdx.x;
+    int row = blockIdx.y*blockDim.y + threadIdx.y;
+    if(col <= cols && row < rows){
+        loc[row*cols+col].row = row;
+        loc[row*cols+col].col = col;
+        loc[row*cols+col].weights_dW = d_Wdw_agg[row*cols+col];
+    }   
+}
+
+template <typename T>
+__global__ void Fill_Agg_Device(T* Agg, T* d_Wdw, T* d_Bbw, int cols, int rows){
+    int col = blockIdx.x*blockDim.x + threadIdx.x;
+    int row = blockIdx.y*blockDim.y + threadIdx.y;
+    if(col < cols && row < rows){
+        Agg[row*cols+col] = d_Wdw[row*cols+col];
+    }   
+    else if(col == cols && row < rows){
+        Agg[row*cols+col] = d_Bbw[row];
+    }
+}
+
+template <typename T>
 __global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int cols){
 
     int col = blockIdx.x*blockDim.x + threadIdx.x;
@@ -2672,10 +2695,12 @@ public:
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
         this->num_ones = (int*)malloc(rows * (cols+1) * sizeof(int));
+        BW_agg = (T*)malloc(rows * (cols+1) * sizeof(T));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
         ZeroVector<T>(m_biases, rows);
+        ZeroMatrix<T>(BW_agg, rows, cols+1);
         this->name = "linear";
     }
     ~Linear() override
@@ -2699,6 +2724,7 @@ public:
     T* v_biases;
     T* m_weights;
     T* m_biases;
+    T* BW_agg;
     Loc_Layer<T>* loss_data;
     void Fill_Loss_data() override{
         for(int i = 0; i< this->rows*(this->cols+1); i++) {
@@ -4295,6 +4321,7 @@ public:
     void find_Loss_Metric_Jenks() override {
         T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
         T *d_wDw, *d_bDb;
+        T* d_WB_agg;
 
         int cols = this->cols;
         int rows = this->rows;
@@ -4329,6 +4356,10 @@ public:
             cout << "Error in allocating memory for d_bDb" << endl;
             exit(1);
         }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols+1) * sizeof(T))) {
+            cout<<"Error in allocating memory for d_WB_agg"<<endl;
+            exit(1);
+        }
 
         // Copy weights, biases, d_weights, and d_biases from host to device
         if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
@@ -4358,6 +4389,10 @@ public:
         }
         if (!HandleCUDAError(cudaMemcpy(d_bDb, this->W_dW_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
             cout<<"Error in copying bDb from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols+1) * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying WB_agg from host to device"<<endl;
             exit(1);
         }
 
@@ -4422,11 +4457,47 @@ public:
 
         int TPB_2 = 16;
         dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
-        dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
+        dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);
+        cudaStream_t fill_agg;
+        cudaStream_t fill_loss;
 
-        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+        if (!HandleCUDAError(cudaStreamCreate(&fill_agg)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&fill_loss)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }       
+
+        Fill_Agg_Device<T><<<gridDim2D_diff, blockDim2D_diff,0,fill_agg>>>(d_WB_agg, d_wDw, d_bDb cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(fill_agg))) {
             cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff,0,fill_loss>>>(d_Loss_Data,d_wDw, d_bDb, cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(fill_loss))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        if(!HandleCUDAError(cudaStreamDestroy(fill_agg))) {
+            cout<<"Error in destroying stream"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaStreamDestroy(fill_loss))) {
+            cout<<"Error in destroying stream"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(this->WB_agg, d_WB_agg, rows * (cols+1) * sizeof(T), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_WB_agg from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_WB_agg))) {
+            cout<<"Error in freeing d_WB_agg"<<endl;
             exit(1);
         }
 
@@ -4591,7 +4662,7 @@ public:
     }
     void find_Loss_Metric_Jenks_Prune() override {
         T *dev_Weights, *dev_Biases;
-
+        T* d_WB_agg;
         int cols = this->cols;
         int rows = this->rows;
 
@@ -4603,6 +4674,10 @@ public:
         if (!HandleCUDAError(cudaMalloc((void **)&dev_Biases, rows * sizeof(T))))
         {
             cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void**)&d_WB_agg, rows * (cols+1) * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_WB_agg"<<endl;
             exit(1);
         }
 
@@ -4618,6 +4693,11 @@ public:
             cout << "Error in copying biases from host to device" << endl;
             exit(1);
         }
+        if (!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols+1) * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying WB_agg from host to device"<<endl;
+            exit(1);
+        }
+
 
 
         // Define grid and block dimensions
@@ -4644,7 +4724,7 @@ public:
         dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
         dim3 gridDim2D_diff((cols+1 + TPB_2 - 1) / TPB_2, (rows+TPB_2-1)/TPB_2, 1);       
 
-        Fill_Jenks_Device<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,dev_Weights,dev_Biases, cols, rows);
+        Fill_Jenks_Device_Prune<T><<<gridDim2D_diff, blockDim2D_diff>>>(d_Loss_Data,d_WB_agg, cols, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
