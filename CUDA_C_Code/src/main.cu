@@ -21,7 +21,7 @@ int main(int argc, char** argv){
         num_layers = 3;
         int* hidden_layers = new int[num_layers-2];
         hidden_layers[0] = 16;
-        batch_size = 384;
+        batch_size = 512;
         Q = 128;
         weather = true;
         dataset = "Weather";

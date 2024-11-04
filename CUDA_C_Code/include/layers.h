@@ -2624,6 +2624,27 @@ __global__ void Adam_Update_Weights_Bernoulli(T *weights, T *d_weights, T *m_wei
     }
 }
 
+
+template <typename T>
+__global__ void Adam_Update_Weights_Bernoulli_Zero(T *weights, T *d_weights, T *m_weights, T *v_weights, int *B_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+
+    if (row < output_size && col < input_size)
+    {
+        T temp = B_weights[row * input_size + col] * d_weights[row * input_size + col];
+        // printf("B_weights[%d][%d] = %d\n", row, col, B_weights[row * input_size + col]);
+        m_weights[row * input_size + col] = beta1 * m_weights[row * input_size + col] + (1 - beta1) * temp;
+        v_weights[row * input_size + col] = beta2 * v_weights[row * input_size + col] + (1 - beta2) * temp * temp;
+        T m_hat = m_weights[row * input_size + col] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_weights[row * input_size + col] / (1 - pow(beta2, epochs+1));
+        weights[row * input_size + col] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+        weights[row * input_size + col] = weights[row * input_size + col] * B_weights[row * input_size + col];
+    }
+}
+
 template <typename T>
 __global__ void Adam_Update_Bias(T *biases, T *d_biases, T *m_biases, T *v_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
 {
@@ -2652,6 +2673,23 @@ __global__ void Adam_Update_Bias_Bernoulli(T *biases, T *d_biases, T *m_biases, 
         T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
         T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
         biases[index] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+    }
+}
+
+template <typename T>
+__global__ void Adam_Update_Bias_Bernoulli_Zero(T *biases, T *d_biases, T *m_biases, T *v_biases, int *B_biases, T beta1, T beta2, T epsilon, T learning_rate, int size, int epochs)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < size)
+    {
+        T temp = B_biases[index] * d_biases[index];
+        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * temp;
+        v_biases[index] = beta2 * v_biases[index] + (1 - beta2) * temp * temp;
+        T m_hat = m_biases[index] / (1 - pow(beta1, epochs+1));
+        T v_hat = v_biases[index] / (1 - pow(beta2, epochs+1));
+        biases[index] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+        biases[index] = biases[index] * B_biases[index];
     }
 }
 
@@ -2695,12 +2733,12 @@ public:
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
         this->num_ones = (int*)malloc(rows * (cols+1) * sizeof(int));
-        BW_agg = (T*)malloc(rows * (cols+1) * sizeof(T));
+        WB_agg = (T*)malloc(rows * (cols+1) * sizeof(T));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
         ZeroVector<T>(m_biases, rows);
-        ZeroMatrix<T>(BW_agg, rows, cols+1);
+        ZeroMatrix<T>(WB_agg, rows, cols+1);
         this->name = "linear";
     }
     ~Linear() override
@@ -2724,7 +2762,7 @@ public:
     T* v_biases;
     T* m_weights;
     T* m_biases;
-    T* BW_agg;
+    T* WB_agg;
     Loc_Layer<T>* loss_data;
     void Fill_Loss_data() override{
         for(int i = 0; i< this->rows*(this->cols+1); i++) {
@@ -4059,13 +4097,13 @@ public:
         }
 
 
-        Adam_Update_Weights_Bernoulli<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_weights, d_d_weights, d_m_weights, d_v_weights, d_B_weights, beta1, beta2, epsilon, learning_rate, cols, rows, epochs);
+        Adam_Update_Weights_Bernoulli_Zero<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_weights, d_d_weights, d_m_weights, d_v_weights, d_B_weights, beta1, beta2, epsilon, learning_rate, cols, rows, epochs);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
 
-        Adam_Update_Bias_Bernoulli<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_biases, d_d_biases, d_m_biases, d_v_biases, d_B_biases, beta1, beta2, epsilon, learning_rate, rows, epochs);
+        Adam_Update_Bias_Bernoulli_Zero<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_biases, d_d_biases, d_m_biases, d_v_biases, d_B_biases, beta1, beta2, epsilon, learning_rate, rows, epochs);
         if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -4356,7 +4394,7 @@ public:
             cout << "Error in allocating memory for d_bDb" << endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols+1) * sizeof(T))) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols+1) * sizeof(T)))) {
             cout<<"Error in allocating memory for d_WB_agg"<<endl;
             exit(1);
         }
@@ -4472,7 +4510,7 @@ public:
             exit(1);
         }       
 
-        Fill_Agg_Device<T><<<gridDim2D_diff, blockDim2D_diff,0,fill_agg>>>(d_WB_agg, d_wDw, d_bDb cols, rows);
+        Fill_Agg_Device<T><<<gridDim2D_diff, blockDim2D_diff,0,fill_agg>>>(d_WB_agg, d_wDw, d_bDb, cols, rows);
         if(!HandleCUDAError(cudaStreamSynchronize(fill_agg))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
