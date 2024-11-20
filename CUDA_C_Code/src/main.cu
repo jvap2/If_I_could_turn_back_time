@@ -97,11 +97,11 @@ int main(int argc, char** argv){
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.0001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
-    net.addLayer(new Linear<float>(input_size, 128,batch_size));
-    net.addLayer(new Tanh<float>(128,batch_size));
-    net.addLayer(new Linear<float>(128, 256, batch_size));
-    net.addLayer(new Tanh<float>(256,batch_size));
-    net.addLayer(new Linear<float>(256, output_size, batch_size));
+    net.addLayer(new Linear<float>(input_size, output_size,batch_size));
+    // net.addLayer(new Tanh<float>(128,batch_size));
+    // net.addLayer(new Linear<float>(128, 256, batch_size));
+    // net.addLayer(new Tanh<float>(256,batch_size));
+    // net.addLayer(new Linear<float>(256, output_size, batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(strcmp(argv[1],"weather")==0){
         cout<<"Adding Categorical Loss"<<endl;
@@ -117,14 +117,14 @@ int main(int argc, char** argv){
     }
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 500, .0001, training_size);
+    net.train(train_input, train_target, 1, .0001, training_size);
     cout<<"Training Complete"<<endl;
     // cout<<"Results on Training Data"<<endl;
     // net.predict(train_input,train_target, training_size);
-    cout<<"Results on Test Data"<<endl;
-    float* test_accuracy = 0;
-    net.predict(test_input,test_target, test_size);
-    net.Save_Data_to_CSV();
+    // cout<<"Results on Test Data"<<endl;
+    // float* test_accuracy = 0;
+    // net.predict(test_input,test_target, test_size);
+    // net.Save_Data_to_CSV();
 
 
     return 0;
