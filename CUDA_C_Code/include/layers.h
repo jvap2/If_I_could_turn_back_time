@@ -621,6 +621,24 @@ void InitMatrix_He(T* matrix, int ny, int nx){
 }
 
 template <typename T>
+void InitMatrix_Xavier_Norm(T* matrix, int ny, int nx){
+    T upper,lower;
+    upper = sqrt(6.0/(nx+ny));
+    lower = -upper;
+
+    for (int i = 0; i < ny; i++)
+    {
+        for (int j = 0; j < nx; j++)
+        {
+            // srand(time(NULL));
+            matrix[j] = ((T)rand() / (RAND_MAX + 1) * (upper - lower) + lower);
+            matrix[j] /= nx;
+        }
+        matrix += nx;
+    }
+}
+
+template <typename T>
 void ZeroMatrix(T *temp, const int ny, const int nx)
 {
     T *p = temp;
@@ -641,6 +659,58 @@ void InitializeVector(T *vec, int n)
     for (int i = 0; i < n; i++)
     {
         vec[i] = ((T)rand() / (RAND_MAX + 1) * (RANGE_MAX - RANGE_MIN) + RANGE_MIN);
+    }
+}
+
+
+template <typename T>
+void Init_Bias_Xavier_Norm(T* matrix, int ny, int nx){
+    T upper,lower;
+    upper = sqrt(6.0/(nx+ny));
+    lower = -upper;
+
+    for (int i = 0; i < ny; i++)
+    {
+        matrix[i] = ((T)rand() / (RAND_MAX + 1) * (upper - lower) + lower);
+        matrix[i] /= nx;
+    }
+}
+
+template <typename T>
+void Init_Bias_He(T* matrix, int ny, int nx){
+    T upper = sqrt(2.0 / nx);
+    T lower = -upper;
+    for (int i = 0; i < ny; i++) {
+        matrix[i] = ((T)rand() / RAND_MAX * (upper - lower) + lower);
+    }
+}
+
+template <typename T>
+void Init_Weights_Same_Xavier(T* matrix, int ny, int nx){
+    T upper,lower;
+    upper = sqrt(6.0/(nx+ny));
+    lower = -upper;
+    T val = .05;
+    for (int i = 0; i < ny; i++)
+    {
+        for (int j = 0; j < nx; j++)
+        {
+            // srand(time(NULL));
+            matrix[j] = val;
+        }
+        matrix += nx;
+    }
+}
+
+template <typename T>
+void Init_Bias_Same_Xavier(T* matrix, int ny, int nx){
+    T upper,lower;
+    upper = sqrt(6.0/(nx+ny));
+    lower = -upper;
+    T val = .05;
+    for (int i = 0; i < ny; i++)
+    {
+        matrix[i] = val;
     }
 }
 
@@ -697,7 +767,7 @@ public:
         // Create random weights and biases
         // InitializeMatrix<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->weights, rows, cols);
-        InitializeVector<T>(this->biases, rows);
+        Init_Bias_He<T>(this->biases, rows,cols);
         this->name = "full matrix";
         this->next_loss = (T *)malloc(cols * sizeof(T));
         this->d_biases = (T *)malloc(rows * sizeof(T));
@@ -718,7 +788,7 @@ public:
         // Create random weights and biases
         // InitializeMatrix<T>(this->weights, rows, cols);
         InitMatrix_He<T>(this->weights, rows, cols);
-        InitializeVector<T>(this->biases, rows);
+        Init_Bias_He<T>(this->biases, rows,cols);
         this->name = "full matrix";
         this->d_biases = (T *)malloc(rows * sizeof(T));
         this->d_weights = (T *)malloc(rows * cols * sizeof(T));
@@ -858,6 +928,7 @@ public:
     void backward(T *input, T *output, T *weight, T *bias, int input_size, int output_size) {};
     virtual void update_weights_SGD(T learning_rate) { cout << "Hello" << endl; };
     virtual void update_weights_AdamJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_SGDJenks(T learning_rate) {};
     virtual void update_weights_Momentum(T learning_rate, T momentum) {};
     virtual void update_weights_RMSProp(T learning_rate, T decay_rate) {};
     virtual void update_weights_Adam(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
@@ -915,6 +986,13 @@ class AdamJenksOptimizer : public Optimizer<T>
 {
     public:
     AdamJenksOptimizer(T learning_rate, T beta1, T beta2, T epsilon) : Optimizer<T>(learning_rate, 0.0, 0.0, beta1, beta2, epsilon) {this->name = "AdamJenks";};
+};
+
+template <typename T>
+class SGDJenksOptimizer : public Optimizer<T>
+{
+    public:
+    SGDJenksOptimizer(T learning_rate) : Optimizer<T>(learning_rate, 0.0, 0.0, 0.0, 0.0, 0.0) {this->name = "SGDJenks";};
 };
 
 template <typename T>
@@ -2768,8 +2846,9 @@ __global__ void Adam_Update_Bias_Bernoulli_Zero(T *biases, T *d_biases, T *m_bia
 
 int* return_col_row(int index, int cols){
     int* temp = (int*)malloc(2*sizeof(int));
-    temp[0] = index/cols; //row
-    temp[1] = index%cols; //col
+    int cols_bias = cols+1;
+    temp[0] = index/cols_bias; //row
+    temp[1] = index%cols_bias; //col
     return temp;        
 }
 
@@ -2781,7 +2860,7 @@ public:
     Linear(int cols, int rows) : Matrix<T>(cols, rows)
     {
         InitMatrix_He<T>(this->weights, rows, cols);
-        InitMatrix_He<T>(this->biases, rows,1);
+        Init_Bias_He<T>(this->biases, rows,cols);
         ZeroVector<T>(this->hidden_output, rows);
         ZeroVector<T>(this->input, cols);
         v_weights = (T*)malloc(rows * cols * sizeof(T));
@@ -2802,8 +2881,8 @@ public:
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
         this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
-        InitMatrix_He<T>(this->weights, rows, cols);
-        InitMatrix_He<T>(this->biases, rows,1);
+        Init_Weights_Same_Xavier<T>(this->weights, rows, cols);
+        Init_Bias_Same_Xavier<T>(this->biases, rows,cols);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         ZeroVector<T>(this->input, cols*batch_size);
         v_weights = (T*)malloc(rows * cols * sizeof(T));
@@ -4040,6 +4119,114 @@ public:
             exit(1);
         }
     }
+    void update_weights_SGDJenks(T learning_rate){
+        T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
+        int cols = this->cols;
+        int rows = this->rows;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+
+        // Launch the update weights kernel
+        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, cols, rows);
+        if (!HandleCUDAError(cudaDeviceSynchronize()))
+        {
+            cout << "Error in synchronizing device" << endl;
+            exit(1);
+        }
+        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, learning_rate, rows);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        // Copy the result weights and biases from device to host
+        if (!HandleCUDAError(cudaMemcpy(this->weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying weights from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying biases from device to host" << endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(d_weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaDeviceReset()))
+        {
+            cout << "Error in resetting device" << endl;
+            exit(1);
+        }
+    }
     void update_weights_AdamJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) override {
         /*
         Algorithm:
@@ -4611,53 +4798,53 @@ public:
             exit(1);
         }
         // typename thrust::device_vector<T>::iterator iter;
-        thrust::device_ptr<T> dev_ptr(d_WB);
-        thrust::device_ptr<T> iter = thrust::find_if(thrust::device, dev_ptr, dev_ptr+(rows*(cols+1)), IsZero<T>());
-        int index=0;
-        if (iter != dev_ptr + (rows * (cols + 1)))
-        {   
-            index = iter - dev_ptr;
-            std::cout << "First zero element found at index: " << index << std::endl;
-        }
-        else
-        {
-            index = 0;
-            std::cout << "No zero elements found." << std::endl;
-        }
+        // thrust::device_ptr<T> dev_ptr(d_WB);
+        // thrust::device_ptr<T> iter = thrust::find_if(thrust::device, dev_ptr, dev_ptr+(rows*(cols+1)), IsZero<T>());
+        // int index=0;
+        // if (iter != dev_ptr + (rows * (cols + 1)))
+        // {   
+        //     index = iter - dev_ptr;
+        //     std::cout << "First zero element found at index: " << index << std::endl;
+        // }
+        // else
+        // {
+        //     index = 0;
+        //     std::cout << "No zero elements found." << std::endl;
+        // }
         //Perfrom the Jenks natural breaks optimization
         //Define the threads and block size
         //We will launch a kernel with as many threads as there are entries in the matrix
         T* d_var;
 
-        if (!HandleCUDAError(cudaMalloc((void **)&d_var, ((rows*(cols+1))-index) * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_var, ((rows*(cols+1))) * sizeof(T))))
         {
             cout << "Error in allocating memory for d_var" << endl;
             exit(1);
         }
         int TPB_3 = 256;
         dim3 blockDim(TPB_3,1, 1);
-        dim3 gridDim((((rows*(cols+1))-index) + TPB_2 - 1) / TPB_2, 1, 1);  
+        dim3 gridDim((((rows*(cols+1))) + TPB_2 - 1) / TPB_2, 1, 1);  
 
         //Launch the kernel
-        Jenks_Optimization_CutOff<T><<<gridDim, blockDim>>>(d_WB, d_var, rows, cols,index);
+        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
         //Find the minimum of d_var
         int* d_min;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_min, ((rows*(cols+1))-index)*sizeof(int))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_min, ((rows*(cols+1)))*sizeof(int))))
         {
             cout << "Error in allocating memory for d_min" << endl;
             exit(1);
         }
-        thrust::sequence(thrust::device, d_min, d_min + ((rows*(cols+1))-index));
-        thrust::sort_by_key(thrust::device, d_var, d_var + ((rows*(cols+1))-index), d_min);   
+        thrust::sequence(thrust::device, d_min, d_min + ((rows*(cols+1))));
+        thrust::sort_by_key(thrust::device, d_var, d_var + ((rows*(cols+1))), d_min);   
         //The first entry of d_min will be the index of the minimum value of d_var
         // This will be the break point
 
         int* h_min = (int*)malloc((rows*(cols+1))*sizeof(int));
-        if(!HandleCUDAError(cudaMemcpy(h_min, d_min, ((rows*(cols+1))-index)*sizeof(int), cudaMemcpyDeviceToHost))) {
+        if(!HandleCUDAError(cudaMemcpy(h_min, d_min, ((rows*(cols+1)))*sizeof(int), cudaMemcpyDeviceToHost))) {
             cout<<"Error in copying d_min from device to host"<<endl;
             exit(1);
         }
@@ -4680,17 +4867,17 @@ public:
             exit(1);
         }
 
-        for(int i = 0; i<this->rows; i++){
-            cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
-        }
-        cout<<"Score weights"<<endl;
-        for(int i = 0; i<this->rows; i++){
-            for(int j  = 0; j<this->cols; j++){
-                cout<<this->W_dW_weights[i*this->cols + j]<<" ";
-            }
-            cout<<endl;
-        }
-        int break_point = h_min[0]+index;// Will need to add the offset of non zeros here
+        // for(int i = 0; i<this->rows; i++){
+        //     cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
+        // }
+        // cout<<"Score weights"<<endl;
+        // for(int i = 0; i<this->rows; i++){
+        //     for(int j  = 0; j<this->cols; j++){
+        //         cout<<this->W_dW_weights[i*this->cols + j]<<" ";
+        //     }
+        //     cout<<endl;
+        // }
+        int break_point = h_min[0];// Will need to add the offset of non zeros here
         cout<<"The break point is "<<break_point<<endl;
         //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
         //We will do this serially, and save in this->B_weights and this->B_biases
@@ -4709,11 +4896,11 @@ public:
             }
             if(c_r == cols) {
                 this->B_biases[r_r] = 0;
-                cout<<"Bias["<< r_r<<"]= "<< this->W_dW_biases[i];
+                // cout<<"Bias["<< r_r<<"]= "<< this->W_dW_biases[i];
                 
             } else {
                 this->B_weights[r_r * this->cols + c_r] = 0;
-                cout<<"Weight["<<r_r<<"]["<<c_r<<"]="<<this->W_dW_weights[r_r * this->cols + c_r]<<endl;
+                // cout<<"Weight["<<r_r<<"]["<<c_r<<"]="<<this->W_dW_weights[r_r * this->cols + c_r]<<endl;
             }
         }
 
@@ -9205,7 +9392,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         
         
     }
-    if(this->optim->name == "AdamJenks"){
+    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds
@@ -9259,6 +9446,10 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     }
                     else if(this->optim->name == "AdamJenks"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
+                    }
+                    else if(this->optim->name == "SGDJenks"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_SGDJenks(learning_rate);
                         // this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
                     }
                     else{
