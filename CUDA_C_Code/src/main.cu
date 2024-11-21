@@ -115,7 +115,7 @@ int main(int argc, char** argv){
     }
     //Print out the size of the categorical layer
 
-    net.train(train_input, train_target, 75, .0001, training_size);
+    net.train(train_input, train_target, 80, .0001, training_size);
     cout<<"Training Complete"<<endl;
     // cout<<"Results on Training Data"<<endl;
     // net.predict(train_input,train_target, training_size);

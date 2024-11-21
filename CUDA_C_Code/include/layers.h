@@ -2730,6 +2730,25 @@ __global__ void update_bias_kernel(T *biases, T *d_biases, T learning_rate, int 
     }
 }
 
+template <typename T>
+__global__ void update_weights_kernel_Jenks(T *weights, T *d_weights, T* B_W, T learning_rate, int rows, int cols)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if(row < rows && col < cols){
+        weights[row*cols+col] -= learning_rate * d_weights[row*cols+col] * B_W[row*cols+col];
+    }
+}
+
+template <typename T>
+__global__ void update_bias_kernel_Jenks(T *biases, T *d_biases, T* B_B, T learning_rate, int size)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if(index < size){
+        biases[index] -= learning_rate * d_biases[index] * B_B[index];
+    }
+}
+
 
 template <typename T>
 __global__ void Adam_Update_Weights(T *weights, T *d_weights, T *m_weights, T *v_weights, T beta1, T beta2, T epsilon, T learning_rate, int input_size, int output_size, int epochs)
@@ -2881,8 +2900,8 @@ public:
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
         this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
-        Init_Weights_Same_Xavier<T>(this->weights, rows, cols);
-        Init_Bias_Same_Xavier<T>(this->biases, rows,cols);
+        InitMatrix_Xavier<T>(this->weights, rows, cols);
+        Init_Bias_Xavier_Norm<T>(this->biases, rows,cols);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         ZeroVector<T>(this->input, cols*batch_size);
         v_weights = (T*)malloc(rows * cols * sizeof(T));
@@ -4121,6 +4140,7 @@ public:
     }
     void update_weights_SGDJenks(T learning_rate){
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases;
+        T* d_B_weights, *d_B_biases;
         int cols = this->cols;
         int rows = this->rows;
         if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
@@ -4141,6 +4161,14 @@ public:
         if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T))))
         {
             cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_weights, rows * cols * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_B_weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_B_biases, rows * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_B_biases"<<endl;
             exit(1);
         }
 
@@ -4165,6 +4193,14 @@ public:
             cout << "Error in copying d_biases from host to device" << endl;
             exit(1);
         }
+        if(!HandleCUDAError(cudaMemcpy(d_B_weights, this->B_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying B_weights from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_B_biases, this->B_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying B_biases from host to device"<<endl;
+            exit(1);
+        }
 
         // Define grid and block dimensions
         int block_size = 16;
@@ -4177,13 +4213,13 @@ public:
         dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
 
         // Launch the update weights kernel
-        update_weights_kernel<T><<<gridDim2D, blockDim2D>>>(d_weights, d_biases, d_d_weights, d_d_biases, learning_rate, cols, rows);
+        update_weights_kernel_Jenks<T><<<gridDim2D, blockDim2D>>>(d_weights, d_d_weights, d_B_weights, learning_rate, cols, rows);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
-        update_bias_kernel<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, learning_rate, rows);
+        update_bias_kernel_Jenks<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, d_B_biases, learning_rate, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -6689,6 +6725,7 @@ public:
     }
     void update_weights(T learning_rate){};
     void update_weights(T learning_rate, int epochs, int Q);
+    void update_weights(T learning_rate, int epochs, int Q, int total_epochs);
     void addLayer(Linear<T> *layer)
     {
         layers.push_back(layer);
@@ -9354,7 +9391,7 @@ struct CompareBernoulliLayers {
 
 
 template <typename T>
-void Network<T>::update_weights(T learning_rate, int epochs, int Q)
+void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_epochs)
 {
     // Ensure layers vector is not empty and is properly initialized
     if (this->layers.empty())
@@ -9392,19 +9429,21 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
         
         
     }
-    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
-        for (int i = 0; i < layerMetadata.size(); i++)
-        {
-            // Validate layerNumber is within bounds
-            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+    if(epochs == total_epochs/2){
+        if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
+            for (int i = 0; i < layerMetadata.size(); i++)
             {
-                // Check if the layer pointer is not null
-                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                // Validate layerNumber is within bounds
+                if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
                 {
-                    // Check if the current layer is marked as updateable
-                    if (layerMetadata[i].isUpdateable)
+                    // Check if the layer pointer is not null
+                    if (this->layers[layerMetadata[i].layerNumber] != nullptr)
                     {
-                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive();     
+                        // Check if the current layer is marked as updateable
+                        if (layerMetadata[i].isUpdateable)
+                        {
+                            this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive();     
+                        }
                     }
                 }
             }
@@ -9446,7 +9485,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q)
                     }
                     else if(this->optim->name == "AdamJenks"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
-                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
+                        // this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
                     }
                     else if(this->optim->name == "SGDJenks"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_SGDJenks(learning_rate);
@@ -9542,7 +9581,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
         Format_Batch_Data(input,output,batch_input,batch_output,indices,batch_size,input_size,output_size);
         forward(batch_input, batch_output);
         backward(batch_input, batch_output);
-        update_weights(learning_rate, i, this->Q);
+        update_weights(learning_rate, i, this->Q, epochs);
     }
     // If the optimizer is AdamJenks, we need to prune the weight at the end of the training
     // if(this->optim->name == "AdamJenks"){
