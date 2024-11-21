@@ -2900,8 +2900,6 @@ public:
         this->loss = (T *)malloc(rows * batch_size * sizeof(T));
         this->next_loss = (T *)malloc(cols * batch_size * sizeof(T));
         this->loss_data = (Loc_Layer<T>*)malloc(rows * (cols + 1) * sizeof(Loc_Layer<T>));
-        InitMatrix_Xavier<T>(this->weights, rows, cols);
-        Init_Bias_Xavier_Norm<T>(this->biases, rows,cols);
         ZeroVector<T>(this->hidden_output, rows*batch_size);
         ZeroVector<T>(this->input, cols*batch_size);
         v_weights = (T*)malloc(rows * cols * sizeof(T));
@@ -4704,10 +4702,10 @@ public:
             cout << "Error in allocating memory for d_bDb" << endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols+1) * sizeof(T)))) {
-            cout<<"Error in allocating memory for d_WB_agg"<<endl;
-            exit(1);
-        }
+        // if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols+1) * sizeof(T)))) {
+        //     cout<<"Error in allocating memory for d_WB_agg"<<endl;
+        //     exit(1);
+        // }
 
         // Copy weights, biases, d_weights, and d_biases from host to device
         if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
@@ -4739,10 +4737,10 @@ public:
             cout<<"Error in copying bDb from host to device"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols+1) * sizeof(T), cudaMemcpyHostToDevice))) {
-            cout<<"Error in copying WB_agg from host to device"<<endl;
-            exit(1);
-        }
+        // if(!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols+1) * sizeof(T), cudaMemcpyHostToDevice))) {
+        //     cout<<"Error in copying WB_agg from host to device"<<endl;
+        //     exit(1);
+        // }
 
         // Define grid and block dimensions
         int block_size = 16;
@@ -4810,26 +4808,37 @@ public:
         //Fill the WB structure
         int size = rows * (cols + 1);
 
-        T* d_WB;
-        int* d_indices;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_WB, rows * (cols + 1) * sizeof(T))))
+        T* d_WBW;
+        T* d_BB;
+        int* d_indices_W;
+        int* d_indices_B;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_WBW, rows * (cols) * sizeof(T))))
         {
             cout << "Error in allocating memory for d_WB" << endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaMalloc((void **)&d_indices, rows * (cols + 1) * sizeof(int))) ) {
+        if(!HandleCUDAError(cudaMalloc((void **)&d_BB, rows*sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_BB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_indices_W, rows * (cols) * sizeof(int))) ) {
             cout<<"Error in allocating memory for d_indices"<<endl;
             exit(1);
         }
+        if(!HandleCUDAError(cudaMalloc((void**)&d_indices_B, rows*sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_indices_B"<<endl;
+            exit(1);
+        }
 
-        Fill_WB_device_array<T><<<gridDim2D, blockDim2D>>>(d_WB, d_indices,d_wDw, d_bDb, rows, cols);
+        Fill_WB_device_array<T><<<gridDim2D, blockDim2D>>>(d_WBW, d_indices_W,d_wDw, d_bDb, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-        thrust::sort_by_key(thrust::device, d_WB, d_WB + size, d_indices);
-        int* h_indices = (int*)malloc(size*sizeof(int));
-        if(!HandleCUDAError(cudaMemcpy(h_indices, d_indices, size*sizeof(int), cudaMemcpyDeviceToHost))) {
+        thrust::sort_by_key(thrust::device, d_WBW, d_WBW + size, d_indices_W);
+        int* h_indices = (int*)malloc(rows*cols*sizeof(int));
+        int* h_indices_B = (int*)malloc(rows*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_indices, d_indices_W, size*sizeof(int), cudaMemcpyDeviceToHost))) {
             cout<<"Error in copying d_indices from device to host"<<endl;
             exit(1);
         }
@@ -4850,11 +4859,16 @@ public:
         //Perfrom the Jenks natural breaks optimization
         //Define the threads and block size
         //We will launch a kernel with as many threads as there are entries in the matrix
-        T* d_var;
+        T* d_var_W;
+        T* d_var_B;
 
-        if (!HandleCUDAError(cudaMalloc((void **)&d_var, ((rows*(cols+1))) * sizeof(T))))
+        if (!HandleCUDAError(cudaMalloc((void **)&d_var_W, ((rows*(cols))) * sizeof(T))))
         {
             cout << "Error in allocating memory for d_var" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_var_B, rows * sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_var_B"<<endl;
             exit(1);
         }
         int TPB_3 = 256;
@@ -4862,20 +4876,27 @@ public:
         dim3 gridDim((((rows*(cols+1))) + TPB_2 - 1) / TPB_2, 1, 1);  
 
         //Launch the kernel
-        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var, rows, cols);
+        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var_W, rows, cols);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
         //Find the minimum of d_var
-        int* d_min;
-        if (!HandleCUDAError(cudaMalloc((void **)&d_min, ((rows*(cols+1)))*sizeof(int))))
+        int* d_min_W;
+        int* d_min_B;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_min_W, ((rows*(cols)))*sizeof(int))))
         {
             cout << "Error in allocating memory for d_min" << endl;
             exit(1);
         }
-        thrust::sequence(thrust::device, d_min, d_min + ((rows*(cols+1))));
-        thrust::sort_by_key(thrust::device, d_var, d_var + ((rows*(cols+1))), d_min);   
+        if(!HandleCUDAError(cudaMalloc((void **)&d_min_B, rows*sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_min_B"<<endl;
+            exit(1);
+        }
+        thrust::sequence(thrust::device, d_min_W, d_min_W + ((rows*(cols))));
+        thrust::sequence(thrust::device, d_min_B, d_min_B + rows);
+        thrust::sort_by_key(thrust::device, d_var_W, d_var_W + ((rows*(cols))), d_min_W);   
+        thrust::sort_by_key(thrust::device, d_var_B, d_var_B + rows, d_min_B);
         //The first entry of d_min will be the index of the minimum value of d_var
         // This will be the break point
 
@@ -9442,6 +9463,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
                         // Check if the current layer is marked as updateable
                         if (layerMetadata[i].isUpdateable)
                         {
+                            //Can we change this to find the cutoff for weights and biases seperately?
                             this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive();     
                         }
                     }
@@ -9551,7 +9573,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int sum = 0;
     T* batch_input = (T*)malloc(input_size*batch_size*sizeof(T));
     T* batch_output = (T*)malloc(output_size*batch_size*sizeof(T));
-    if(this->optim->name == "AdamJenks"){
+    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds

@@ -97,9 +97,11 @@ int main(int argc, char** argv){
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.0001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
-    net.addLayer(new Linear<float>(input_size, 1024,batch_size));
-    net.addLayer(new RELU_layer<float>(1024,batch_size));
-    net.addLayer(new Linear<float>(1024, output_size,batch_size));
+    net.addLayer(new Linear<float>(input_size, 256,batch_size));
+    net.addLayer(new RELU_layer<float>(256,batch_size));
+    net.addLayer(new Linear<float>(256, 512,batch_size));
+    net.addLayer(new RELU_layer<float>(512,batch_size));
+    net.addLayer(new Linear<float>(512, output_size,batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(strcmp(argv[1],"weather")==0){
         cout<<"Adding Categorical Loss"<<endl;
