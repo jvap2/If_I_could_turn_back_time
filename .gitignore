@@ -3,4 +3,6 @@ CUDA_C_Code/Python_Test_Code/
 data/Rice_Image_Dataset/
 data/mnist-original.mat
 data/mnist
+CUDA_C_Code/bin
+CUDA_C_Code/obj
 exp_data/

@@ -881,6 +881,8 @@ public:
     virtual void Fill_Bernoulli_Ones(){};
     virtual void Fill_Activ() {};
     virtual void Fill_Loss_data() {};
+    virtual void find_Loss_Metric_Jenks_Aggressive_Single() {};
+    virtual void Agg_Jenks_Loss(){};
     int rows;
     int cols;
     int batch_size;
@@ -1100,6 +1102,35 @@ __global__ void matrix_vector_multiply_kernel(T *A, T *B, T *C, int rows, int co
             sum += A[row * cols + k] * B[k];
         }
         C[row] = sum;
+    }
+}
+
+template <typename T>
+__global__ void matrix_matrix_addition_kernel(T* A, T* B, T* C, int rows, int cols){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(row < rows && col < cols){
+        C[row*cols + col] = A[row*cols + col] + B[row*cols + col];
+    }
+}
+
+template <typename T>
+__global__ void matrix_accum_kernel(T* A, T* B, int rows, int cols){
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(row < rows && col < cols){
+        A[row*cols + col] += B[row*cols + col];
+    }
+}
+
+template <typename T>
+__global__ void vector_accum_kernel(T* A, T* B, int size){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(index < size){
+        A[index] += B[index];
     }
 }
 
@@ -2352,19 +2383,24 @@ __global__ void Fill_WB_device(T* d_WB, Loc_Layer<T>* d_Loss_Data, int rows, int
 }
 
 template <typename T>
-__global__ void Fill_WB_device_array(T* d_WB, int* indices, T* d_wDw, T* d_bDb, int rows, int cols){
+__global__ void Fill_WBW_device_array(T* d_WB, int* indices, T* d_wDw, int rows, int cols){
     int col = blockIdx.x*blockDim.x + threadIdx.x;
     int row = blockIdx.y*blockDim.y + threadIdx.y;
     if(col < cols && row < rows){
-        d_WB[row*(cols+1)+col] = fabsf(d_wDw[row*cols+col]);
-        indices[row*(cols+1)+col] = row*(cols+1)+col;
+        d_WB[row*(cols)+col] = fabsf(d_wDw[row*cols+col]);
+        indices[row*(cols)+col] = row*(cols)+col;
     }
-    else if(col == cols && row < rows){
-        d_WB[row*(cols+1)+col] = fabsf(d_bDb[row]);
-        indices[row*(cols+1)+col] = row*(cols+1)+col;
-    }
-
 }
+
+template <typename T>
+__global__ void Fill_WBB_device_array(T* d_WB, int* indices, T* d_Bbw, int rows){
+    int row = blockIdx.x*blockDim.x + threadIdx.x;
+    if(row < rows){
+        d_WB[row] = fabsf(d_Bbw[row]);
+        indices[row] = row;
+    }
+}
+
 
 template <typename T>
 __global__ void Jenks_Optimization(T* d_WB, T* d_var, int rows, int cols){
@@ -2396,6 +2432,77 @@ __global__ void Jenks_Optimization(T* d_WB, T* d_var, int rows, int cols){
         }
         for(int i = idx; i<rows*(cols+1); i++){
             var += (d_WB[i] - mean_2)*(d_WB[i] - mean_2);
+        }
+        d_var[idx] = var;
+    }
+}
+
+
+template <typename T>
+__global__ void Jenks_Optimization_Weights(T* d_WB, T* d_var, int rows, int cols){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    T mean_1,mean_2;
+    if(idx < (rows*(cols))){
+        // Now, we want to use the index to decide where the break is for calculation sake
+        // For the first grouping, the idx will be the break point
+        //We will calculate the mean of the first group
+        mean_1 = 0;
+        for(int i = 0; i<idx; i++){
+            mean_1 += d_WB[i];
+        }
+        if(idx != 0){
+            mean_1 = mean_1/idx;
+        }
+        //We will calculate the mean of the second group
+        mean_2 = 0;
+        for(int i = idx; i<rows*(cols); i++){
+            mean_2 += d_WB[i];
+        }
+        mean_2 = mean_2/(rows*(cols)-idx);
+    }
+    __syncthreads();
+    if(idx<rows*(cols)){
+        T var = 0;
+        for(int i = 0; i<idx; i++){
+            var += (d_WB[i] - mean_1)*(d_WB[i] - mean_1);
+        }
+        for(int i = idx; i<rows*(cols); i++){
+            var += (d_WB[i] - mean_2)*(d_WB[i] - mean_2);
+        }
+        d_var[idx] = var;
+    }
+}
+
+template <typename T>
+__global__ void Jenks_Optimization_Biases(T* d_B, T* d_var, int rows){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    T mean_1,mean_2;
+    if(idx < (rows)){
+        // Now, we want to use the index to decide where the break is for calculation sake
+        // For the first grouping, the idx will be the break point
+        //We will calculate the mean of the first group
+        mean_1 = 0;
+        for(int i = 0; i<idx; i++){
+            mean_1 += d_B[i];
+        }
+        if(idx != 0){
+            mean_1 = mean_1/idx;
+        }
+        //We will calculate the mean of the second group
+        mean_2 = 0;
+        for(int i = idx; i<rows; i++){
+            mean_2 += d_B[i];
+        }
+        mean_2 = mean_2/(rows-idx);
+    }
+    __syncthreads();
+    if(idx<rows){
+        T var = 0;
+        for(int i = 0; i<idx; i++){
+            var += (d_B[i] - mean_1)*(d_B[i] - mean_1);
+        }
+        for(int i = idx; i<rows; i++){
+            var += (d_B[i] - mean_2)*(d_B[i] - mean_2);
         }
         d_var[idx] = var;
     }
@@ -2865,9 +2972,8 @@ __global__ void Adam_Update_Bias_Bernoulli_Zero(T *biases, T *d_biases, T *m_bia
 
 int* return_col_row(int index, int cols){
     int* temp = (int*)malloc(2*sizeof(int));
-    int cols_bias = cols+1;
-    temp[0] = index/cols_bias; //row
-    temp[1] = index%cols_bias; //col
+    temp[0] = index/cols; //row
+    temp[1] = index%cols; //col
     return temp;        
 }
 
@@ -2907,12 +3013,14 @@ public:
         m_weights = (T*)malloc(rows * cols * sizeof(T));
         m_biases = (T*)malloc(rows * sizeof(T));
         this->num_ones = (int*)malloc(rows * (cols+1) * sizeof(int));
-        WB_agg = (T*)malloc(rows * (cols+1) * sizeof(T));
+        WB_agg = (T*)malloc(rows * (cols) * sizeof(T));
+        BB_agg = (T*)malloc(rows * sizeof(T));
         ZeroMatrix<T>(v_weights, rows, cols);
         ZeroVector<T>(v_biases, rows);
         ZeroMatrix<T>(m_weights, rows, cols);
         ZeroVector<T>(m_biases, rows);
-        ZeroMatrix<T>(WB_agg, rows, cols+1);
+        ZeroMatrix<T>(WB_agg, rows, cols);
+        ZeroVector<T>(BB_agg, rows);
         this->name = "linear";
     }
     ~Linear() override
@@ -2937,6 +3045,7 @@ public:
     T* m_weights;
     T* m_biases;
     T* WB_agg;
+    T* BB_agg;
     Loc_Layer<T>* loss_data;
     void Fill_Loss_data() override{
         for(int i = 0; i< this->rows*(this->cols+1); i++) {
@@ -4664,6 +4773,488 @@ public:
             exit(1);
         }
     }
+    void Agg_Jenks_Loss() override {
+        T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
+        T *d_wDw, *d_bDb;
+        T* d_WB_agg;
+        T* d_BB_agg;
+        //WB_agg for this function and BB_agg 
+
+        int cols = this->cols;
+        int rows = this->rows;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&dev_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_Biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_wDw, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_bDb, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_bDb" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols) * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_WB_agg"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_BB_agg, rows * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_BB_agg"<<endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(dev_Weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(dev_Biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_Weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" << endl;
+            exit(1);
+        }
+
+        if (!HandleCUDAError(cudaMemcpy(d_d_Biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_wDw, this->W_dW_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying wDw from host to device"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_bDb, this->W_dW_biases, rows * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying bDb from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols) * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying WB_agg from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_BB_agg, this->BB_agg, rows * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying BB_agg from host to device"<<endl;
+            exit(1);
+        }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+
+        //Perform elementwise multiplication of d_weights and W_dW_weights and d_biases and W_dW_biases
+
+        matrix_elementwise_multiply_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(dev_Weights, d_d_Weights, d_wDw, cols, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        vector_elementwise_multiply_kernel<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(dev_Biases, d_d_Biases, d_bDb, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        //Accumulate the results
+        matrix_accum_kernel<T><<<gridDim2D,blockDim2D,0,stream_weights>>>(d_WB_agg,d_wDw, rows, cols);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        vector_accum_kernel<T><<<gridDim1D,blockDim1D,0,stream_bias>>>(d_BB_agg,d_bDb, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+
+        //Delete streams
+
+        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
+        {
+            cout << "Error in destroying stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
+        {
+            cout << "Error in destroying stream for bias" << endl;
+            exit(1);
+        }
+
+        if(!HandleCUDAError(cudaMemcpy(this->WB_agg, d_WB_agg, rows * (cols) * sizeof(T), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying WB_agg from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(this->BB_agg, d_BB_agg, rows * sizeof(T), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying BB_agg from device to host"<<endl;
+            exit(1);
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(dev_Weights)))
+        {
+            cout << "Error in freeing d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(dev_Biases)))
+        {
+            cout << "Error in freeing d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Weights)))
+        {
+            cout << "Error in freeing d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_d_Biases)))
+        {
+            cout << "Error in freeing d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_wDw)))
+        {
+            cout << "Error in freeing d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_bDb)))
+        {
+            cout << "Error in freeing d_bDb" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_WB_agg))) {
+            cout<<"Error in freeing d_WB_agg"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_BB_agg))) {
+            cout<<"Error in freeing d_BB_agg"<<endl;
+            exit(1);
+        }
+        // if(!HandleCUDAError(cudaFree(d_Loss_Data))) {
+        //     cout<<"Error in freeing d_Loss_Data"<<endl;
+        //     exit(1);
+        // }
+        if(!HandleCUDAError(cudaDeviceReset())) {
+            cout<<"Error in resetting device"<<endl;
+            exit(1);
+        }
+    }
+    void find_Loss_Metric_Jenks_Aggressive_Single() override {
+        T *d_wDw, *d_bDb;
+        T* d_WB_agg;
+        T* d_BB_agg;
+
+        int cols = this->cols;
+        int rows = this->rows;
+
+        if(!HandleCUDAError(cudaMalloc((void **)&d_WB_agg, rows * (cols) * sizeof(T)))) {
+            cout<<"Error in allocating memory for d_WB_agg"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_BB_agg, rows * sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_BB_agg"<<endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if(!HandleCUDAError(cudaMemcpy(d_WB_agg, this->WB_agg, rows * (cols) * sizeof(T), cudaMemcpyHostToDevice))) {
+            cout<<"Error in copying WB_agg from host to device"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(d_BB_agg, this->BB_agg, rows * sizeof(T), cudaMemcpyHostToDevice)) ) {
+            cout<<"Error in copying BB_agg from host to device"<<endl;
+            exit(1);
+        }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+        cudaStream_t stream_weights;
+        cudaStream_t stream_bias;
+
+        if (!HandleCUDAError(cudaStreamCreate(&stream_weights)))
+        {
+            cout << "Error in creating stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamCreate(&stream_bias)))
+        {
+            cout << "Error in creating stream for bias" << endl;
+            exit(1);
+        }
+
+        //Delete streams
+
+
+        //Fill the WB structure
+        int size = rows * (cols + 1);
+
+        T* d_WBW;
+        T* d_BB;
+        int* d_indices_W;
+        int* d_indices_B;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_WBW, rows * (cols) * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_WB" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_BB, rows*sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_BB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_indices_W, rows * (cols) * sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_indices"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void**)&d_indices_B, rows*sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_indices_B"<<endl;
+            exit(1);
+        }
+
+        Fill_WBW_device_array<T><<<gridDim2D, blockDim2D,0,stream_weights>>>(d_WBW, d_indices_W,d_WB_agg, rows, cols);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        Fill_WBB_device_array<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_BB, d_indices_B, d_BB_agg, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        thrust::sort_by_key(thrust::device, d_WBW, d_WBW + rows*cols, d_indices_W);
+        thrust::sort_by_key(thrust::device, d_BB, d_BB + rows, d_indices_B);
+        int* h_indices = (int*)malloc(rows*cols*sizeof(int));
+        int* h_indices_B = (int*)malloc(rows*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_indices, d_indices_W, rows*cols*sizeof(int), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_indices from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(h_indices_B, d_indices_B, rows*sizeof(int), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying d_indices_B from device to host"<<endl;
+            exit(1);
+        }
+        // }
+        //Perfrom the Jenks natural breaks optimization
+        //Define the threads and block size
+        //We will launch a kernel with as many threads as there are entries in the matrix
+        T* d_var_W;
+        T* d_var_B;
+
+        if (!HandleCUDAError(cudaMalloc((void **)&d_var_W, ((rows*(cols))) * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_var" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_var_B, rows * sizeof(T))) ) {
+            cout<<"Error in allocating memory for d_var_B"<<endl;
+            exit(1);
+        }
+        int TPB_3 = 256;
+        dim3 blockDim(TPB_3,1, 1);
+        dim3 gridDim((((rows*(cols))) + TPB_3 - 1) / TPB_3, 1, 1);  
+
+        //Launch the kernel
+        Jenks_Optimization_Weights<T><<<gridDim, blockDim,0,stream_weights>>>(d_WBW, d_var_W, rows, cols);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        Jenks_Optimization_Biases<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_BB, d_var_B, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        //Find the minimum of d_var
+        int* d_min_W;
+        int* d_min_B;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_min_W, ((rows*(cols)))*sizeof(int))))
+        {
+            cout << "Error in allocating memory for d_min" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMalloc((void **)&d_min_B, rows*sizeof(int))) ) {
+            cout<<"Error in allocating memory for d_min_B"<<endl;
+            exit(1);
+        }
+        thrust::sequence(thrust::device, d_min_W, d_min_W + ((rows*(cols))));
+        thrust::sequence(thrust::device, d_min_B, d_min_B + rows);
+        thrust::sort_by_key(thrust::device, d_var_W, d_var_W + ((rows*(cols))), d_min_W);   
+        thrust::sort_by_key(thrust::device, d_var_B, d_var_B + rows, d_min_B);
+        //The first entry of d_min will be the index of the minimum value of d_var
+        // This will be the break point
+
+        int* h_min_W = (int*)malloc((rows*(cols))*sizeof(int));
+        int* h_min_B = (int*)malloc(rows*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_min_W, d_min_W, ((rows*(cols)))*sizeof(int), cudaMemcpyDeviceToHost))) {
+            cout<<"Error in copying d_min from device to host"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaMemcpy(h_min_B, d_min_B, rows*sizeof(int), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying d_min_B from device to host"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
+        {
+            cout << "Error in destroying stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
+        {
+            cout << "Error in destroying stream for bias" << endl;
+            exit(1);
+        }
+
+
+        //Transfer the result to host
+        // if (!HandleCUDAError(cudaMemcpy(this->W_dW_weights, d_wDw, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        // {
+        //     cout << "Error in copying wDw from device to host" << endl;
+        //     exit(1);
+        // }
+        // if (!HandleCUDAError(cudaMemcpy(this->W_dW_biases, d_bDb, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        // {
+        //     cout << "Error in copying bDb from device to host" << endl;
+        //     exit(1);
+        // }
+
+        // for(int i = 0; i<this->rows; i++){
+        //     cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
+        // }
+        // cout<<"Score weights"<<endl;
+        // for(int i = 0; i<this->rows; i++){
+        //     for(int j  = 0; j<this->cols; j++){
+        //         cout<<this->W_dW_weights[i*this->cols + j]<<" ";
+        //     }
+        //     cout<<endl;
+        // }
+        int break_point = h_min_W[0];// Will need to add the offset of non zeros here
+        int break_point_B = h_min_B[0];
+        cout<<"The Weight break point is "<<break_point<<endl;
+        cout<< "The Bias break point is "<<break_point_B<<endl;
+        //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
+        //We will do this serially, and save in this->B_weights and this->B_biases
+        int r_r, c_r;
+        int* place = new int[2];
+        for(int i =0; i<break_point;i++){
+            //Now we need to use this->loss_data which has been sorted according to the loss values
+            place = return_col_row(h_indices[i],cols);
+            r_r = place[0];
+            c_r = place[1];
+            if (r_r > this->rows || c_r > this->cols) {
+                cout<<"Error in accessing loss_data"<<endl;
+                cout<<"r_r: "<<r_r<<endl;
+                cout<<"c_r: "<<c_r<<endl;
+                exit(1);
+            }
+            this->B_weights[r_r * this->cols + c_r] = 0;
+        }
+        for(int i = 0 ; i<break_point_B; i++){
+            r_r = h_indices_B[i];
+            if (r_r > this->rows) {
+                cout<<"Error in accessing loss_data"<<endl;
+                cout<<"r_r: "<<r_r<<endl;
+                exit(1);
+            }
+            this->B_biases[r_r] = 0;
+        }
+
+        // Free device memory
+        if (!HandleCUDAError(cudaFree(d_wDw)))
+        {
+            cout << "Error in freeing d_wDw" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_bDb)))
+        {
+            cout << "Error in freeing d_bDb" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_WB_agg)))
+        {
+            cout << "Error in freeing d_WB_agg" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaFree(d_BB_agg)))
+        {
+            cout << "Error in freeing d_BB_agg" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_WBW))) {
+            cout<<"Error in freeing d_WB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_BB))) {
+            cout<<"Error in freeing d_BB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_var_W))) {
+            cout<<"Error in freeing d_var"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_var_B))) {
+            cout<<"Error in freeing d_var_B"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min_W))) {
+            cout<<"Error in freeing d_min"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min_B))) {
+            cout<<"Error in freeing d_min_B"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaDeviceReset())) {
+            cout<<"Error in resetting device"<<endl;
+            exit(1);
+        }
+    }
     void find_Loss_Metric_Jenks_Aggressive() override {
         T *dev_Weights, *dev_Biases, *d_d_Weights, *d_d_Biases;
         T *d_wDw, *d_bDb;
@@ -4780,26 +5371,6 @@ public:
         }
 
         //Delete streams
-        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
-        {
-            cout << "Error in destroying stream for weights" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
-        {
-            cout << "Error in destroying stream for bias" << endl;
-            exit(1);
-        }
-        // Now we need to sort the weights and biases in descending order, and then perform Jenks natural breaks optimization
-        //We will want to use Loc_Layers to keep track of the weights and biases
-
-        //Fill the Loss_Data structure
-        // Loc_Layer<T> *d_Loss_Data;
-        // if (!HandleCUDAError(cudaMalloc((void **)&d_Loss_Data, (rows * (cols + 1)) * sizeof(Loc_Layer<T>))))
-        // {
-        //     cout << "Error in allocating memory for d_Loss_Data" << endl;
-        //     exit(1);
-        // }
 
         int TPB_2 = 16;
         dim3 blockDim2D_diff(TPB_2, TPB_2, 1);
@@ -4830,31 +5401,28 @@ public:
             exit(1);
         }
 
-        Fill_WB_device_array<T><<<gridDim2D, blockDim2D>>>(d_WBW, d_indices_W,d_wDw, d_bDb, rows, cols);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+        Fill_WBW_device_array<T><<<gridDim2D, blockDim2D,0,stream_weights>>>(d_WBW, d_indices_W,d_wDw, rows, cols);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
-        thrust::sort_by_key(thrust::device, d_WBW, d_WBW + size, d_indices_W);
+        Fill_WBB_device_array<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_BB, d_indices_B, d_bDb, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        thrust::sort_by_key(thrust::device, d_WBW, d_WBW + rows*cols, d_indices_W);
+        thrust::sort_by_key(thrust::device, d_BB, d_BB + rows, d_indices_B);
         int* h_indices = (int*)malloc(rows*cols*sizeof(int));
         int* h_indices_B = (int*)malloc(rows*sizeof(int));
-        if(!HandleCUDAError(cudaMemcpy(h_indices, d_indices_W, size*sizeof(int), cudaMemcpyDeviceToHost))) {
+        if(!HandleCUDAError(cudaMemcpy(h_indices, d_indices_W, rows*cols*sizeof(int), cudaMemcpyDeviceToHost))) {
             cout<<"Error in copying d_indices from device to host"<<endl;
             exit(1);
         }
-        // typename thrust::device_vector<T>::iterator iter;
-        // thrust::device_ptr<T> dev_ptr(d_WB);
-        // thrust::device_ptr<T> iter = thrust::find_if(thrust::device, dev_ptr, dev_ptr+(rows*(cols+1)), IsZero<T>());
-        // int index=0;
-        // if (iter != dev_ptr + (rows * (cols + 1)))
-        // {   
-        //     index = iter - dev_ptr;
-        //     std::cout << "First zero element found at index: " << index << std::endl;
-        // }
-        // else
-        // {
-        //     index = 0;
-        //     std::cout << "No zero elements found." << std::endl;
+        if(!HandleCUDAError(cudaMemcpy(h_indices_B, d_indices_B, rows*sizeof(int), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying d_indices_B from device to host"<<endl;
+            exit(1);
+        }
         // }
         //Perfrom the Jenks natural breaks optimization
         //Define the threads and block size
@@ -4873,11 +5441,16 @@ public:
         }
         int TPB_3 = 256;
         dim3 blockDim(TPB_3,1, 1);
-        dim3 gridDim((((rows*(cols+1))) + TPB_2 - 1) / TPB_2, 1, 1);  
+        dim3 gridDim((((rows*(cols+1))) + TPB_3 - 1) / TPB_3, 1, 1);  
 
         //Launch the kernel
-        Jenks_Optimization<T><<<gridDim, blockDim>>>(d_WB, d_var_W, rows, cols);
-        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+        Jenks_Optimization_Weights<T><<<gridDim, blockDim,0,stream_weights>>>(d_WBW, d_var_W, rows, cols);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_weights))) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+        Jenks_Optimization_Biases<T><<<gridDim1D, blockDim1D,0,stream_bias>>>(d_BB, d_var_B, rows);
+        if(!HandleCUDAError(cudaStreamSynchronize(stream_bias))) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
         }
@@ -4900,16 +5473,26 @@ public:
         //The first entry of d_min will be the index of the minimum value of d_var
         // This will be the break point
 
-        int* h_min = (int*)malloc((rows*(cols+1))*sizeof(int));
-        if(!HandleCUDAError(cudaMemcpy(h_min, d_min, ((rows*(cols+1)))*sizeof(int), cudaMemcpyDeviceToHost))) {
+        int* h_min_W = (int*)malloc((rows*(cols))*sizeof(int));
+        int* h_min_B = (int*)malloc(rows*sizeof(int));
+        if(!HandleCUDAError(cudaMemcpy(h_min_W, d_min_W, ((rows*(cols)))*sizeof(int), cudaMemcpyDeviceToHost))) {
             cout<<"Error in copying d_min from device to host"<<endl;
             exit(1);
         }
-        // if(!HandleCUDAError(cudaMemcpy(this->loss_data, d_Loss_Data, (rows*(cols+1))*sizeof(Loc_Layer<T>), cudaMemcpyDeviceToHost))) {
-        //     cout<<"Error in copying d_Loss_Data from device to host"<<endl;
-        //     exit(1);
-        // }
-
+        if(!HandleCUDAError(cudaMemcpy(h_min_B, d_min_B, rows*sizeof(int), cudaMemcpyDeviceToHost)) ) {
+            cout<<"Error in copying d_min_B from device to host"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_weights)))
+        {
+            cout << "Error in destroying stream for weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaStreamDestroy(stream_bias)))
+        {
+            cout << "Error in destroying stream for bias" << endl;
+            exit(1);
+        }
 
 
         //Transfer the result to host
@@ -4934,8 +5517,10 @@ public:
         //     }
         //     cout<<endl;
         // }
-        int break_point = h_min[0];// Will need to add the offset of non zeros here
-        cout<<"The break point is "<<break_point<<endl;
+        int break_point = h_min_W[0];// Will need to add the offset of non zeros here
+        int break_point_B = h_min_B[0];
+        cout<<"The Weight break point is "<<break_point<<endl;
+        cout<< "The Bias break point is "<<break_point_B<<endl;
         //Now we need to set the B matrix values to 0 before the break point and 1 after the break point
         //We will do this serially, and save in this->B_weights and this->B_biases
         int r_r, c_r;
@@ -4951,14 +5536,16 @@ public:
                 cout<<"c_r: "<<c_r<<endl;
                 exit(1);
             }
-            if(c_r == cols) {
-                this->B_biases[r_r] = 0;
-                // cout<<"Bias["<< r_r<<"]= "<< this->W_dW_biases[i];
-                
-            } else {
-                this->B_weights[r_r * this->cols + c_r] = 0;
-                // cout<<"Weight["<<r_r<<"]["<<c_r<<"]="<<this->W_dW_weights[r_r * this->cols + c_r]<<endl;
+            this->B_weights[r_r * this->cols + c_r] = 0;
+        }
+        for(int i = 0 ; i<break_point_B; i++){
+            r_r = h_indices_B[i];
+            if (r_r > this->rows) {
+                cout<<"Error in accessing loss_data"<<endl;
+                cout<<"r_r: "<<r_r<<endl;
+                exit(1);
             }
+            this->B_biases[r_r] = 0;
         }
 
         // Free device memory
@@ -4996,16 +5583,28 @@ public:
         //     cout<<"Error in freeing d_Loss_Data"<<endl;
         //     exit(1);
         // }
-        if(!HandleCUDAError(cudaFree(d_WB))) {
+        if(!HandleCUDAError(cudaFree(d_WBW))) {
             cout<<"Error in freeing d_WB"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaFree(d_var))) {
+        if(!HandleCUDAError(cudaFree(d_BB))) {
+            cout<<"Error in freeing d_BB"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_var_W))) {
             cout<<"Error in freeing d_var"<<endl;
             exit(1);
         }
-        if(!HandleCUDAError(cudaFree(d_min))) {
+        if(!HandleCUDAError(cudaFree(d_var_B))) {
+            cout<<"Error in freeing d_var_B"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min_W))) {
             cout<<"Error in freeing d_min"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_min_B))) {
+            cout<<"Error in freeing d_min_B"<<endl;
             exit(1);
         }
         if(!HandleCUDAError(cudaDeviceReset())) {
@@ -9450,7 +10049,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
         
         
     }
-    if(epochs == total_epochs/2){
+    if(epochs <= total_epochs/2){
         if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
             for (int i = 0; i < layerMetadata.size(); i++)
             {
@@ -9464,12 +10063,17 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
                         if (layerMetadata[i].isUpdateable)
                         {
                             //Can we change this to find the cutoff for weights and biases seperately?
-                            this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive();     
+                            //We need a function to aggregate the loss over time
+                            this->layers[layerMetadata[i].layerNumber]->Agg_Jenks_Loss();
+                            if(epochs == total_epochs/2){
+                                this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive_Single();  
+                            }   
                         }
                     }
                 }
             }
         }
+        this->learning_rate = learning_rate/2;
     }
 
     // Iterate over each entry in the layerMetadata vector
