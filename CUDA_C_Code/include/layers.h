@@ -937,6 +937,7 @@ public:
     virtual void update_weights_AdamWBernoulli(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamActiv(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_AdamDecay(T learning_rate, T beta1, T beta2, T epsilon, T decay_rate, int epochs) {};
     virtual void find_Loss_Metric() {};
     virtual void find_Loss_Metric_Jenks() {};   
     virtual void find_Loss_Metric_Jenks_Aggressive() {};    
@@ -10049,32 +10050,30 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
         
         
     }
-    if(epochs <= total_epochs/2){
-        if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
-            for (int i = 0; i < layerMetadata.size(); i++)
+    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
             {
-                // Validate layerNumber is within bounds
-                if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
                 {
-                    // Check if the layer pointer is not null
-                    if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
                     {
-                        // Check if the current layer is marked as updateable
-                        if (layerMetadata[i].isUpdateable)
-                        {
-                            //Can we change this to find the cutoff for weights and biases seperately?
-                            //We need a function to aggregate the loss over time
-                            this->layers[layerMetadata[i].layerNumber]->Agg_Jenks_Loss();
-                            if(epochs == total_epochs/2){
-                                this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive_Single();  
-                            }   
-                        }
+                        //Can we change this to find the cutoff for weights and biases seperately?
+                        //We need a function to aggregate the loss over time
+                        this->layers[layerMetadata[i].layerNumber]->Agg_Jenks_Loss();
+                        if(epochs == total_epochs/2){
+                            this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive_Single();  
+                        }   
                     }
                 }
             }
         }
-        this->learning_rate = learning_rate/2;
     }
+    this->learning_rate = learning_rate/2;
 
     // Iterate over each entry in the layerMetadata vector
     for (int i = 0; i < layerMetadata.size(); i++)
@@ -10110,12 +10109,18 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
                         this->layers[layerMetadata[i].layerNumber]->Fill_Activ();
                     }
                     else if(this->optim->name == "AdamJenks"){
+                        if(epochs==0){
+                            this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
+                        }
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamJenks(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         // this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
                     }
                     else if(this->optim->name == "SGDJenks"){
                         this->layers[layerMetadata[i].layerNumber]->update_weights_SGDJenks(learning_rate);
                         // this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli();
+                    }
+                    else if(this->optim->name == "AdamDecay"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_AdamDecay(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                     }
                     else{
                         cout<<"Optimizer not found"<<endl;
