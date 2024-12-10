@@ -5206,16 +5206,16 @@ public:
         }
 
         // Free device memory
-        if (!HandleCUDAError(cudaFree(d_wDw)))
-        {
-            cout << "Error in freeing d_wDw" << endl;
-            exit(1);
-        }
-        if (!HandleCUDAError(cudaFree(d_bDb)))
-        {
-            cout << "Error in freeing d_bDb" << endl;
-            exit(1);
-        }
+        // if (!HandleCUDAError(cudaFree(d_wDw)))
+        // {
+        //     cout << "Error in freeing d_wDw" << endl;
+        //     exit(1);
+        // }
+        // if (!HandleCUDAError(cudaFree(d_bDb)))
+        // {
+        //     cout << "Error in freeing d_bDb" << endl;
+        //     exit(1);
+        // }
         if (!HandleCUDAError(cudaFree(d_WB_agg)))
         {
             cout << "Error in freeing d_WB_agg" << endl;
