@@ -95,13 +95,13 @@ int main(int argc, char** argv){
     Train_Split_Test(input, target, train_input, train_target, test_input, test_target, training_size,test_size,size, input_size, output_size);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
-    AdamJenksOptimizer <float>* optimizer = new AdamJenksOptimizer<float>(.0001, .9, .999, 1e-8);
+    AdamJenksDecayOptimizer <float>* optimizer = new AdamJenksDecayOptimizer<float>(.0001, .9, .999, 1e-8);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
-    net.addLayer(new Linear<float>(input_size, 256,batch_size));
-    net.addLayer(new RELU_layer<float>(256,batch_size));
-    net.addLayer(new Linear<float>(256, 512,batch_size));
-    net.addLayer(new RELU_layer<float>(512,batch_size));
-    net.addLayer(new Linear<float>(512, output_size,batch_size));
+    net.addLayer(new Linear<float>(input_size, output_size,batch_size));
+    // net.addLayer(new RELU_layer<float>(256,batch_size));
+    // net.addLayer(new Linear<float>(256, 512,batch_size));
+    // net.addLayer(new RELU_layer<float>(512,batch_size));
+    // net.addLayer(new Linear<float>(512, output_size,batch_size));
     net.addLayer(new Softmax<float>(output_size,batch_size));
     if(strcmp(argv[1],"weather")==0){
         cout<<"Adding Categorical Loss"<<endl;
@@ -123,7 +123,7 @@ int main(int argc, char** argv){
     // net.predict(train_input,train_target, training_size);
     // cout<<"Results on Test Data"<<endl;
     // float* test_accuracy = 0;
-    net.predict(test_input,test_target, test_size);
+    // net.predict(test_input,test_target, test_size);
     // net.Save_Data_to_CSV();
 
 

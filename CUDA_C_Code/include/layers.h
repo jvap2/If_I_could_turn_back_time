@@ -995,7 +995,7 @@ template <typename T>
 class AdamJenksDecayOptimizer : public Optimizer<T>
 {
     public:
-    AdamJenksDecayOptimizer(T learning_rate, T beta1, T beta2, T epsilon, T decay_rate) : Optimizer<T>(learning_rate, 0.0, decay_rate, beta1, beta2, epsilon) {this->name = "AdamDecay";};
+    AdamJenksDecayOptimizer(T learning_rate, T beta1, T beta2, T epsilon) : Optimizer<T>(learning_rate, 0.0, 0.0, beta1, beta2, epsilon) {this->name = "AdamDecay";};
 };
 
 template <typename T>
@@ -5784,16 +5784,16 @@ public:
             exit(1);
         }
 
-        // for(int i = 0; i<this->rows; i++){
-        //     cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
-        // }
-        // cout<<"Score weights"<<endl;
-        // for(int i = 0; i<this->rows; i++){
-        //     for(int j  = 0; j<this->cols; j++){
-        //         cout<<this->W_dW_weights[i*this->cols + j]<<" ";
-        //     }
-        //     cout<<endl;
-        // }
+        for(int i = 0; i<this->rows; i++){
+            cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
+        }
+        cout<<"Score weights"<<endl;
+        for(int i = 0; i<this->rows; i++){
+            for(int j  = 0; j<this->cols; j++){
+                cout<<this->W_dW_weights[i*this->cols + j]<<" ";
+            }
+            cout<<endl;
+        }
         int break_point = h_min_W[0];// Will need to add the offset of non zeros here
         int break_point_B = h_min_B[0];
         cout<<"The Weight break point is "<<break_point<<endl;
@@ -10296,7 +10296,27 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
-
+    if(this->optim->name == "AdamDecay"){
+        // find_Loss_Metric_Jenks_Aggressive();
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        //Can we change this to find the cutoff for weights and biases seperately?
+                        //We need a function to aggregate the loss over time
+                        this->layers[layerMetadata[i].layerNumber]->find_Loss_Metric_Jenks_Aggressive();  
+                    }
+                }
+            }
+        }
+    }
     if(this->optim->name == "AdamWBernoulli"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
@@ -10460,6 +10480,25 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     T* batch_input = (T*)malloc(input_size*batch_size*sizeof(T));
     T* batch_output = (T*)malloc(output_size*batch_size*sizeof(T));
     if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
+        for (int i = 0; i < layerMetadata.size(); i++)
+        {
+            // Validate layerNumber is within bounds
+            if (layerMetadata[i].layerNumber >= 0 && layerMetadata[i].layerNumber < this->layers.size())
+            {
+                // Check if the layer pointer is not null
+                if (this->layers[layerMetadata[i].layerNumber] != nullptr)
+                {
+                    // Check if the current layer is marked as updateable
+                    if (layerMetadata[i].isUpdateable)
+                    {
+                        //Something to this nature
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();    
+                    }
+                }
+            }
+        }
+    }
+    if(this->optim->name == "AdamDecay"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds
