@@ -999,6 +999,13 @@ class AdamJenksDecayOptimizer : public Optimizer<T>
 };
 
 template <typename T>
+class SGDMomentumJenksOptimizer : public Optimizer<T>
+{
+    public:
+    SGDMomentumJenksOptimizer(T learning_rate, T momentum) : Optimizer<T>(learning_rate, momentum, 0.0, 0.0, 0.0, 0.0) {this->name = "SGDMomentumJenks";};
+};
+
+template <typename T>
 class SGDJenksOptimizer : public Optimizer<T>
 {
     public:
@@ -2886,6 +2893,40 @@ __global__ void AdamDecay_update_weights_kernel_Jenks(T *weights, T *d_weights,T
 }
 
 template <typename T>
+__global__ void SGDMomentum_Decay_update_weights_kernel_Jenks(T *weights, T *d_weights,T* m_weights, int* B_W, T beta1, T epsilon, T learning_rate, int cols, int rows, int epochs)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if(row < rows && col < cols){
+        m_weights[row*cols+col] = beta1 * m_weights[row*cols+col] + (1 - beta1) * d_weights[row*cols+col];
+        if(B_W[row*cols+col]){
+            weights[row*cols+col] -= learning_rate * m_weights[row*cols+col] * B_W[row*cols+col];
+        }
+        else{
+            //Decay the weights
+            weights[row*cols+col] = weights[row*cols+col] * beta1;
+        }
+
+    }
+}
+
+template <typename T>
+__global__ void SGDMomentum_Decay_update_bias_kernel_Jenks(T *biases, T *d_biases,T* m_biases, int* B_B, T beta1, T epsilon, T learning_rate, int rows, int epochs)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if(index < rows){
+        m_biases[index] = beta1 * m_biases[index] + (1 - beta1) * d_biases[index];
+        if(B_B[index]){
+            biases[index] -= learning_rate * m_biases[index] * B_B[index];
+        }
+        else{
+            //Decay the biases
+            biases[index] = biases[index] * beta1;
+        }
+    }
+}
+
+template <typename T>
 __global__ void AdamDecay_update_bias_kernel_Jenks(T *biases, T *d_biases,T* m_biases, T* v_biases, int* B_B, T beta1, T beta2, T epsilon, T learning_rate, int rows, int epochs)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -3128,6 +3169,145 @@ public:
     }
     void set_Bernoulli(int row, int col) override{
         this->B_weights[row*(this->cols) + col] = 1;
+    }
+    void update_weights_SGDMomentum_Jenks(T learning_rate, T beta1) override {
+        T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_m_weights, *d_m_biases;
+        int cols = this->cols;
+        int rows = this->rows;
+        if (!HandleCUDAError(cudaMalloc((void **)&d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_d_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_d_biases" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_m_weights, rows * cols * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_m_weights" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMalloc((void **)&d_m_biases, rows * sizeof(T))))
+        {
+            cout << "Error in allocating memory for d_m_biases" << endl;
+            exit(1);
+        }
+
+        // Copy weights, biases, d_weights, and d_biases from host to device
+        if (!HandleCUDAError(cudaMemcpy(d_weights, this->weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying weights from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_biases, this->biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying biases from host to device" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_weights, this->d_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_weights from host to device" <<endl;
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_d_biases, this->d_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying d_biases from host to device" <<endl;
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_weights, this->m_weights, rows * cols * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_weights from host to device" <<endl;
+        }
+        if (!HandleCUDAError(cudaMemcpy(d_m_biases, this->m_biases, rows * sizeof(T), cudaMemcpyHostToDevice)))
+        {
+            cout << "Error in copying m_biases from host to device" <<endl;
+        }
+
+        // Define grid and block dimensions
+        int block_size = 16;
+        dim3 blockDim2D(block_size, block_size);
+        dim3 gridDim2D((cols + block_size - 1) / block_size, (rows+block_size-1)/block_size, 1);
+
+        int TPB = 256;
+        dim3 blockDim1D(TPB, 1, 1);
+        dim3 gridDim1D((rows + TPB - 1) / TPB, 1, 1);
+
+        // Launch the update weights kernel
+
+        SGDMomentum_Decay_update_weights_kernel_Jenks<T><<<gridDim2D, blockDim2D>>>(d_weights, d_d_weights, d_m_weights, this->B_weights, beta1, 0.0001, learning_rate, cols, rows, this->epochs);
+        if (!HandleCUDAError(cudaDeviceSynchronize()))
+        {
+            cout << "Error in synchronizing device" << endl;
+            exit(1);
+        }
+
+        SGDMomentum_Decay_update_bias_kernel_Jenks<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, d_m_biases, this->B_biases, beta1, 0.0001, learning_rate, rows, this->epochs);
+        if(!HandleCUDAError(cudaDeviceSynchronize())) {
+            cout<<"Error in synchronizing device"<<endl;
+            exit(1);
+        }
+
+        // Copy the result weights and biases from device to host
+
+        if (!HandleCUDAError(cudaMemcpy(this->weights, d_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying weights from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->biases, d_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying biases from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->m_weights, d_m_weights, rows * cols * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_weights from device to host" << endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaMemcpy(this->m_biases, d_m_biases, rows * sizeof(T), cudaMemcpyDeviceToHost)))
+        {
+            cout << "Error in copying m_biases from device to host" << endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_weights))) {
+            cout<<"Error in freeing d_weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_biases))) {
+            cout<<"Error in freeing d_biases"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_d_weights))) {
+            cout<<"Error in freeing d_d_weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_d_biases))) {
+            cout<<"Error in freeing d_d_biases"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_m_weights))) {
+            cout<<"Error in freeing d_m_weights"<<endl;
+            exit(1);
+        }
+        if(!HandleCUDAError(cudaFree(d_m_biases))) {
+            cout<<"Error in freeing d_m_biases"<<endl;
+            exit(1);
+        }
+        if (!HandleCUDAError(cudaDeviceReset()))
+        {
+            cout << "Error in resetting device" << endl;
+            exit(1);
+        }
     }
     void update_weights_RMSProp(T learning_rate, T decay_rate) override {
         T *d_weights, *d_biases, *d_d_weights, *d_d_biases, *d_v_weights, *d_v_biases;
