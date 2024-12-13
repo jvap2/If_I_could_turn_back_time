@@ -938,6 +938,7 @@ public:
     virtual void update_weights_AdamActiv(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamWJenks(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
     virtual void update_weights_AdamDecay(T learning_rate, T beta1, T beta2, T epsilon, int epochs) {};
+    virtual void update_weights_SGDMomentum_Jenks(T learning_rate, T momentum) {};
     virtual void find_Loss_Metric() {};
     virtual void find_Loss_Metric_Jenks() {};   
     virtual void find_Loss_Metric_Jenks_Aggressive() {};    
@@ -2893,7 +2894,7 @@ __global__ void AdamDecay_update_weights_kernel_Jenks(T *weights, T *d_weights,T
 }
 
 template <typename T>
-__global__ void SGDMomentum_Decay_update_weights_kernel_Jenks(T *weights, T *d_weights,T* m_weights, int* B_W, T beta1, T epsilon, T learning_rate, int cols, int rows, int epochs)
+__global__ void SGDMomentum_Decay_update_weights_kernel_Jenks(T *weights, T *d_weights,T* m_weights, int* B_W, T beta1, T epsilon, T learning_rate, int cols, int rows)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2904,7 +2905,7 @@ __global__ void SGDMomentum_Decay_update_weights_kernel_Jenks(T *weights, T *d_w
 }
 
 template <typename T>
-__global__ void SGDMomentum_Decay_update_bias_kernel_Jenks(T *biases, T *d_biases,T* m_biases, int* B_B, T beta1, T epsilon, T learning_rate, int rows, int epochs)
+__global__ void SGDMomentum_Decay_update_bias_kernel_Jenks(T *biases, T *d_biases,T* m_biases, int* B_B, T beta1, T epsilon, T learning_rate, int rows)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if(index < rows){
@@ -3256,14 +3257,14 @@ public:
 
         // Launch the update weights kernel
 
-        SGDMomentum_Decay_update_weights_kernel_Jenks<T><<<gridDim2D, blockDim2D>>>(d_weights, d_d_weights, d_m_weights, d_B_weights, beta1, 0.0001, learning_rate, cols, rows, this->epochs);
+        SGDMomentum_Decay_update_weights_kernel_Jenks<T><<<gridDim2D, blockDim2D>>>(d_weights, d_d_weights, d_m_weights, d_B_weights, beta1, 0.0001, learning_rate, cols, rows);
         if (!HandleCUDAError(cudaDeviceSynchronize()))
         {
             cout << "Error in synchronizing device" << endl;
             exit(1);
         }
 
-        SGDMomentum_Decay_update_bias_kernel_Jenks<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, d_m_biases, d_B_biases, beta1, 0.0001, learning_rate, rows, this->epochs);
+        SGDMomentum_Decay_update_bias_kernel_Jenks<T><<<gridDim1D, blockDim1D>>>(d_biases, d_d_biases, d_m_biases, d_B_biases, beta1, 0.0001, learning_rate, rows);
         if(!HandleCUDAError(cudaDeviceSynchronize())) {
             cout<<"Error in synchronizing device"<<endl;
             exit(1);
@@ -5976,16 +5977,16 @@ public:
             exit(1);
         }
 
-        for(int i = 0; i<this->rows; i++){
-            cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
-        }
-        cout<<"Score weights"<<endl;
-        for(int i = 0; i<this->rows; i++){
-            for(int j  = 0; j<this->cols; j++){
-                cout<<this->W_dW_weights[i*this->cols + j]<<" ";
-            }
-            cout<<endl;
-        }
+        // for(int i = 0; i<this->rows; i++){
+        //     cout<<"Score biases: "<<this->W_dW_biases[i]<<endl;
+        // }
+        // cout<<"Score weights"<<endl;
+        // for(int i = 0; i<this->rows; i++){
+        //     for(int j  = 0; j<this->cols; j++){
+        //         cout<<this->W_dW_weights[i*this->cols + j]<<" ";
+        //     }
+        //     cout<<endl;
+        // }
         int break_point = h_min_W[0];// Will need to add the offset of non zeros here
         int break_point_B = h_min_B[0];
         cout<<"The Weight break point is "<<break_point<<endl;
@@ -10488,7 +10489,7 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
         std::cerr << "Error: Layers vector is empty.\n";
         return;
     }
-    if(this->optim->name == "AdamDecay"){
+    if(this->optim->name == "AdamDecay" || this->optim->name == "SGDMomentumJenks"){
         // find_Loss_Metric_Jenks_Aggressive();
         for (int i = 0; i < layerMetadata.size(); i++)
         {
@@ -10611,6 +10612,10 @@ void Network<T>::update_weights(T learning_rate, int epochs, int Q, int total_ep
                         this->layers[layerMetadata[i].layerNumber]->update_weights_AdamDecay(learning_rate, this->optim->beta1, this->optim->beta2, this->optim->epsilon, epochs);
                         this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
                     }
+                    else if (this->optim->name == "SGDMomentumJenks"){
+                        this->layers[layerMetadata[i].layerNumber]->update_weights_SGDMomentum_Jenks(learning_rate, this->optim->momentum);
+                        this->layers[layerMetadata[i].layerNumber]->Fill_Bernoulli_Ones();
+                    }
                     else{
                         cout<<"Optimizer not found"<<endl;
                     }
@@ -10671,7 +10676,7 @@ void Network<T>::train(T **input, T **output, int epochs, T learning_rate, int s
     int sum = 0;
     T* batch_input = (T*)malloc(input_size*batch_size*sizeof(T));
     T* batch_output = (T*)malloc(output_size*batch_size*sizeof(T));
-    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks"){
+    if(this->optim->name == "AdamJenks" || this->optim->name == "SGDJenks" || this->optim->name == "SGDMomentumJenks"){
         for (int i = 0; i < layerMetadata.size(); i++)
         {
             // Validate layerNumber is within bounds
