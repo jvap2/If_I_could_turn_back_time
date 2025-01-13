@@ -1,0 +1,2 @@
+epochs,beta,learning_rate,accuracy
+2000,.99,.0003,0.903226

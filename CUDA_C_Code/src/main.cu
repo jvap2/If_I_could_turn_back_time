@@ -96,7 +96,7 @@ int main(int argc, char** argv){
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     // AdamJenksDecayOptimizer <float>* optimizer = new AdamJenksDecayOptimizer<float>(.0001, .9, .999, 1e-8);
-    SGDMomentumJenksOptimizer <float>* optimizer = new SGDMomentumJenksOptimizer<float>(.0001, .98);
+    SGDMomentumJenksOptimizer <float>* optimizer = new SGDMomentumJenksOptimizer<float>(.0001, .99);
     Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
     net.addLayer(new Linear<float>(input_size, 256,batch_size));
     net.addLayer(new RELU_layer<float>(256,batch_size));
