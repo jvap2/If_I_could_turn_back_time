@@ -7,7 +7,7 @@ int main(int argc, char** argv){
     int height = MNIST_HEIGHT;
     int width = MNIST_WIDTH;
     int depth = 1;
-    batch_size = 4;
+    batch_size = 1;
 	input_size = height*width*depth;
 	output_size = 10;
 	training_size = MNIST_TRAIN_DATA;
@@ -38,7 +38,8 @@ int main(int argc, char** argv){
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
     // AdamOptimizer<float>* optimizer = new AdamOptimizer<float>(.0001, .9, .999, 1e-8);
     AdamOptimizer <float>* optimizer = new AdamOptimizer<float>(.001, .9, .999, 1e-8);
-    Network<float> net(input_size, output_size, optimizer,Q,batch_size);
+    string dataset = "MNIST";
+    Network<float> net(input_size, output_size, optimizer,Q,batch_size, dataset);
     net.addLayer(new Conv2D<float>(width, height, channels, kernel_width, kernel_height, stride, padding, filters, batch_size));
     net.addLayer(new RELU_layer<float>(height-2, width-2, filters, batch_size));
     net.addLayer(new MaxPooling2D<float>(kernel_width, kernel_height, stride, padding, width-2, height-2, filters, batch_size));  
@@ -52,13 +53,7 @@ int main(int argc, char** argv){
     net.addLoss(new Categorical<float>(64, batch_size));
     // cout<<"Training Network"<<endl;
     net.train(train_input, train_target, 75, .001, training_size);
-    // cout<<"Training Complete"<<endl;
-    // // cout<<"Results on Training Data"<<endl;
-    // // net.predict(train_input,train_target, training_size);
-    // cout<<"Results on Test Data"<<endl;
-    // net.predict(test_input,test_target, test_size);
 
-    // Your additional code here
 
     return 0;
 }
