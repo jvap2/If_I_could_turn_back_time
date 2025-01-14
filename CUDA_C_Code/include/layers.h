@@ -10968,10 +10968,14 @@ template <typename T>
 __global__ void conv2D_dilate_loss(T* loss, T* loss_padded, int batch_size, int channels, int width, int height, int dilate_width, int dilate_height){
     int inCol = blockIdx.x * blockDim.x + threadIdx.x;
     int inRow = blockIdx.y * blockDim.y + threadIdx.y;
-    int channel = blockIdx.z * blockDim.z + threadIdx.z;
-    if(inCol < width && inRow < height && channel < channels){
+    int chan = blockIdx.z * blockDim.z + threadIdx.z;
+    int outwidth = width*(dilate_width+1)-dilate_width;
+    int outheight = height*(dilate_height+1)-dilate_height;
+    int outRow = inRow*(dilate_height+1);
+    int outCol = inCol*(dilate_width+1);
+    if(inCol < width && inRow < height && chan < channels){
         for(int i = 0; i<batch_size;i++){
-            loss_padded[i * channels * width * height + channel * width * height + inRow * (width*(dilate_width+1)) + (inCol*(dilate_height+1))] = loss[i * channels * dilate_width * dilate_height + channel * dilate_width * dilate_height + inRow * dilate_width + inCol];
+            loss_padded[i * channels * outwidth * outheight + chan * outwidth * outheight + outRow*outwidth + outCol] = loss[i * channels * width * height + chan * width * height + inRow * width + inCol];
         }
     }
 }
@@ -10980,10 +10984,14 @@ template <typename T>
 __global__ void conv2D_dilate_pad_loss(T* loss, T* loss_padded, int batch_size, int channels, int width, int height, int dilate_width, int dilate_height, int pad_width, int pad_height){
     int inCol = blockIdx.x * blockDim.x + threadIdx.x;
     int inRow = blockIdx.y * blockDim.y + threadIdx.y;
-    int channel = blockIdx.z * blockDim.z + threadIdx.z;
-    if(inCol < width && inRow < height && channel < channels){
+    int chan = blockIdx.z * blockDim.z + threadIdx.z;
+    int outwidth = width*(dilate_width+1)-dilate_width + 2*pad_width;
+    int outheight = height*(dilate_height+1)-dilate_height + 2*pad_height;
+    int outRow = inRow*(dilate_height+1) + pad_height;
+    int outCol = inCol*(dilate_width+1) + pad_width;
+    if(inCol < width && inRow < height && chan < channels){
         for(int i = 0; i<batch_size;i++){
-            loss_padded[i * channels * width * height + channel * width * height + (inRow + pad_height) * (width*(dilate_width+1)-dilate_width) + ((inCol)*(dilate_height+1))+pad_width] = loss[i * channels * dilate_width * dilate_height + channel * dilate_width * dilate_height + inRow * dilate_width + inCol];
+            loss_padded[i * channels * outwidth * outheight + chan * outwidth * outheight + outRow*outwidth + outCol] = loss[i * channels * width * height + chan * width * height + inRow * width + inCol];
             //double check
         }
     }
