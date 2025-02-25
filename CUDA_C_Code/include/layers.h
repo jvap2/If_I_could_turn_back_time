@@ -6734,28 +6734,6 @@ class Conv2D : public Matrix<T>
 {
 public:
     Conv2D(int width, int height, int channels, int kernel_width, int kernel_height, int stride, int padding, int filters, int batch_size): Matrix<T>(width, height, channels, kernel_width, kernel_height, stride, padding, filters, batch_size){};
-    // int rows;
-    // int cols;
-    // int width;
-    // int batch_size;
-    // int height;
-    // int channels;
-    // int kernel_width;
-    // int kernel_height;
-    // int stride;
-    // int padding;
-    // int filters;
-    // int output_width;
-    // int output_height;
-    // T* weights;
-    // T* biases;
-    // T* input;
-    // T* hidden_output;
-    // T* W_dW_weights;
-    // T* W_dW_biases;
-    // T* WB_agg;
-    // T* d_weights;
-    // T* d_biases;
     ~Conv2D()
     {
         free(this->weights);
