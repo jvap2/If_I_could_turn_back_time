@@ -61,21 +61,6 @@ class JenksSGD(Optimizer):
                     # Update parameters
                     param.data[indices] -= lr * velocity[indices]
                     param.data[indices_] -= lr * velocity[indices_]
-
         return loss
 
-# Example usage:
-model = torch.nn.Linear(10, 2)  # Example model
-optimizer = JenksSGD(model.parameters(), lr=0.01, scale=0.9, momentum=0.9)
 
-# Dummy input and target
-input = torch.randn(10)
-target = torch.randn(2)
-
-# Example training loop
-for _ in range(100):
-    optimizer.zero_grad()
-    output = model(input)
-    loss = torch.nn.functional.mse_loss(output, target)
-    loss.backward()
-    optimizer.step()
