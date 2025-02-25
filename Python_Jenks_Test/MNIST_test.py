@@ -2,7 +2,7 @@ import torch
 from custom_optimizer import JenksSGD
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from tqdm.notebook import tqdm
+
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import Accuracy
 from datetime import datetime
@@ -10,7 +10,8 @@ import os
 import torch.nn as nn
 from networks import LeNet5V1
 
-
+# train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
+# test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
 
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=transforms.ToTensor())
 test_dataset = datasets.MNIST(root="./datasets", train=False, download=False, transform=transforms.ToTensor())
@@ -38,8 +39,66 @@ val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 model_lenet5v1 = LeNet5V1()
 loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(params=model_lenet5v1.parameters(), lr=0.001)
+optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=0.001, scale=0.9, momentum=0.9)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 
 
+# Experiment tracking
+timestamp = datetime.now().strftime("%Y-%m-%d")
+experiment_name = "MNIST"
+model_name = "LeNet5V1"
+log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
+writer = SummaryWriter(log_dir)
 
+# device-agnostic setup
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+accuracy = accuracy.to(device)
+model_lenet5v1 = model_lenet5v1.to(device)
+
+EPOCHS = 12
+
+for epoch in range(EPOCHS):
+    # Training loop
+    train_loss, train_acc = 0.0, 0.0
+    for X, y in train_dataloader:
+        X, y = X.to(device), y.to(device)
+        
+        model_lenet5v1.train()
+        
+        y_pred = model_lenet5v1(X)
+        
+        loss = loss_fn(y_pred, y)
+        train_loss += loss.item()
+        
+        acc = accuracy(y_pred, y)
+        train_acc += acc
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+    train_loss /= len(train_dataloader)
+    train_acc /= len(train_dataloader)
+        
+    # Validation loop
+    val_loss, val_acc = 0.0, 0.0
+    model_lenet5v1.eval()
+    with torch.inference_mode():
+        for X, y in val_dataloader:
+            X, y = X.to(device), y.to(device)
+            
+            y_pred = model_lenet5v1(X)
+            
+            loss = loss_fn(y_pred, y)
+            val_loss += loss.item()
+            
+            acc = accuracy(y_pred, y)
+            val_acc += acc
+            
+        val_loss /= len(val_dataloader)
+        val_acc /= len(val_dataloader)
+        
+    writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
+    writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
+    
+    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}")
