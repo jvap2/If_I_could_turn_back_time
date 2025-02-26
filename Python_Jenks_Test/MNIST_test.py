@@ -60,6 +60,7 @@ EPOCHS = 12
 for epoch in range(EPOCHS):
     # Training loop
     train_loss, train_acc = 0.0, 0.0
+    print("Epoch: ", epoch)
     for X, y in train_dataloader:
         X, y = X.to(device), y.to(device)
         
@@ -100,5 +101,5 @@ for epoch in range(EPOCHS):
         
     writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-    
-    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}")
+    with open("output.txt","a") as f:
+        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
