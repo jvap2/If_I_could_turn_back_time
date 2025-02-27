@@ -32,14 +32,14 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 model_lenet5v1 = LeNet5V1()
 loss_fn = nn.CrossEntropyLoss()
-optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=0.001, scale=0.9, momentum=0.9)
+optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=5e-3, scale=0.5e-4, momentum=0.99)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 
 
@@ -76,7 +76,7 @@ for epoch in range(EPOCHS):
         train_acc += acc
 
         if count % 100 == 0:
-            print(f"Batch: {count}| Loss: {loss.item(): .5f}| Acc: {train_acc/count: .5f}")
+            print(f"Batch: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f}")
         
         optimizer.zero_grad()
         loss.backward()
