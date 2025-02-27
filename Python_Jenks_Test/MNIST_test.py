@@ -32,7 +32,7 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -61,18 +61,22 @@ for epoch in range(EPOCHS):
     # Training loop
     train_loss, train_acc = 0.0, 0.0
     print("Epoch: ", epoch)
+    count = 0
     for X, y in train_dataloader:
+        count += 1
         X, y = X.to(device), y.to(device)
         
         model_lenet5v1.train()
         
         y_pred = model_lenet5v1(X)
-        
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
         
         acc = accuracy(y_pred, y)
         train_acc += acc
+
+        if count % 100 == 0:
+            print(f"Batch: {count}| Loss: {loss.item(): .5f}| Acc: {train_acc/count: .5f}")
         
         optimizer.zero_grad()
         loss.backward()

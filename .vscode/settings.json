@@ -61,5 +61,14 @@
         "cfenv": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp"
-    }
+    },
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./Python_Jenks_Test",
+        "-p",
+        "*test.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
 }

@@ -26,3 +26,17 @@ class LeNet5V1(nn.Module):
         
     def forward(self, x):
         return self.classifier(self.feature(x))
+    
+
+class Vanilla_Test(nn.Module):
+    def __init__(self,input_dim, output_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU(),
+            nn.Linear(4, output_dim),
+        )
+    def forward(self, x):
+        return self.net(x)
