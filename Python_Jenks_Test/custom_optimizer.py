@@ -90,4 +90,29 @@ class JenksSGD(Optimizer):
                         velocity = momentum * velocity + scale * param.grad
                         param.data -= lr * velocity
         return loss
+    
+
+'''Now we need to also have a function in which we take the network and prune based upon magnitude of the weights.'''
+
+def PruneWeights(model):
+    # Get the weights of the model, save in different layers
+    jnb = JenksNaturalBreaks(2)
+    for param in model.parameters():
+        layer = param.data.cpu().numpy()
+        layer = layer.flatten()
+        layer_abs = np.abs(layer)
+        jnb.fit(layer_abs)
+        labels = jnb.labels_
+        indices_ = np.where(labels == 0)[0]
+        print("Number of weights pruned: ")
+        print(len(indices_))
+        indices = np.where(labels == 1)[0]
+        print("Number of weights retained:")
+        print(len(indices))
+        layer[indices_] = 0
+        layer = layer.reshape(param.data.shape)
+        param.data = torch.from_numpy(layer)
+        param = param.to('cuda')
+    return model
+
 

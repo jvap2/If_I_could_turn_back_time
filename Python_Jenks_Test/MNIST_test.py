@@ -1,5 +1,5 @@
 import torch
-from custom_optimizer import JenksSGD
+from custom_optimizer import JenksSGD,PruneWeights
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -32,7 +32,7 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -56,9 +56,11 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 model_lenet5v1 = model_lenet5v1.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 2
+EPOCHS = 3
 train_loss, train_acc = 0.0, 0.0
 count = 0
+original_magnitude = sum(torch.norm(p) for p in model_lenet5v1.parameters())
+
 for epoch in range(EPOCHS):
     # Training loop
     print("Epoch: ", epoch)
@@ -71,46 +73,51 @@ for epoch in range(EPOCHS):
         y_pred = model_lenet5v1(X)
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
-        
+        mag = 0
+        mag = sum(torch.norm(p) for p in model_lenet5v1.parameters())
         acc = accuracy(y_pred, y)
         train_acc += acc
-        non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
-        total_params = sum(p.numel() for p in model_lenet5v1.parameters())
         with open("training_log.txt","a") as f:
-            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {non_zero_params/total_params: .5f}", file=f)
-        
+            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {mag/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
     # train_loss /= len(train_dataloader)
     # train_acc /= len(train_dataloader)
-        
     # Validation loop
-    val_loss, val_acc = 0.0, 0.0
-    model_lenet5v1.eval()
-    count_val = 0
-    with torch.inference_mode():
-        for X, y in val_dataloader:
-            count_val += 1
-            X, y = X.to(device), y.to(device)
-            
-            y_pred = model_lenet5v1(X)
-            
-            loss = loss_fn(y_pred, y)
-            val_loss += loss.item()
-            
-            acc = accuracy(y_pred, y)
-            val_acc += acc
-            with open("validation_log.txt","a") as f:
-                print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
-            
-        val_loss /= len(val_dataloader)
-        val_acc /= len(val_dataloader)
+val_loss, val_acc = 0.0, 0.0
+model_lenet5v1.eval()
+count_val = 0
+PruneWeights(model_lenet5v1)
+'''Make sure the weights are back on the device'''
+model_lenet5v1 = model_lenet5v1.to(device)
+non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
+total_params = sum(p.numel() for p in model_lenet5v1.parameters())
+sparsity = 1 - non_zero_params / total_params
+with open("sparisty_log.txt","a") as f:
+    print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+with torch.inference_mode():
+    for X, y in val_dataloader:
+        count_val += 1
+        X, y = X.to(device), y.to(device)
         
-    writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
-    writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-    with open("output.txt","a") as f:
-        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
-    ## Save model
-    torch.save(model_lenet5v1.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+        y_pred = model_lenet5v1(X)
+        
+        loss = loss_fn(y_pred, y)
+        val_loss += loss.item()
+        
+        acc = accuracy(y_pred, y)
+        val_acc += acc
+        with open("validation_log.txt","a") as f:
+            print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
+        
+    val_loss /= len(val_dataloader)
+    val_acc /= len(val_dataloader)
+    
+writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
+writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
+with open("output.txt","a") as f:
+    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+## Save model
+torch.save(model_lenet5v1.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
