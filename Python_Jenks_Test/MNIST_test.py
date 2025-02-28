@@ -56,13 +56,12 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 model_lenet5v1 = model_lenet5v1.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 4
-
+EPOCHS = 2
+train_loss, train_acc = 0.0, 0.0
+count = 0
 for epoch in range(EPOCHS):
     # Training loop
-    train_loss, train_acc = 0.0, 0.0
     print("Epoch: ", epoch)
-    count = 0
     for X, y in train_dataloader:
         count += 1
         X, y = X.to(device), y.to(device)
@@ -75,22 +74,25 @@ for epoch in range(EPOCHS):
         
         acc = accuracy(y_pred, y)
         train_acc += acc
-
-        if count % 100 == 0:
-            print(f"Batch: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f}")
+        non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
+        total_params = sum(p.numel() for p in model_lenet5v1.parameters())
+        with open("training_log.txt","a") as f:
+            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {non_zero_params/total_params: .5f}", file=f)
         
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-    train_loss /= len(train_dataloader)
-    train_acc /= len(train_dataloader)
+    # train_loss /= len(train_dataloader)
+    # train_acc /= len(train_dataloader)
         
     # Validation loop
     val_loss, val_acc = 0.0, 0.0
     model_lenet5v1.eval()
+    count_val = 0
     with torch.inference_mode():
         for X, y in val_dataloader:
+            count_val += 1
             X, y = X.to(device), y.to(device)
             
             y_pred = model_lenet5v1(X)
@@ -100,6 +102,8 @@ for epoch in range(EPOCHS):
             
             acc = accuracy(y_pred, y)
             val_acc += acc
+            with open("validation_log.txt","a") as f:
+                print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
             
         val_loss /= len(val_dataloader)
         val_acc /= len(val_dataloader)
