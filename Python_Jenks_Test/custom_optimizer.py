@@ -104,11 +104,7 @@ def PruneWeights(model):
         jnb.fit(layer_abs)
         labels = jnb.labels_
         indices_ = np.where(labels == 0)[0]
-        print("Number of weights pruned: ")
-        print(len(indices_))
         indices = np.where(labels == 1)[0]
-        print("Number of weights retained:")
-        print(len(indices))
         layer[indices_] = 0
         layer = layer.reshape(param.data.shape)
         param.data = torch.from_numpy(layer)
