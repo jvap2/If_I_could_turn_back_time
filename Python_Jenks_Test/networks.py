@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 
 class LeNet5V1(nn.Module):
@@ -40,3 +41,5 @@ class Vanilla_Test(nn.Module):
         )
     def forward(self, x):
         return self.net(x)
+    
+alexnet = torch.hub.load('pytorch/vision:v0.10.0', 'alexnet', pretrained=False)

@@ -1,0 +1,1 @@
+Epoch: 0| Train loss:  0.39192| Train acc:  0.88124| Val loss:  0.18024| Val acc:  0.94930

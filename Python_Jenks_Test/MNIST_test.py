@@ -8,7 +8,7 @@ from torchmetrics import Accuracy
 from datetime import datetime
 import os
 import torch.nn as nn
-from networks import LeNet5V1
+from networks import LeNet5V1,alexnet
 
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
@@ -52,10 +52,11 @@ writer = SummaryWriter(log_dir)
 
 # device-agnostic setup
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Using {device} device")
 accuracy = accuracy.to(device)
 model_lenet5v1 = model_lenet5v1.to(device)
-
-EPOCHS = 12
+os.makedirs("models", exist_ok=True)
+EPOCHS = 4
 
 for epoch in range(EPOCHS):
     # Training loop
@@ -107,3 +108,5 @@ for epoch in range(EPOCHS):
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
     with open("output.txt","a") as f:
         print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+    ## Save model
+    torch.save(model_lenet5v1.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
