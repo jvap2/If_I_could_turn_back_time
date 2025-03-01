@@ -39,7 +39,8 @@ val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 model_lenet5v1 = LeNet5V1()
 loss_fn = nn.CrossEntropyLoss()
-optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=5e-3, scale=0.5e-4, momentum=0.99)
+momentum = 0.99
+optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=5e-3, scale=0.5e-4, momentum=momentum)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 
 
@@ -56,7 +57,7 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 model_lenet5v1 = model_lenet5v1.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 3
+EPOCHS = 4
 train_loss, train_acc = 0.0, 0.0
 count = 0
 original_magnitude = sum(torch.norm(p) for p in model_lenet5v1.parameters())
@@ -77,7 +78,8 @@ for epoch in range(EPOCHS):
         mag = sum(torch.norm(p) for p in model_lenet5v1.parameters())
         acc = accuracy(y_pred, y)
         train_acc += acc
-        with open("training_log.txt","a") as f:
+        train_filename = f"training_log_{timestamp}_{momentum}.txt"
+        with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {mag/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
         loss.backward()
@@ -95,7 +97,8 @@ model_lenet5v1.eval()
 non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
 total_params = sum(p.numel() for p in model_lenet5v1.parameters())
 sparsity = 1 - non_zero_params / total_params
-with open("sparisty_log.txt","a") as f:
+sparsity_filename = f"sparisty_log_{timestamp}_{momentum}.txt"  
+with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
 with torch.inference_mode():
     for X, y in val_dataloader:
@@ -109,7 +112,8 @@ with torch.inference_mode():
         
         acc = accuracy(y_pred, y)
         val_acc += acc
-        with open("validation_log.txt","a") as f:
+        val_filename = f"validation_log_{timestamp}_{momentum}.txt"
+        with open(val_filename,"a") as f:
             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
         
     val_loss /= len(val_dataloader)
