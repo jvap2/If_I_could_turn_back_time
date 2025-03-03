@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import torch.nn as nn
 from networks import LeNet5V1,alexnet
+from torch.autograd.functional import hessian
 
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
@@ -32,7 +33,7 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -57,7 +58,7 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 model_lenet5v1 = model_lenet5v1.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 4
+EPOCHS = 2
 train_loss, train_acc = 0.0, 0.0
 count = 0
 original_magnitude = sum(torch.norm(p) for p in model_lenet5v1.parameters())
@@ -84,6 +85,11 @@ for epoch in range(EPOCHS):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        # params = torch.cat([p.data.flatten() for p in model_lenet5v1.parameters()])
+
+        # # Calculate the Hessian matrix
+        # hessian_matrix = hessian(loss_fn, params)
+        # Calculate the trace
         
     # train_loss /= len(train_dataloader)
     # train_acc /= len(train_dataloader)
