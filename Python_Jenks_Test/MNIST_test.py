@@ -10,6 +10,7 @@ import os
 import torch.nn as nn
 from networks import LeNet5V1,alexnet
 from torch.autograd.functional import hessian
+from functions import hutchinson_trace_hmp,rademacher
 
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
@@ -18,7 +19,27 @@ train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=Fals
 test_dataset = datasets.MNIST(root="./datasets", train=False, download=False, transform=transforms.ToTensor())
 
 imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
+def hutchinson_trace_hmp(V, V_batch=1):
+    """Hessian trace estimate using BackPACK's HMP extension.
 
+    Perform `V_batch` Hessian multiplications at a time.
+    """
+    V_count = 0
+    trace = 0
+
+    while V_count < V:
+        V_missing = V - V_count
+        V_next = min(V_batch, V_missing)
+
+        for param in model.parameters():
+            v = rademacher((V_next, *param.shape))
+            Hv = param.hmp(v).detach()
+            vHv = torch.einsum("i,i->", v.flatten(), Hv.flatten().detach())
+            trace += vHv / V
+
+        V_count += V_next
+
+    return trace
 mean = imgs.view(1, -1).mean(dim=1)    
 std = imgs.view(1, -1).std(dim=1)     
 

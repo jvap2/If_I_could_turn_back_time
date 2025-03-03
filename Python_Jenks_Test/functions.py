@@ -18,7 +18,7 @@ def rademacher(shape, dtype=torch.float32, device=DEVICE):
     return rand.to(dtype).to(device)
 
 
-def hutchinson_trace_hmp(V, V_batch=1):
+def hutchinson_trace_hmp(model, V, V_batch=1):
     """Hessian trace estimate using BackPACK's HMP extension.
 
     Perform `V_batch` Hessian multiplications at a time.
