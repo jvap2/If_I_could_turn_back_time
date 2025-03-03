@@ -3374,3 +3374,6 @@ Iteration: 3373| Loss:  0.26991| Acc:  0.91824 | Sparsity:  2.91518
 Iteration: 3374| Loss:  0.26985| Acc:  0.91825 | Sparsity:  2.91531
 Iteration: 3375| Loss:  0.26980| Acc:  0.91827 | Sparsity:  2.91545
 Iteration: 3376| Loss:  0.26973| Acc:  0.91829 | Sparsity:  2.91559
+Iteration: 1| Loss:  2.32232| Acc:  0.03125 | Sparsity:  1.00000
+Iteration: 1| Loss:  2.29637| Acc:  0.06250 | Sparsity:  1.00000
+Iteration: 1| Loss:  2.30364| Acc:  0.06250 | Sparsity:  1.00000

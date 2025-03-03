@@ -79,17 +79,27 @@ for epoch in range(EPOCHS):
         mag = sum(torch.norm(p) for p in model_lenet5v1.parameters())
         acc = accuracy(y_pred, y)
         train_acc += acc
-        train_filename = f"training_log_{timestamp}_{momentum}.txt"
+        train_filename = f"output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {mag/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        # params = torch.cat([p.data.flatten() for p in model_lenet5v1.parameters()])
+        params = torch.cat([p.data.flatten() for p in model_lenet5v1.parameters()])
 
         # # Calculate the Hessian matrix
-        # hessian_matrix = hessian(loss_fn, params)
+        # def loss_fn_wrapper(params):
+        #     model_lenet5v1.zero_grad()
+        #     model_lenet5v1.load_state_dict({name: param.view_as(p) for (name, p), param in zip(model_lenet5v1.named_parameters(), params.split([p.numel() for p in model_lenet5v1.parameters()]))})
+        #     y_pred = model_lenet5v1(X)
+        #     return loss_fn(y_pred, y)
+        
+        hessian_matrix = hessian(nn.CrossEntropyLoss(), params)
         # Calculate the trace
+        trace = torch.trace(hessian_matrix)
+        trace_filename = f"output/trace_log_{timestamp}_{momentum}.txt"
+        with open(trace_filename,"a") as f:
+            print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
         
     # train_loss /= len(train_dataloader)
     # train_acc /= len(train_dataloader)
@@ -103,7 +113,7 @@ model_lenet5v1.eval()
 non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
 total_params = sum(p.numel() for p in model_lenet5v1.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"sparisty_log_{timestamp}_{momentum}.txt"  
+sparsity_filename = f"output/sparisty_log_{timestamp}_{momentum}.txt"  
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
 with torch.inference_mode():
@@ -118,7 +128,7 @@ with torch.inference_mode():
         
         acc = accuracy(y_pred, y)
         val_acc += acc
-        val_filename = f"validation_log_{timestamp}_{momentum}.txt"
+        val_filename = f"output/validation_log_{timestamp}_{momentum}.txt"
         with open(val_filename,"a") as f:
             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
         
@@ -127,7 +137,7 @@ with torch.inference_mode():
     
 writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
 writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("output.txt","a") as f:
+with open("output/output.txt","a") as f:
     print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
 torch.save(model_lenet5v1.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
