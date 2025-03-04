@@ -8,12 +8,19 @@ from torchmetrics import Accuracy
 from datetime import datetime
 import os
 import torch.nn as nn
-from networks import LeNet5V1,alexnet
+from networks import LeNet5V1,alexnet,lenet5v1
 from torch.autograd.functional import hessian
 from functions import hutchinson_trace_hmp,rademacher
+from backpack import backpack, extend
+from backpack.extensions import HMP, DiagHessian
+from functions import exact_trace
 
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+
 
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=transforms.ToTensor())
 test_dataset = datasets.MNIST(root="./datasets", train=False, download=False, transform=transforms.ToTensor())
@@ -39,10 +46,30 @@ BATCH_SIZE = 32
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
-model_lenet5v1 = LeNet5V1()
+# model_lenet5v1 = LeNet5V1()
+model = nn.Sequential(            
+    nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, stride=1, padding=2),   # 28*28->32*32-->28*28
+    nn.Tanh(),
+    nn.AvgPool2d(kernel_size=2, stride=2),  # 14*14
+    
+    #2
+    nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=1),  # 10*10
+    nn.Tanh(),
+    nn.AvgPool2d(kernel_size=2, stride=2),  
+
+    nn.Flatten(),
+    nn.Linear(in_features=16*5*5, out_features=120),
+    nn.Tanh(),
+    nn.Linear(in_features=120, out_features=84),
+    nn.Tanh(),
+    nn.Linear(in_features=84, out_features=10),
+).to(device)
+
+model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
+loss_fn = extend(loss_fn)
 momentum = 0.99
-optimizer = JenksSGD(params=model_lenet5v1.parameters(), lr=5e-3, scale=0.5e-4, momentum=momentum)
+optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=0.5e-4, momentum=momentum)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 
 
@@ -54,15 +81,13 @@ log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
 # device-agnostic setup
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using {device} device")
 accuracy = accuracy.to(device)
-model_lenet5v1 = model_lenet5v1.to(device)
 os.makedirs("models", exist_ok=True)
 EPOCHS = 2
 train_loss, train_acc = 0.0, 0.0
 count = 0
-original_magnitude = sum(torch.norm(p) for p in model_lenet5v1.parameters())
+original_magnitude = sum(torch.norm(p) for p in model.parameters())
 
 for epoch in range(EPOCHS):
     # Training loop
@@ -71,33 +96,28 @@ for epoch in range(EPOCHS):
         count += 1
         X, y = X.to(device), y.to(device)
         
-        model_lenet5v1.train()
+        model.train()
         
-        y_pred = model_lenet5v1(X)
+        y_pred = model(X)
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
         mag = 0
-        mag = sum(torch.norm(p) for p in model_lenet5v1.parameters())
+        mag = sum(torch.norm(p) for p in model.parameters())
         acc = accuracy(y_pred, y)
         train_acc += acc
         train_filename = f"output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {mag/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
-        loss.backward()
+        with backpack(DiagHessian(), HMP()):
+        # keep graph for autodiff HVPs
+            loss.backward()
         optimizer.step()
-        params = torch.cat([p.data.flatten() for p in model_lenet5v1.parameters()])
+        params = torch.cat([p.data.flatten() for p in model.parameters()])
 
-        # # Calculate the Hessian matrix
-        # def loss_fn_wrapper(params):
-        #     model_lenet5v1.zero_grad()
-        #     model_lenet5v1.load_state_dict({name: param.view_as(p) for (name, p), param in zip(model_lenet5v1.named_parameters(), params.split([p.numel() for p in model_lenet5v1.parameters()]))})
-        #     y_pred = model_lenet5v1(X)
-        #     return loss_fn(y_pred, y)
-        
-        hessian_matrix = hessian(nn.CrossEntropyLoss(), params)
+        trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+        # trace = exact_trace(model_lenet5v1)
         # Calculate the trace
-        trace = torch.trace(hessian_matrix)
         trace_filename = f"output/trace_log_{timestamp}_{momentum}.txt"
         with open(trace_filename,"a") as f:
             print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
@@ -107,12 +127,13 @@ for epoch in range(EPOCHS):
     # Validation loop
 val_loss, val_acc = 0.0, 0.0
 count_val = 0
-prunedmodel = PruneWeights(model_lenet5v1)
+prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
-model_lenet5v1 = prunedmodel.to(device)
-model_lenet5v1.eval()
-non_zero_params = sum(torch.count_nonzero(p) for p in model_lenet5v1.parameters())
-total_params = sum(p.numel() for p in model_lenet5v1.parameters())
+model = prunedmodel.to(device)
+# model.eval()
+trace_val_filename = f"output/trace_val_log_{timestamp}_{momentum}.txt"
+non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
+total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
 sparsity_filename = f"output/sparisty_log_{timestamp}_{momentum}.txt"  
 with open(sparsity_filename,"a") as f:
@@ -122,11 +143,17 @@ with torch.inference_mode():
         count_val += 1
         X, y = X.to(device), y.to(device)
         
-        y_pred = model_lenet5v1(X)
+        y_pred = model(X)
         
         loss = loss_fn(y_pred, y)
         val_loss += loss.item()
-        
+        optimizer.zero_grad()
+        with backpack(DiagHessian(), HMP()):
+        # keep graph for autodiff HVPs
+            loss.backward()
+        trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+        with open(trace_val_filename,"a") as f:
+            print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
         acc = accuracy(y_pred, y)
         val_acc += acc
         val_filename = f"output/validation_log_{timestamp}_{momentum}.txt"
@@ -141,4 +168,4 @@ writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc,
 with open("output/output.txt","a") as f:
     print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
-torch.save(model_lenet5v1.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")

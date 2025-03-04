@@ -1,0 +1,1 @@
+Iteration: 1| Loss:  2.31881| Acc:  0.03125 | Sparsity:  1.00000

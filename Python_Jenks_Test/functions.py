@@ -39,3 +39,8 @@ def hutchinson_trace_hmp(model, V, V_batch=1):
         V_count += V_next
 
     return trace
+
+def exact_trace(model):
+    """Exact trace from sum of Hessian diagonal."""
+    param_trace = [p.diag_h.sum().item() for p in model.parameters()]
+    return sum(param_trace)

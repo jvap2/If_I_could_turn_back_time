@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from backpack import backpack, extend
 
 class LeNet5V1(nn.Module):
     def __init__(self):
@@ -43,3 +44,4 @@ class Vanilla_Test(nn.Module):
         return self.net(x)
     
 alexnet = torch.hub.load('pytorch/vision:v0.10.0', 'alexnet', pretrained=False)
+lenet5v1 = extend(LeNet5V1())
