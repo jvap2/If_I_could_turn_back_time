@@ -87,7 +87,8 @@ os.makedirs("models", exist_ok=True)
 EPOCHS = 2
 train_loss, train_acc = 0.0, 0.0
 count = 0
-original_magnitude = sum(torch.norm(p) for p in model.parameters())
+original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
+lambda_ = 0.01
 
 for epoch in range(EPOCHS):
     # Training loop
@@ -100,14 +101,15 @@ for epoch in range(EPOCHS):
         
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
+        l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+        loss = loss.clone() + lambda_ * l2_reg  
         train_loss += loss.item()
-        mag = 0
-        mag = sum(torch.norm(p) for p in model.parameters())
+
         acc = accuracy(y_pred, y)
         train_acc += acc
         train_filename = f"output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
-            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Sparsity: {mag/original_magnitude: .5f}", file=f)
+            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | L_2: {l2_reg/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
         with backpack(DiagHessian(), HMP()):
         # keep graph for autodiff HVPs
