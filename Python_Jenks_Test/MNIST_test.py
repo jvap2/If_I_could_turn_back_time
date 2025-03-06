@@ -15,6 +15,7 @@ from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 from functions import exact_trace
 
+torch.cuda.empty_cache()
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -41,7 +42,7 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -131,6 +132,8 @@ val_loss, val_acc = 0.0, 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
+with open("output/output.txt","a") as f:
+    print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
 trace_val_filename = f"output/trace_val_log_{timestamp}_{momentum}.txt"
@@ -138,6 +141,7 @@ non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
 sparsity_filename = f"output/sparisty_log_{timestamp}_{momentum}.txt"  
+model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
 with torch.inference_mode():
@@ -149,13 +153,13 @@ with torch.inference_mode():
         
         loss = loss_fn(y_pred, y)
         val_loss += loss.item()
-        optimizer.zero_grad()
-        with backpack(DiagHessian(), HMP()):
-        # keep graph for autodiff HVPs
-            loss.backward()
-        trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
-        with open(trace_val_filename,"a") as f:
-            print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
+        # optimizer.zero_grad()
+        # with backpack(DiagHessian(), HMP()):
+        # # keep graph for autodiff HVPs
+        #     loss.backward()
+        # trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+        # with open(trace_val_filename,"a") as f:
+        #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
         acc = accuracy(y_pred, y)
         val_acc += acc
         val_filename = f"output/validation_log_{timestamp}_{momentum}.txt"

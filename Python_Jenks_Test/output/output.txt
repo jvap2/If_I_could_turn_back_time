@@ -1,3 +1,2 @@
-Epoch: 2| Train loss:  680.29938| Train acc:  0.92222| Val loss:  0.77659| Val acc:  0.72185
-Epoch: 3| Train loss:  821.17161| Train acc:  0.92612| Val loss:  1.37228| Val acc:  0.49058
-Epoch: 1| Train loss:  910.61163| Train acc:  0.91829| Val loss:  0.94768| Val acc:  0.67686
+Able to prune the weights
+Epoch: 1| Train loss:  8356.39975| Train acc:  0.88565| Val loss:  0.84559| Val acc:  0.86550

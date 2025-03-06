@@ -1,0 +1,3 @@
+Using cuda device
+Epoch:  0
+Epoch:  1
