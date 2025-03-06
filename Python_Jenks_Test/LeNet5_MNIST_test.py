@@ -108,7 +108,7 @@ for epoch in range(EPOCHS):
 
         acc = accuracy(y_pred, y)
         train_acc += acc
-        train_filename = f"output/training_log_{timestamp}_{momentum}.txt"
+        train_filename = f"LeNet5_MNIST_output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | L_2: {l2_reg/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
@@ -121,7 +121,7 @@ for epoch in range(EPOCHS):
         trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)
         # Calculate the trace
-        trace_filename = f"output/trace_log_{timestamp}_{momentum}.txt"
+        trace_filename = f"LeNet5_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
         with open(trace_filename,"a") as f:
             print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
         
@@ -136,11 +136,11 @@ with open("output/output.txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
-trace_val_filename = f"output/trace_val_log_{timestamp}_{momentum}.txt"
+trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"output/sparisty_log_{timestamp}_{momentum}.txt"  
+sparsity_filename = f"LeNet5_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"  
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
