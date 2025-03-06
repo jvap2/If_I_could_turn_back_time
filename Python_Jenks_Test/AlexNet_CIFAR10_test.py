@@ -10,6 +10,7 @@ from datetime import datetime
 import os
 import torch.nn as nn
 from networks import LeNet5V1,alexnet
+from backpack import backpack, extend
 
 torch.cuda.empty_cache()
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
@@ -54,7 +55,7 @@ model = nn.Sequential(
 
 timestamp = datetime.now().strftime("%Y-%m-%d")
 experiment_name = "MNIST"
-model_name = "LeNet5V1"
+model_name = "Lemodel5V1"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -76,13 +77,15 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
 
 classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-net = torch.hub.load('pytorch/vision:v0.10.0', 'alexnet', pretrained=False)
+os.makedirs("AlexNet_CIFAR10_output", exist_ok=True)
+model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
-optimizer = JenksSGD(params=net.parameters(), lr=5e-3, scale=0.5e-4, momentum=0.99)
+loss_fn = extend(loss_fn)
+momentum = 0.99
+loss_fn = nn.CrossEntropyLoss()
+optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=0.5e-4, momentum=0.99)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 accuracy = accuracy.to(device)
-net = net.to(device)
 EPOCHS = 4
 
 for epoch in range(EPOCHS):
@@ -94,9 +97,9 @@ for epoch in range(EPOCHS):
         count += 1
         X, y = X.to(device), y.to(device)
         
-        net.train()
+        model.train()
         
-        y_pred = net(X)
+        y_pred = model(X)
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
         
@@ -115,12 +118,12 @@ for epoch in range(EPOCHS):
         
     # Validation loop
     val_loss, val_acc = 0.0, 0.0
-    net.eval()
+    model.eval()
     with torch.inference_mode():
         for X, y in testloader:
             X, y = X.to(device), y.to(device)
             
-            y_pred = net(X)
+            y_pred = model(X)
             
             loss = loss_fn(y_pred, y)
             val_loss += loss.item()
@@ -136,4 +139,4 @@ for epoch in range(EPOCHS):
     with open("output.txt","a") as f:
         print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
     ## Save model
-    torch.save(net.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+    torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
