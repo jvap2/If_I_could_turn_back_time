@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import Accuracy
+from torchmetrics.classification import MulticlassAccuracy
 from datetime import datetime
 import os
 import torch.nn as nn
@@ -72,6 +73,7 @@ loss_fn = extend(loss_fn)
 momentum = 0.99
 optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=0.5e-4, momentum=momentum)
 accuracy = Accuracy(task='multiclass', num_classes=10)
+top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
 
 # Experiment tracking
@@ -84,9 +86,11 @@ writer = SummaryWriter(log_dir)
 # device-agnostic setup
 print(f"Using {device} device")
 accuracy = accuracy.to(device)
+top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
 EPOCHS = 2
 train_loss, train_acc = 0.0, 0.0
+train_top5acc = 0.0
 count = 0
 original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
 lambda_ = 0.01
@@ -107,10 +111,12 @@ for epoch in range(EPOCHS):
         train_loss += loss.item()
 
         acc = accuracy(y_pred, y)
+        acc_5 = top5accuracy(y_pred, y)
+        train_top5acc += acc_5
         train_acc += acc
         train_filename = f"LeNet5_MNIST_output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
-            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | L_2: {l2_reg/original_magnitude: .5f}", file=f)
+            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Top 5 Acc: {train_top5acc/count: .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
         with backpack(DiagHessian(), HMP()):
         # keep graph for autodiff HVPs
@@ -129,6 +135,7 @@ for epoch in range(EPOCHS):
     # train_acc /= len(train_dataloader)
     # Validation loop
 val_loss, val_acc = 0.0, 0.0
+val_top5acc = 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
@@ -161,10 +168,12 @@ with torch.inference_mode():
         # with open(trace_val_filename,"a") as f:
         #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
         acc = accuracy(y_pred, y)
+        top5_acc = top5accuracy(y_pred, y)
+        val_top5acc += top5_acc
         val_acc += acc
         val_filename = f"output/validation_log_{timestamp}_{momentum}.txt"
         with open(val_filename,"a") as f:
-            print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f}", file=f)
+            print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
         
     val_loss /= len(val_dataloader)
     val_acc /= len(val_dataloader)
