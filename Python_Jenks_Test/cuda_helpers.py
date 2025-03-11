@@ -134,3 +134,33 @@ torch::Tensor jenks_optimization_cuda(torch::Tensor WB){
 
 
 '''
+
+cpp_src = "torch::Tensor jenks_optimization_cuda(torch::Tensor WB);"
+
+module = load_cuda(cuda_src, cpp_src, ["jenks_optimization_cuda"], opt=True, verbose=True)
+
+# Test
+
+# Create a random tensor
+
+WB = torch.rand(3, 3)
+WB_cuda = WB.cuda()
+print(WB_cuda)
+ 
+## Sort it
+
+WB_cuda_flatten = WB_cuda.flatten()
+WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+WB_cuda_sorted = WB_cuda_sorted.reshape(WB_cuda.shape)
+print(WB_cuda_sorted)
+# Call the custom CUDA function
+print(WB_cuda_indices)
+
+var = module.jenks_optimization_cuda(WB_cuda_sorted)
+print(var.shape)
+print(WB_cuda_sorted.shape)
+var_min = var.argmin().item()
+# Print the output
+
+print(var)
+print(var_min)
