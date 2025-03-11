@@ -4,7 +4,8 @@ import os     # Operating system interfaces
 import math   # Mathematical functions
 import gzip   # Compression/decompression using gzip
 import pickle # Object serialization
-
+from jenkspy import JenksNaturalBreaks
+import numpy as np
 # Plotting library
 import matplotlib.pyplot as plt
 
@@ -68,6 +69,69 @@ cuda_begin = r'''
 
 // Utility function for ceiling division
 inline unsigned int cdiv(unsigned int a, unsigned int b) { return (a + b - 1) / b;}
+'''
+
+cuda_bias = cuda_begin + r'''
+template <typename T>
+__global__ void Jenks_Optimization_Biases(T* d_B, T* d_var, int rows){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    T mean_1,mean_2;
+    if(idx < (rows)){
+        // Now, we want to use the index to decide where the break is for calculation sake
+        // For the first grouping, the idx will be the break point
+        //We will calculate the mean of the first group
+        mean_1 = 0;
+        for(int i = 0; i<idx; i++){
+            mean_1 += d_B[i];
+        }
+        if(idx != 0){
+            mean_1 = mean_1/idx;
+        }
+        //We will calculate the mean of the second group
+        mean_2 = 0;
+        for(int i = idx; i<rows; i++){
+            mean_2 += d_B[i];
+        }
+        mean_2 = mean_2/(rows-idx);
+    }
+    __syncthreads();
+    if(idx<rows){
+        T var = 0;
+        for(int i = 0; i<idx; i++){
+            var += (d_B[i] - mean_1)*(d_B[i] - mean_1);
+        }
+        for(int i = idx; i<rows; i++){
+            var += (d_B[i] - mean_2)*(d_B[i] - mean_2);
+        }
+        d_var[idx] = var;
+    }
+}
+
+
+
+torch::Tensor jenks_optimization_biases_cuda(torch::Tensor B){
+    // Check input
+    CHECK_INPUT(B);
+
+    // Get dimensions
+    int rows = B.size(0);
+
+    // Allocate output tensor
+    auto var = torch::empty({rows}, B.options());
+
+    // Launch kernel
+    const int threads = 256;
+    const int blocks = cdiv(rows, threads);
+
+    AT_DISPATCH_FLOATING_TYPES(B.scalar_type(), "jenks_optimization_biases_cuda", ([&] {
+        Jenks_Optimization_Biases<scalar_t><<<blocks, threads>>>(B.data_ptr<scalar_t>(), var.data_ptr<scalar_t>(), rows);
+    }));
+
+    // Check for errors
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    return var;
+}
 '''
 
 cuda_src = cuda_begin + r'''    
@@ -136,14 +200,16 @@ torch::Tensor jenks_optimization_cuda(torch::Tensor WB){
 '''
 
 cpp_src = "torch::Tensor jenks_optimization_cuda(torch::Tensor WB);"
+cpp_bias_src = "torch::Tensor jenks_optimization_biases_cuda(torch::Tensor B);"
 
-module = load_cuda(cuda_src, cpp_src, ["jenks_optimization_cuda"], opt=True, verbose=True)
+module_weights = load_cuda(cuda_src, cpp_src, ["jenks_optimization_cuda"], opt=True, verbose=True)
+module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cuda"], opt=True, verbose=True)
 
 # Test
 
 # Create a random tensor
 
-WB = torch.rand(3, 3)
+WB = torch.rand(4, 5)
 WB_cuda = WB.cuda()
 print(WB_cuda)
  
@@ -156,11 +222,37 @@ print(WB_cuda_sorted)
 # Call the custom CUDA function
 print(WB_cuda_indices)
 
-var = module.jenks_optimization_cuda(WB_cuda_sorted)
+var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
 print(var.shape)
 print(WB_cuda_sorted.shape)
 var_min = var.argmin().item()
 # Print the output
 
 print(var)
-print(var_min)
+zeros = WB_cuda_indices[:var_min]
+ones = WB_cuda_indices[var_min:]
+arr = torch.zeros(WB_cuda.flatten().shape)
+arr[zeros] = 0
+arr[ones] = 1
+arr = arr.reshape(WB_cuda.shape)
+print(arr)
+''' We now need to find the break point which '''
+
+arr_score = WB.numpy()
+arr_score_flat = arr_score.flatten()
+jnb = JenksNaturalBreaks(2)
+jnb.fit(arr_score_flat)
+print(jnb.labels_)
+labels = jnb.labels_
+indices = np.where(labels == 1)[0]
+indices_ = np.where(labels == 0)[0]
+
+test_arr = np.zeros(arr_score_flat.shape)
+test_arr[indices] = 1
+test_arr[indices_] = 0
+test_arr = test_arr.reshape(arr_score.shape)
+print(test_arr)
+
+''' Test they are equal'''
+
+print(np.allclose(arr.numpy(), test_arr, atol=1e-4))
