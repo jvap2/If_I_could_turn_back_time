@@ -43,7 +43,7 @@ val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -71,7 +71,7 @@ model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
-optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=0.5e-4, momentum=momentum)
+optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=5e-4, momentum=momentum)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -88,7 +88,7 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 2
+EPOCHS = 3
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
