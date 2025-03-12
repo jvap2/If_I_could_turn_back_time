@@ -2,6 +2,7 @@ import numpy as np
 from jenkspy import JenksNaturalBreaks
 import torch
 from torch.optim import Optimizer
+from cuda_helpers import module_weights, module_bias
 
 class JenksSGD(Optimizer):
     def __init__(self, params, lr=0.01, scale=0.9, momentum=0.9):
@@ -38,16 +39,30 @@ class JenksSGD(Optimizer):
                     unique_values = np.unique(s_W)
                     n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
                     if n_classes > 1:
-                        jnb = JenksNaturalBreaks(n_classes)
-                        jnb.fit(s_W)
-                        labels = jnb.labels_
-                        indices = np.where(labels == 1)[0]
-                        indices_ = np.where(labels == 0)[0]
+                        # jnb = JenksNaturalBreaks(n_classes)
+                        # jnb.fit(s_W)
+                        # labels = jnb.labels_
+                        # indices = np.where(labels == 1)[0]
+                        # indices_ = np.where(labels == 0)[0]
 
-                        # Update velocity
+                        # # Update velocity
                         velocity_flat = velocity.view(-1)
                         param_data_flat = param.data.view(-1)
                         param_grad_flat = param.grad.data.view(-1)
+                        WB_cuda_flatten = s_W.flatten()
+                        WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                        WB_cuda_sorted = WB_cuda_sorted.reshape(s_W.shape)
+                        print(WB_cuda_sorted)
+                        # Call the custom CUDA function
+                        print(WB_cuda_indices)
+
+                        var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                        print(var.shape)
+                        print(WB_cuda_sorted.shape)
+                        var_min = var.argmin().item()
+
+                        indices_ = WB_cuda_indices[:var_min]
+                        indices = WB_cuda_indices[var_min:]
 
                         velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
                         velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
@@ -66,12 +81,21 @@ class JenksSGD(Optimizer):
                     unique_values = np.unique(s_B)
                     n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
                     if n_classes > 1:
-                        jnb = JenksNaturalBreaks(n_classes)
-                        jnb.fit(s_B)
-                        labels = jnb.labels_
-                        indices = np.where(labels == 1)[0]
-                        indices_ = np.where(labels == 0)[0]
-
+                        # jnb = JenksNaturalBreaks(n_classes)
+                        # jnb.fit(s_B)
+                        # labels = jnb.labels_
+                        # indices = np.where(labels == 1)[0]
+                        # indices_ = np.where(labels == 0)[0]
+                        B_cuda_sorted, B_cuda_indices = s_B.sort()
+                        var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                        print(var)
+                        print(B_cuda_sorted)
+                        var_min = var.argmin().item()
+                        # Print the output
+                        print(var_min)
+                        print(B_cuda_sorted)
+                        indices_ = B_cuda_indices[:var_min]
+                        indices = B_cuda_indices[var_min:]
                         # Update velocity
                         velocity_flat = velocity.view(-1)
                         param_data_flat = param.data.view(-1)

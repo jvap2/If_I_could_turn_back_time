@@ -256,3 +256,42 @@ print(test_arr)
 ''' Test they are equal'''
 
 print(np.allclose(arr.numpy(), test_arr, atol=1e-4))
+
+# Create a random tensor
+B = torch.rand(4)
+B_cuda = B.cuda()
+# Call the custom CUDA function
+B_cuda_sorted, B_cuda_indices = B_cuda.sort()
+var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+print(var)
+print(B_cuda_sorted)
+var_min = var.argmin().item()
+# Print the output
+print(var_min)
+print(B_cuda_sorted)
+zeros = B_cuda_indices[:var_min]
+ones = B_cuda_indices[var_min:]
+arr = torch.zeros(B_cuda.shape)
+arr[zeros] = 0
+arr[ones] = 1
+print(arr)
+
+# Test
+arr_score = B.numpy()
+arr_score_flat = arr_score.flatten()
+jnb = JenksNaturalBreaks(2)
+jnb.fit(arr_score_flat)
+print(jnb.labels_)
+labels = jnb.labels_
+indices = np.where(labels == 1)[0]
+indices_ = np.where(labels == 0)[0]
+
+test_arr = np.zeros(arr_score_flat.shape)
+test_arr[indices] = 1
+test_arr[indices_] = 0
+
+print(test_arr)
+
+''' Test they are equal'''
+
+print(np.allclose(arr, test_arr, atol=1e-4))
