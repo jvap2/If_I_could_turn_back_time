@@ -49,7 +49,7 @@ def load_cuda(cuda_src, cpp_src, funcs, opt=False, verbose=False):
     """
     # Use load_inline to compile and load the CUDA and C++ source code
     return load_inline(cuda_sources=[cuda_src], cpp_sources=[cpp_src], functions=funcs,
-                       extra_cuda_cflags=["-O2"] if opt else [], verbose=verbose, name="inline_ext")
+                       extra_cuda_cflags=["-O3"] if opt else [], verbose=verbose, name="inline_ext")
 
 
 # Define CUDA boilerplate code and utility macros
