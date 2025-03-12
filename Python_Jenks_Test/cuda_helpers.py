@@ -209,89 +209,89 @@ module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cud
 
 # Create a random tensor
 
-WB = torch.rand(4, 5)
-WB_cuda = WB.cuda()
-print(WB_cuda)
+# WB = torch.rand(4, 5)
+# WB_cuda = WB.cuda()
+# print(WB_cuda)
  
-## Sort it
+# ## Sort it
 
-WB_cuda_flatten = WB_cuda.flatten()
-WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-WB_cuda_sorted = WB_cuda_sorted.reshape(WB_cuda.shape)
-print(WB_cuda_sorted)
-# Call the custom CUDA function
-print(WB_cuda_indices)
+# WB_cuda_flatten = WB_cuda.flatten()
+# WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+# WB_cuda_sorted = WB_cuda_sorted.reshape(WB_cuda.shape)
+# print(WB_cuda_sorted)
+# # Call the custom CUDA function
+# print(WB_cuda_indices)
 
-var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-print(var.shape)
-print(WB_cuda_sorted.shape)
-var_min = var.argmin().item()
-# Print the output
+# var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+# print(var.shape)
+# print(WB_cuda_sorted.shape)
+# var_min = var.argmin().item()
+# # Print the output
 
-print(var)
-zeros = WB_cuda_indices[:var_min]
-ones = WB_cuda_indices[var_min:]
-arr = torch.zeros(WB_cuda.flatten().shape)
-arr[zeros] = 0
-arr[ones] = 1
-arr = arr.reshape(WB_cuda.shape)
-print(arr)
-''' We now need to find the break point which '''
+# print(var)
+# zeros = WB_cuda_indices[:var_min]
+# ones = WB_cuda_indices[var_min:]
+# arr = torch.zeros(WB_cuda.flatten().shape)
+# arr[zeros] = 0
+# arr[ones] = 1
+# arr = arr.reshape(WB_cuda.shape)
+# print(arr)
+# ''' We now need to find the break point which '''
 
-arr_score = WB.numpy()
-arr_score_flat = arr_score.flatten()
-jnb = JenksNaturalBreaks(2)
-jnb.fit(arr_score_flat)
-print(jnb.labels_)
-labels = jnb.labels_
-indices = np.where(labels == 1)[0]
-indices_ = np.where(labels == 0)[0]
+# arr_score = WB.numpy()
+# arr_score_flat = arr_score.flatten()
+# jnb = JenksNaturalBreaks(2)
+# jnb.fit(arr_score_flat)
+# print(jnb.labels_)
+# labels = jnb.labels_
+# indices = np.where(labels == 1)[0]
+# indices_ = np.where(labels == 0)[0]
 
-test_arr = np.zeros(arr_score_flat.shape)
-test_arr[indices] = 1
-test_arr[indices_] = 0
-test_arr = test_arr.reshape(arr_score.shape)
-print(test_arr)
+# test_arr = np.zeros(arr_score_flat.shape)
+# test_arr[indices] = 1
+# test_arr[indices_] = 0
+# test_arr = test_arr.reshape(arr_score.shape)
+# print(test_arr)
 
-''' Test they are equal'''
+# ''' Test they are equal'''
 
-print(np.allclose(arr.numpy(), test_arr, atol=1e-4))
+# print(np.allclose(arr.numpy(), test_arr, atol=1e-4))
 
-# Create a random tensor
-B = torch.rand(4)
-B_cuda = B.cuda()
-# Call the custom CUDA function
-B_cuda_sorted, B_cuda_indices = B_cuda.sort()
-var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
-print(var)
-print(B_cuda_sorted)
-var_min = var.argmin().item()
-# Print the output
-print(var_min)
-print(B_cuda_sorted)
-zeros = B_cuda_indices[:var_min]
-ones = B_cuda_indices[var_min:]
-arr = torch.zeros(B_cuda.shape)
-arr[zeros] = 0
-arr[ones] = 1
-print(arr)
+# # Create a random tensor
+# B = torch.rand(4)
+# B_cuda = B.cuda()
+# # Call the custom CUDA function
+# B_cuda_sorted, B_cuda_indices = B_cuda.sort()
+# var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+# print(var)
+# print(B_cuda_sorted)
+# var_min = var.argmin().item()
+# # Print the output
+# print(var_min)
+# print(B_cuda_sorted)
+# zeros = B_cuda_indices[:var_min]
+# ones = B_cuda_indices[var_min:]
+# arr = torch.zeros(B_cuda.shape)
+# arr[zeros] = 0
+# arr[ones] = 1
+# print(arr)
 
-# Test
-arr_score = B.numpy()
-arr_score_flat = arr_score.flatten()
-jnb = JenksNaturalBreaks(2)
-jnb.fit(arr_score_flat)
-print(jnb.labels_)
-labels = jnb.labels_
-indices = np.where(labels == 1)[0]
-indices_ = np.where(labels == 0)[0]
+# # Test
+# arr_score = B.numpy()
+# arr_score_flat = arr_score.flatten()
+# jnb = JenksNaturalBreaks(2)
+# jnb.fit(arr_score_flat)
+# print(jnb.labels_)
+# labels = jnb.labels_
+# indices = np.where(labels == 1)[0]
+# indices_ = np.where(labels == 0)[0]
 
-test_arr = np.zeros(arr_score_flat.shape)
-test_arr[indices] = 1
-test_arr[indices_] = 0
+# test_arr = np.zeros(arr_score_flat.shape)
+# test_arr[indices] = 1
+# test_arr[indices_] = 0
 
-print(test_arr)
+# print(test_arr)
 
-''' Test they are equal'''
+# ''' Test they are equal'''
 
-print(np.allclose(arr, test_arr, atol=1e-4))
+# print(np.allclose(arr, test_arr, atol=1e-4))

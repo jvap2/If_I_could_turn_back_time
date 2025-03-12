@@ -34,9 +34,9 @@ class JenksSGD(Optimizer):
                 if len(param.shape) > 1:  # Assuming weight matrices have more than 1 dimension
                     # Custom weight update: Scale gradients before applying update
                     # print(torch.mul(param, param.grad).cpu().numpy())
-                    s_W = torch.mul(param, param.grad).cpu().numpy().flatten()  # Move to CPU, convert to NumPy, and flatten
-                    s_W = np.abs(s_W)
-                    unique_values = np.unique(s_W)
+                    s_W = torch.mul(param, param.grad)  # Move to CPU, convert to NumPy, and flatten
+                    s_W = torch.abs(s_W)
+                    unique_values = torch.unique(s_W)
                     n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
                     if n_classes > 1:
                         # jnb = JenksNaturalBreaks(n_classes)
@@ -52,13 +52,8 @@ class JenksSGD(Optimizer):
                         WB_cuda_flatten = s_W.flatten()
                         WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                         WB_cuda_sorted = WB_cuda_sorted.reshape(s_W.shape)
-                        print(WB_cuda_sorted)
-                        # Call the custom CUDA function
-                        print(WB_cuda_indices)
 
                         var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-                        print(var.shape)
-                        print(WB_cuda_sorted.shape)
                         var_min = var.argmin().item()
 
                         indices_ = WB_cuda_indices[:var_min]
@@ -76,9 +71,9 @@ class JenksSGD(Optimizer):
                         velocity = momentum * velocity + scale * param.grad
                         param.data -= lr * velocity
                 else:  # Assuming bias vectors have 1 dimension
-                    s_B = torch.mul(param, param.grad).cpu().numpy().flatten()  # Move to CPU, convert to NumPy, and flatten
-                    s_B = np.abs(s_B)
-                    unique_values = np.unique(s_B)
+                    s_B = torch.mul(param, param.grad)  # Move to CPU, convert to NumPy, and flatten
+                    s_B = torch.abs(s_B)
+                    unique_values = torch.unique(s_B)
                     n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
                     if n_classes > 1:
                         # jnb = JenksNaturalBreaks(n_classes)
@@ -88,12 +83,8 @@ class JenksSGD(Optimizer):
                         # indices_ = np.where(labels == 0)[0]
                         B_cuda_sorted, B_cuda_indices = s_B.sort()
                         var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
-                        print(var)
-                        print(B_cuda_sorted)
                         var_min = var.argmin().item()
                         # Print the output
-                        print(var_min)
-                        print(B_cuda_sorted)
                         indices_ = B_cuda_indices[:var_min]
                         indices = B_cuda_indices[var_min:]
                         # Update velocity
