@@ -88,20 +88,34 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 3
+EPOCHS = 1
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
 original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
 lambda_ = 0.01
 
+
+train_dir = "LeNet5_MNIST_output/"
+os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
+
+train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}.txt")
+trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}.txt")
+trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}.txt")
+val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}.txt")
+master_count = 0
 for epoch in range(EPOCHS):
     # Training loop
     print("Epoch: ", epoch)
+    with open(train_filename,"a") as f:
+        print(f"Epoch: {epoch}", file=f)
+    count = 0
+    train_loss, train_acc = 0.0, 0.0
+    train_top5acc = 0.0
     for X, y in train_dataloader:
         count += 1
         X, y = X.to(device), y.to(device)
-        
+        master_count += 1
         model.train()
         
         y_pred = model(X)
@@ -114,7 +128,6 @@ for epoch in range(EPOCHS):
         acc_5 = top5accuracy(y_pred, y)
         train_top5acc += acc_5
         train_acc += acc
-        train_filename = f"LeNet5_MNIST_output/training_log_{timestamp}_{momentum}.txt"
         with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Top 5 Acc: {train_top5acc/count: .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
         optimizer.zero_grad()
@@ -139,7 +152,7 @@ val_top5acc = 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
-with open("output/output.txt","a") as f:
+with open("LeNet5_MNIST_output/output.txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
@@ -171,7 +184,6 @@ with torch.inference_mode():
         top5_acc = top5accuracy(y_pred, y)
         val_top5acc += top5_acc
         val_acc += acc
-        val_filename = f"output/validation_log_{timestamp}_{momentum}.txt"
         with open(val_filename,"a") as f:
             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
         
@@ -180,7 +192,7 @@ with torch.inference_mode():
     
 writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
 writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("output/output.txt","a") as f:
-    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+with open("LeNet5_MNIST_output/output.txt","a") as f:
+    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
 torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
