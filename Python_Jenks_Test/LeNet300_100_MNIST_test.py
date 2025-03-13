@@ -90,7 +90,7 @@ original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
 lambda_ = 0.01
 
 
-train_dir = "LeNet5_MNIST_output/"
+train_dir = "LeNet300_100_MNIST_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}.txt")
@@ -134,7 +134,7 @@ for epoch in range(EPOCHS):
         trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)
         # Calculate the trace
-        trace_filename = f"LeNet5_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
+        # trace_filename = f"LeNet300_100_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
         with open(trace_filename,"a") as f:
             print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
         
@@ -150,11 +150,11 @@ with open("LeNet5_MNIST_output/output.txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
-trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
+# trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"LeNet5_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"  
+sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"  
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)

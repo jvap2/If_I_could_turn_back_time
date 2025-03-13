@@ -2,3 +2,5 @@ Able to prune the weights
 Epoch: 1| Train loss:  8356.39975| Train acc:  0.88565| Val loss:  0.84559| Val acc:  0.86550
 Able to prune the weights
 Able to prune the weights
+Able to prune the weights
+Epoch: 0| Train loss:  2555.20710| Train acc:  0.87819| Val loss:  0.74128| Val acc:  0.85700

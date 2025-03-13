@@ -88,15 +88,15 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 1
+EPOCHS = 2
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
-original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
+original_magnitude = sum(torch.norm(p) for p in model.parameters())
 lambda_ = 0.01
 
 
-train_dir = "LeNet5_MNIST_output/"
+train_dir = "LeNet5_MNIST_output_L1/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}.txt")
@@ -120,7 +120,7 @@ for epoch in range(EPOCHS):
         
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
-        l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+        l2_reg = sum(torch.norm(p) for p in model.parameters())
         loss = loss.clone() + lambda_ * l2_reg  
         train_loss += loss.item()
 
@@ -140,7 +140,7 @@ for epoch in range(EPOCHS):
         trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)
         # Calculate the trace
-        trace_filename = f"LeNet5_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
+        trace_filename = f"LeNet5_MNIST_output_L1/trace_log_{timestamp}_{momentum}.txt"
         with open(trace_filename,"a") as f:
             print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
         
@@ -152,15 +152,15 @@ val_top5acc = 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
-with open("LeNet5_MNIST_output/output.txt","a") as f:
+with open("LeNet5_MNIST_output_L1/output.txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
-trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
+trace_val_filename = f"LeNet5_MNIST_output_L1/trace_val_log_{timestamp}_{momentum}.txt"
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"LeNet5_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"  
+sparsity_filename = f"LeNet5_MNIST_output_L1/sparisty_log_{timestamp}_{momentum}.txt"  
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
@@ -192,7 +192,7 @@ with torch.inference_mode():
     
 writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
 writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("LeNet5_MNIST_output/output.txt","a") as f:
+with open("LeNet5_MNIST_output_L1/output.txt","a") as f:
     print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
 torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
