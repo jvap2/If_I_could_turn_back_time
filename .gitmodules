@@ -1,3 +1,9 @@
 [submodule "modulus"]
 	path = modulus
 	url = https://github.com/NVIDIA/modulus.git
+[submodule "Python_Jenks_Test/GSM-SGD"]
+	path = Python_Jenks_Test/GSM-SGD
+	url = https://github.com/DingXiaoH/GSM-SGD.git
+[submodule "Python_Jenks_Test/snip-public"]
+	path = Python_Jenks_Test/snip-public
+	url = https://github.com/namhoonlee/snip-public.git

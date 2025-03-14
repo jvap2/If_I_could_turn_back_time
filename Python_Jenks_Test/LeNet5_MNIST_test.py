@@ -32,10 +32,14 @@ imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
 mean = imgs.view(1, -1).mean(dim=1)    
 std = imgs.view(1, -1).std(dim=1)     
 
-mnist_transforms = transforms.Compose([transforms.ToTensor(),
+mnist_transforms_train = transforms.Compose([transforms.ToTensor(),
+                                       transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
                                        transforms.Normalize(mean=mean, std=std)])
 
-train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=mnist_transforms)
+mnist_transforms = transforms.Compose([transforms.ToTensor(),
+                                        transforms.Normalize(mean=mean, std=std)])
+
+train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=mnist_transforms_train)
 test_dataset = datasets.MNIST(root="./datasets/", train=False, download=False, transform=mnist_transforms)
 
 train_size = int(0.9 * len(train_val_dataset))
@@ -88,7 +92,7 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 2
+EPOCHS = 4
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
