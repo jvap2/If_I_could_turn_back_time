@@ -2,7 +2,7 @@ import torch
 from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-
+from torch.optim import SGD
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import Accuracy
 from torchmetrics.classification import MulticlassAccuracy
@@ -87,7 +87,7 @@ model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
-optimizer = JenksSGD_Noise(params=model.parameters(), lr=5e-3, scale=5e-4, momentum=momentum)
+optimizer = SGD(model.parameters(), lr=5e-3, momentum=momentum)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
