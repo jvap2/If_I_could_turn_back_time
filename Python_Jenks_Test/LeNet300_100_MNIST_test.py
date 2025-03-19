@@ -2,7 +2,7 @@ import torch
 from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-
+from torch.optim import SGD
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import Accuracy
 from torchmetrics.classification import MulticlassAccuracy
@@ -87,6 +87,7 @@ model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
+optimizer_SGD = SGD(params=model.parameters(), lr=5e-3, momentum=momentum)
 optimizer = JenksSGD_Noise(params=model.parameters(), lr=5e-3, scale=5e-4, momentum=momentum)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 accuracy = Accuracy(task='multiclass', num_classes=10)
@@ -154,7 +155,10 @@ while master_count < 3000:
         with backpack(DiagHessian(), HMP()):
         # keep graph for autodiff HVPs
             loss.backward()
-        optimizer.step()
+        if count % 10 == 0:
+            optimizer.step()
+        else:
+            optimizer_SGD.step()
         params = torch.cat([p.data.flatten() for p in model.parameters()])
 
         trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)

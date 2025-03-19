@@ -1,2 +1,6 @@
 Able to prune the weights
 Epoch: 16| Train loss:  193.47040| Train acc:  0.05666| Val loss:  0.76911| Val acc:  0.79697
+Able to prune the weights
+Epoch: 16| Train loss:  196.19497| Train acc:  0.05645| Val loss:  0.79832| Val acc:  0.82835
+Able to prune the weights
+Epoch: 16| Train loss:  93.71588| Train acc:  0.05937| Val loss:  0.54669| Val acc:  0.92375
