@@ -9,12 +9,10 @@ from torchmetrics.classification import MulticlassAccuracy
 from datetime import datetime
 import os
 import torch.nn as nn
-from networks import LeNet5V1,alexnet,lenet5v1
 from torch.autograd.functional import hessian
 from functions import hutchinson_trace_hmp,rademacher
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
-from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import torch

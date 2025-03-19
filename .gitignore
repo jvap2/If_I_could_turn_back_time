@@ -11,3 +11,6 @@ Python_Jenks_Test/datasets/
 Python_Jenks_Test/runs/
 data/
 runs/
+Plane_Tests/cuda_helpers.py
+Plane_Tests/custom_optimizer.py
+Plane_Tests/functions.py

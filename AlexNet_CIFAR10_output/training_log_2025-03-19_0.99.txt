@@ -19,3 +19,4 @@ Iteration: 18| Loss:  47.82247| Acc:  0.13333 | L_2:  0.98654
 Iteration: 19| Loss:  47.80669| Acc:  0.13684 | L_2:  0.98510
 Iteration: 20| Loss:  47.78417| Acc:  0.14000 | L_2:  0.98362
 Iteration: 21| Loss:  47.74632| Acc:  0.14762 | L_2:  0.98208
+Iteration: 22| Loss:  47.69873| Acc:  0.16364 | L_2:  0.98049
