@@ -26,6 +26,8 @@ from torchvision import io  # I/O operations for images and videos
 # For loading custom CUDA extensions
 from torch.utils.cpp_extension import load_inline, CUDA_HOME
 
+# os.environ['TORCH_CUDA_ARCH_LIST'] = "8.9"
+
 # Verify the CUDA install path 
 print(CUDA_HOME)
 

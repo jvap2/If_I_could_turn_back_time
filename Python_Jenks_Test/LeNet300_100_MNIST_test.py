@@ -15,44 +15,66 @@ from functions import hutchinson_trace_hmp,rademacher
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 from functions import exact_trace
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+import torch
+# from custom_optimizer import JenksSGD,PruneWeights
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+from torch.utils.tensorboard import SummaryWriter
+from torchmetrics import Accuracy
+from torchmetrics.classification import MulticlassAccuracy
+from datetime import datetime
+import os
+import torch.nn as nn
+# from networks import LeNet5V1,alexnet,lenet5v1
+from torch.autograd.functional import hessian
+# from functions import hutchinson_trace_hmp,rademacher
+from backpack import backpack, extend
+from backpack.extensions import HMP, DiagHessian
+# from functions import exact_trace
 
 torch.cuda.empty_cache()
-# train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
-# test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
+train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
+test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-
+print(f"Using {device} device")
 
 
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=transforms.ToTensor())
-test_dataset = datasets.MNIST(root="./datasets", train=False, download=False, transform=transforms.ToTensor())
 
 imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
 
-mean = imgs.view(1, -1).mean(dim=1)    
-std = imgs.view(1, -1).std(dim=1)     
+mean = imgs.view(1, -1).mean(dim=1)
+std = imgs.view(1, -1).std(dim=1)
+
+# mnist_transforms_train = transforms.Compose([transforms.ToTensor(),
+#                                        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+#                                        transforms.Normalize(mean=mean, std=std)])
 
 mnist_transforms = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Normalize(mean=mean, std=std)])
+                                        transforms.Normalize(mean=mean, std=std)])
 
-train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=mnist_transforms)
-test_dataset = datasets.MNIST(root="./datasets/", train=False, download=False, transform=mnist_transforms)
 
-train_size = int(0.9 * len(train_val_dataset))
+
+train_size = int(0.8 * len(train_val_dataset))
 val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
 
-BATCH_SIZE = 24
+train_dataset.dataset.transform = mnist_transforms
+val_dataset.dataset.transform = mnist_transforms
+BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+test_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 
-    
 
-model = nn.Sequential(            
+
+model = nn.Sequential(
     nn.Flatten(),
     nn.Linear(in_features=784, out_features=300),
     nn.ReLU(),
@@ -66,6 +88,7 @@ loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
 optimizer = JenksSGD(params=model.parameters(), lr=5e-3, scale=5e-4, momentum=momentum)
+scheduler = ReduceLROnPlateau(optimizer, 'min')
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -73,7 +96,7 @@ top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 # Experiment tracking
 timestamp = datetime.now().strftime("%Y-%m-%d")
 experiment_name = "MNIST"
-model_name = "LeNet5V1"
+model_name = "LeNet300V100"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -82,7 +105,7 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 1
+EPOCHS = 5
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
@@ -98,9 +121,12 @@ trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}.txt"
 trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}.txt")
 val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}.txt")
 master_count = 0
-for epoch in range(EPOCHS):
+epoch = 0
+while master_count < 3000:
     # Training loop
     print("Epoch: ", epoch)
+    epoch += 1
+    model.train()
     with open(train_filename,"a") as f:
         print(f"Epoch: {epoch}", file=f)
     count = 0
@@ -111,11 +137,11 @@ for epoch in range(EPOCHS):
         X, y = X.to(device), y.to(device)
         master_count += 1
         model.train()
-        
+
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
         l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-        loss = loss.clone() + lambda_ * l2_reg  
+        loss = loss.clone() + lambda_ * l2_reg
         train_loss += loss.item()
 
         acc = accuracy(y_pred, y)
@@ -137,7 +163,8 @@ for epoch in range(EPOCHS):
         # trace_filename = f"LeNet300_100_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
         with open(trace_filename,"a") as f:
             print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
-        
+    scheduler.step(train_acc)
+
     # train_loss /= len(train_dataloader)
     # train_acc /= len(train_dataloader)
     # Validation loop
@@ -146,7 +173,7 @@ val_top5acc = 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
-with open("LeNet5_MNIST_output/output.txt","a") as f:
+with open("LeNet300_100_MNIST_output/output.txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
@@ -154,17 +181,17 @@ model = prunedmodel.to(device)
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"  
+sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
 with torch.inference_mode():
-    for X, y in val_dataloader:
+    for X, y in test_dataloader:
         count_val += 1
         X, y = X.to(device), y.to(device)
-        
+
         y_pred = model(X)
-        
+
         loss = loss_fn(y_pred, y)
         val_loss += loss.item()
         # optimizer.zero_grad()
@@ -180,13 +207,13 @@ with torch.inference_mode():
         val_acc += acc
         with open(val_filename,"a") as f:
             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
-        
-    val_loss /= len(val_dataloader)
-    val_acc /= len(val_dataloader)
-    
+
+    val_loss /= len(test_dataloader)
+    val_acc /= len(test_dataloader)
+
 writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
 writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("LeNet5_MNIST_output/output.txt","a") as f:
+with open("LeNet300_100_MNIST_output/output.txt","a") as f:
     print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
 torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
