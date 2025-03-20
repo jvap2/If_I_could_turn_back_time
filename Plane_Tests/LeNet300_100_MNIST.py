@@ -169,20 +169,20 @@ while master_count < 3000:
 val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0
 count_val = 0
-prunedmodel = PruneWeights(model)
-'''Make sure the weights are back on the device'''
-with open("LeNet300_100_MNIST_output/output.txt","a") as f:
-    print("Able to prune the weights", file=f)
-model = prunedmodel.to(device)
+# prunedmodel = PruneWeights(model)
+# '''Make sure the weights are back on the device'''
+# with open("LeNet300_100_MNIST_output/output.txt","a") as f:
+#     print("Able to prune the weights", file=f)
+# model = prunedmodel.to(device)
+# # model.eval()
+# # trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
+# non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
+# total_params = sum(p.numel() for p in model.parameters())
+# sparsity = 1 - non_zero_params / total_params
+# sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"
 # model.eval()
-# trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
-non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
-total_params = sum(p.numel() for p in model.parameters())
-sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"
-model.eval()
-with open(sparsity_filename,"a") as f:
-    print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+# with open(sparsity_filename,"a") as f:
+#     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
 with torch.inference_mode():
     for X, y in test_dataloader:
         count_val += 1

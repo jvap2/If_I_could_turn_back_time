@@ -20,3 +20,13 @@ Iteration: 19| Loss:  47.80669| Acc:  0.13684 | L_2:  0.98510
 Iteration: 20| Loss:  47.78417| Acc:  0.14000 | L_2:  0.98362
 Iteration: 21| Loss:  47.74632| Acc:  0.14762 | L_2:  0.98208
 Iteration: 22| Loss:  47.69873| Acc:  0.16364 | L_2:  0.98049
+Iteration: 23| Loss:  47.66072| Acc:  0.16087 | L_2:  0.97885
+Iteration: 24| Loss:  47.62068| Acc:  0.16667 | L_2:  0.97716
+Iteration: 25| Loss:  47.59984| Acc:  0.16400 | L_2:  0.97543
+Iteration: 26| Loss:  47.56575| Acc:  0.16538 | L_2:  0.97366
+Iteration: 27| Loss:  47.53523| Acc:  0.16296 | L_2:  0.97185
+Iteration: 28| Loss:  47.50590| Acc:  0.16429 | L_2:  0.97000
+Iteration: 29| Loss:  47.47599| Acc:  0.16552 | L_2:  0.96811
+Iteration: 30| Loss:  47.43613| Acc:  0.16333 | L_2:  0.96617
+Iteration: 31| Loss:  47.39726| Acc:  0.16452 | L_2:  0.96421
+Iteration: 32| Loss:  47.36367| Acc:  0.16250 | L_2:  0.96223

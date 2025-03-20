@@ -1,5 +1,5 @@
 import torch
-from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise
+from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.optim import SGD
@@ -117,10 +117,10 @@ lambda_ = 0.01
 train_dir = "LeNet300_100_MNIST_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 
-train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}.txt")
-trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}.txt")
-trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}.txt")
-val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}.txt")
+train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_(1).txt")
+trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_(1).txt")
+trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_(1).txt")
+val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_(1).txt")
 master_count = 0
 epoch = 0
 while master_count < 3000:
@@ -155,7 +155,7 @@ while master_count < 3000:
         with backpack(DiagHessian(), HMP()):
         # keep graph for autodiff HVPs
             loss.backward()
-        if count % 10 == 0:
+        if count % 5 == 0:
             optimizer.step()
         else:
             optimizer_SGD.step()
@@ -177,7 +177,7 @@ val_top5acc = 0.0
 count_val = 0
 prunedmodel = PruneWeights(model)
 '''Make sure the weights are back on the device'''
-with open("LeNet300_100_MNIST_output/output.txt","a") as f:
+with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
 # model.eval()
@@ -185,7 +185,7 @@ model = prunedmodel.to(device)
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
-sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}.txt"
+sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}_(1).txt"
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
@@ -217,7 +217,7 @@ with torch.inference_mode():
 
 writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
 writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("LeNet300_100_MNIST_output/output.txt","a") as f:
+with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
     print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
 ## Save model
 torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
