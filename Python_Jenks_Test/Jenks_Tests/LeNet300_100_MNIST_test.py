@@ -1,5 +1,5 @@
 import torch
-from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM
+from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.optim import SGD
@@ -15,7 +15,7 @@ from functions import hutchinson_trace_hmp,rademacher
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 from functions import exact_trace
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 
 import torch
 # from custom_optimizer import JenksSGD,PruneWeights
@@ -34,6 +34,12 @@ from torch.autograd.functional import hessian
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 # from functions import exact_trace
+
+
+train_lr_base_value = 3e-2
+train_lr_boundaries = [40, 80, 120, 160]
+train_lr_decay_factor = 0.1
+train_lr_max_epochs = 200
 
 torch.cuda.empty_cache()
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
@@ -63,13 +69,16 @@ train_size = int(0.8 * len(train_val_dataset))
 val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
+fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_dataset, lengths=[int(0.5 * len(test_dataset)), int(0.5 * len(test_dataset))])
 
 train_dataset.dataset.transform = mnist_transforms
-val_dataset.dataset.transform = mnist_transforms
+fin_val_dataset.dataset.transform = mnist_transforms
+test_dataset.dataset.transform = mnist_transforms
 BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 
 
@@ -86,10 +95,12 @@ model = nn.Sequential(
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.99
-optimizer_SGD = SGD(params=model.parameters(), lr=5e-3, momentum=momentum)
-optimizer = JenksSGD_Noise(params=model.parameters(), lr=5e-3, scale=5e-4, momentum=momentum)
-scheduler = ReduceLROnPlateau(optimizer, 'min')
+momentum = 0.9
+warmup_epochs = 20
+# optimizer_SGD = SGD(params=model.parameters(), lr=5e-3, momentum=momentum)
+optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.03, scale=1e-3, momentum=momentum)
+# optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
+scheduler = StepLR(optimizer, step_size = 40, gamma = 0.1)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -121,15 +132,18 @@ train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_(
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_(1).txt")
 trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_(1).txt")
 val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_(1).txt")
+test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_(1).txt")
 master_count = 0
 epoch = 0
-while master_count < 3000:
+EPOCHS = 200
+for epoch in range(EPOCHS):
     # Training loop
     print("Epoch: ", epoch)
     epoch += 1
     model.train()
+    #print the epoch and learning rate
     with open(train_filename,"a") as f:
-        print(f"Epoch: {epoch}", file=f)
+        print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
     count = 0
     train_loss, train_acc = 0.0, 0.0
     train_top5acc = 0.0
@@ -138,40 +152,87 @@ while master_count < 3000:
         X, y = X.to(device), y.to(device)
         master_count += 1
         model.train()
-
+        def closure():
+            optimizer.zero_grad()  # Clear gradients
+            outputs = model(X)  # Forward pass
+            loss = loss_fn(outputs, y)  # Compute loss
+            l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+            loss = loss.clone() + lambda_ * l2_reg
+            loss.backward()  # Backward pass
+            return loss
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
-        l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-        loss = loss.clone() + lambda_ * l2_reg
         train_loss += loss.item()
-
+        l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+        # loss = loss.clone() + lambda_ * l2_reg
+        optimizer.zero_grad()
         acc = accuracy(y_pred, y)
         acc_5 = top5accuracy(y_pred, y)
         train_top5acc += acc_5
         train_acc += acc
         with open(train_filename,"a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Top 5 Acc: {train_top5acc/count: .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
-        optimizer.zero_grad()
-        with backpack(DiagHessian(), HMP()):
-        # keep graph for autodiff HVPs
-            loss.backward()
-        if count % 5 == 0:
-            optimizer.step()
-        else:
-            optimizer_SGD.step()
-        params = torch.cat([p.data.flatten() for p in model.parameters()])
+        # with backpack(DiagHessian(), HMP()):
+        # # keep graph for autodiff HVPs
+        loss.backward()
+        # for name, param in model.named_parameters():
+        #     if param.grad is None:
+        #         print(f"No gradient for parameter: {name}")
+        #     else:
+        #         print(f"Gradient exists for parameter: {name}, Shape: {param.grad.shape}")
+        optimizer.step(epoch)
+    scheduler.step()
 
-        trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+    #     trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)
         # Calculate the trace
         # trace_filename = f"LeNet300_100_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
-        with open(trace_filename,"a") as f:
-            print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
-    scheduler.step(train_acc)
+    #     with open(trace_filename,"a") as f:
+    #         print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
+    # scheduler.step(train_acc)
 
     # train_loss /= len(train_dataloader)
     # train_acc /= len(train_dataloader)
     # Validation loop
+    model.eval()
+    with torch.inference_mode():
+        with open(val_filename,"a") as f:
+            print(f"Epoch: {epoch}", file=f)
+        val_loss, val_acc = 0.0, 0.0
+        val_top5acc = 0.0
+        count_val = 0
+        for X, y in val_dataloader:
+            count_val += 1
+            X, y = X.to(device), y.to(device)
+
+            y_pred = model(X)
+
+            loss = loss_fn(y_pred, y)
+            val_loss += loss.item()
+            # optimizer.zero_grad()
+            # with backpack(DiagHessian(), HMP()):
+            # # keep graph for autodiff HVPs
+            #     loss.backward()
+            # trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+            # with open(trace_val_filename,"a") as f:
+            #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
+            acc = accuracy(y_pred, y)
+            top5_acc = top5accuracy(y_pred, y)
+            val_top5acc += top5_acc
+            val_acc += acc
+            with open(val_filename,"a") as f:
+                print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
+
+        val_loss /= len(test_dataloader)
+        val_acc /= len(test_dataloader)
+
+    writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
+    writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
+    with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
+        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+    ## Save model
+    torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+
 val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0
 count_val = 0
@@ -189,7 +250,13 @@ sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{moment
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+
+model.eval()
 with torch.inference_mode():
+    with open(test_filename,"a") as f:
+        print(f"Epoch: {epoch}", file=f)
+    val_loss, val_acc = 0.0, 0.0
+    val_top5acc = 0.0
     for X, y in test_dataloader:
         count_val += 1
         X, y = X.to(device), y.to(device)
@@ -209,15 +276,8 @@ with torch.inference_mode():
         top5_acc = top5accuracy(y_pred, y)
         val_top5acc += top5_acc
         val_acc += acc
-        with open(val_filename,"a") as f:
+        with open(test_filename,"a") as f:
             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
 
     val_loss /= len(test_dataloader)
     val_acc /= len(test_dataloader)
-
-writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
-writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-    print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
-## Save model
-torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")

@@ -14,3 +14,4 @@ runs/
 Plane_Tests/cuda_helpers.py
 Plane_Tests/custom_optimizer.py
 Plane_Tests/functions.py
+Python_Jenks_Test/Jenks_Tests/models/
