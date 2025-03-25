@@ -1,5 +1,5 @@
 import torch
-from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test
+from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test, PruneWeights_Test
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.optim import SGD
@@ -84,6 +84,15 @@ test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffl
 
 
 model = nn.Sequential(
+    nn.Flatten(),
+    nn.Linear(in_features=784, out_features=300),
+    nn.ReLU(),
+    nn.Linear(in_features=300, out_features=100),
+    nn.ReLU(),
+    nn.Linear(in_features=100, out_features=10),
+).to(device)
+
+model_2 = nn.Sequential(
     nn.Flatten(),
     nn.Linear(in_features=784, out_features=300),
     nn.ReLU(),
@@ -181,7 +190,8 @@ for epoch in range(EPOCHS):
         #     else:
         #         print(f"Gradient exists for parameter: {name}, Shape: {param.grad.shape}")
         optimizer.step(epoch)
-    scheduler.step()
+    if epoch < 121:
+        scheduler.step()
 
     #     trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)
@@ -223,33 +233,40 @@ for epoch in range(EPOCHS):
             with open(val_filename,"a") as f:
                 print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
 
-        val_loss /= len(test_dataloader)
-        val_acc /= len(test_dataloader)
+        # val_loss /= len(test_dataloader)
+        # val_acc /= len(test_dataloader)
 
     writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
     with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc/master_count: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
     ## Save model
     torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
 
 val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0
 count_val = 0
-prunedmodel = PruneWeights(model)
+# model_2.load_state_dict(model.state_dict())
+# model_2 = model_2.to(device)
+# model_2.eval()
+prunedmodel = optimizer.PruneWeights_Test(model)
+# prunedmodel_2 = optimizer.PruneWeights_Test(model_2)
 '''Make sure the weights are back on the device'''
 with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
     print("Able to prune the weights", file=f)
 model = prunedmodel.to(device)
+# model_2 = prunedmodel_2.to(device)
 # model.eval()
 # trace_val_filename = f"LeNet5_MNIST_output/trace_val_log_{timestamp}_{momentum}.txt"
 non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
+non_zero_params_2 = sum(torch.count_nonzero(p) for p in model_2.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
+sparsity_2 = 1 - non_zero_params_2 / total_params
 sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}_(1).txt"
 model.eval()
 with open(sparsity_filename,"a") as f:
-    print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+    print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f} | Sparsity from Test: {sparsity_2: .5f}", file=f)
 
 model.eval()
 with torch.inference_mode():
@@ -281,3 +298,35 @@ with torch.inference_mode():
 
     val_loss /= len(test_dataloader)
     val_acc /= len(test_dataloader)
+
+
+# model_2.eval()
+# with torch.inference_mode():
+#     with open(test_filename,"a") as f:
+#         print(f"Epoch: {epoch}", file=f)
+#     val_loss, val_acc = 0.0, 0.0
+#     val_top5acc = 0.0
+#     for X, y in test_dataloader:
+#         count_val += 1
+#         X, y = X.to(device), y.to(device)
+
+#         y_pred = model_2(X)
+
+#         loss = loss_fn(y_pred, y)
+#         val_loss += loss.item()
+#         # optimizer.zero_grad()
+#         # with backpack(DiagHessian(), HMP()):
+#         # # keep graph for autodiff HVPs
+#         #     loss.backward()
+#         # trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
+#         # with open(trace_val_filename,"a") as f:
+#         #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
+#         acc = accuracy(y_pred, y)
+#         top5_acc = top5accuracy(y_pred, y)
+#         val_top5acc += top5_acc
+#         val_acc += acc
+#         with open(test_filename,"a") as f:
+#             print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
+
+#     val_loss /= len(test_dataloader)
+#     val_acc /= len(test_dataloader)
