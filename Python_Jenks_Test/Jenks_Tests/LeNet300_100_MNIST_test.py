@@ -16,6 +16,8 @@ from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
+from time import time
+from cuda_helpers import get_memory_free_MiB
 
 import torch
 # from custom_optimizer import JenksSGD,PruneWeights
@@ -76,7 +78,7 @@ fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
 BATCH_SIZE = 256
 
-train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
@@ -107,7 +109,7 @@ loss_fn = extend(loss_fn)
 momentum = 0.9
 warmup_epochs = 20
 # optimizer_SGD = SGD(params=model.parameters(), lr=5e-3, momentum=momentum)
-optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.03, scale=1e-3, momentum=momentum)
+optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.03, scale=1e-3, momentum=momentum, nestrov=True)
 # optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
 scheduler = StepLR(optimizer, step_size = 40, gamma = 0.1)
 accuracy = Accuracy(task='multiclass', num_classes=10)
@@ -156,19 +158,23 @@ for epoch in range(EPOCHS):
     count = 0
     train_loss, train_acc = 0.0, 0.0
     train_top5acc = 0.0
+    start = time()
+    print(f"Memory free: {get_memory_free_MiB(0)} MiB")
     for X, y in train_dataloader:
+        # print(torch.cuda.memory_summary())
+        torch.cuda.empty_cache()
         count += 1
         X, y = X.to(device), y.to(device)
         master_count += 1
         model.train()
-        def closure():
-            optimizer.zero_grad()  # Clear gradients
-            outputs = model(X)  # Forward pass
-            loss = loss_fn(outputs, y)  # Compute loss
-            l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-            loss = loss.clone() + lambda_ * l2_reg
-            loss.backward()  # Backward pass
-            return loss
+        # def closure():
+        #     optimizer.zero_grad()  # Clear gradients
+        #     outputs = model(X)  # Forward pass
+        #     loss = loss_fn(outputs, y)  # Compute loss
+        #     l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+        #     loss = loss.clone() + lambda_ * l2_reg
+        #     loss.backward()  # Backward pass
+        #     return loss
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
@@ -190,8 +196,13 @@ for epoch in range(EPOCHS):
         #     else:
         #         print(f"Gradient exists for parameter: {name}, Shape: {param.grad.shape}")
         optimizer.step(epoch)
+    stop = time()
+    print(f"Time taken for epoch: {stop-start}")
     if epoch < 121:
         scheduler.step()
+    if epoch == EPOCHS/2:
+        for param_group in optimizer.param_groups:
+            param_group['momentum'] = 0.99
 
     #     trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
         # trace = exact_trace(model_lenet5v1)

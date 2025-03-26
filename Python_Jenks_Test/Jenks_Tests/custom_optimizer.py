@@ -118,10 +118,11 @@ class JenksSGD_Test(Optimizer):
                 self.state[param]['agg_score'] = torch.zeros_like(param.data)
         for group in self.param_groups:
             for param in group['params']:
-                self.lookahead_param = torch.zeros_like(param.data)
+                self.state[param]['lookahead'] = torch.zeros_like(param.data, requires_grad=True)
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def step(self, epoch, closure=None):
+        torch.cuda.empty_cache()
         loss = None
         if closure is not None:
             loss = closure()
@@ -145,15 +146,23 @@ class JenksSGD_Test(Optimizer):
                 agg_score = self.state[param]['agg_score']
 
                 if self.nestrov:
-                    self.lookahead_param = param.data + momentum * velocity
-                    param.grad = torch.autograd.grad(self.lookahead_velocity, param, grad_outputs=param.grad, retain_graph=True)[0]
+                    # print(f"self.state[param]['lookahead'] requires_grad: {self.state[param]['lookahead'].requires_grad}")
+                    # print(f"param requires_grad: {param.requires_grad}")
+                    self.state[param]['lookahead'] = (param + momentum * velocity).requires_grad_(True)
+                    if param.grad is None:
+                        raise RuntimeError("param.grad is None. Ensure gradients are computed before calling step().")
+                    computed_grad = torch.autograd.grad(self.state[param]['lookahead'], param, grad_outputs=param.grad, retain_graph=True, allow_unused=True)[0]
+                    param.grad = computed_grad.detach()
                 if epoch < self.warmup_epochs:
                     if self.nestrov:
-                        velocity = momentum * velocity - lr * (scale * self.lookahead_param + param.grad)
-                        param.data += velocity
+                        # velocity = momentum * velocity - lr * (scale * self.state[param]['lookahead'] + param.grad)
+                        velocity.mul_(momentum).sub_(lr * (scale * self.state[param]['lookahead'] + param.grad))
+                        param.data= velocity
                     else:
-                        velocity = momentum * velocity + scale * param.data + param.grad
-                        param.data -= lr * velocity
+                        # velocity = momentum * velocity + scale * param.data + param.grad
+                        velocity.mul_(momentum).add_(scale * param.data + param.grad)
+                        # param.data -= lr * velocity
+                        param.data.sub_(lr * velocity)
                     self.state[param]['velocity'] = velocity
                     score = torch.abs(param.grad * param.data)
                     agg_score += score
@@ -177,6 +186,8 @@ class JenksSGD_Test(Optimizer):
                             WB_cuda_flatten = s_W.flatten()
                             WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                             WB_cuda_sorted = WB_cuda_sorted.reshape(s_W.shape)
+                            lookahead = self.state[param]['lookahead']
+                            lookahead_flat = lookahead.view(-1)
 
                             var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                             var_min = var.argmin().item()
@@ -184,15 +195,21 @@ class JenksSGD_Test(Optimizer):
                             indices_ = WB_cuda_indices[:var_min]
                             indices = WB_cuda_indices[var_min:]
                             if self.nestrov:
-                                velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
-                                velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
-                                param_data_flat[indices] += velocity_flat[indices]
-                                param_data_flat[indices_] += velocity_flat[indices_]
+                                # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
+                                velocity_flat[indices].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices] + param_grad_flat[indices]))
+                                # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
+                                velocity_flat[indices_].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices_]))
+                                # param_data_flat[indices] += velocity_flat[indices]
+                                param_data_flat.add_(velocity_flat)
+                                # param_data_flat[indices_] += velocity_flat[indices_]
                             else:
-                                velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
-                                velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
-                                param_data_flat[indices] -= lr * velocity_flat[indices]
-                                param_data_flat[indices_] -= lr * velocity_flat[indices_]
+                                # velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
+                                velocity_flat[indices_].mul_(momentum).add_(scale * param_data_flat[indices_])
+                                velocity_flat[indices].mul_(momentum).add_(scale * param_data_flat[indices] + param_grad_flat[indices])
+                                # velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
+                                # param_data_flat[indices] -= lr * velocity_flat[indices]
+                                # param_data_flat[indices_] -= lr * velocity_flat[indices_]
+                                param_data_flat.add_(velocity_flat)
 
                             # Update parameters
 
@@ -220,18 +237,24 @@ class JenksSGD_Test(Optimizer):
                         # Print the output
                         indices_ = B_cuda_indices[:var_min]
                         indices = B_cuda_indices[var_min:]
+                        lookahead = self.state[param]['lookahead']
+                        lookahead_flat = lookahead.view(-1)
                         # Update velocity
                         velocity_flat = velocity.view(-1)
                         param_data_flat = param.data.view(-1)
                         param_grad_flat = param.grad.data.view(-1)
                         if self.nestrov:
-                            velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
-                            velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
-                            param_data_flat[indices] += velocity_flat[indices]
-                            param_data_flat[indices_] += velocity_flat[indices_]
+                            # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
+                            velocity_flat[indices].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices] + param_grad_flat[indices]))
+                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
+                            velocity_flat[indices_].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices_]))
+                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
+                            param_data_flat += velocity_flat
                         else:
-                            velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
-                            velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
+                            # velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
+                            velocity_flat[indices].mul_(momentum).add_(scale * param_data_flat[indices] + param_grad_flat[indices])
+                            velocity_flat[indices_].mul_(momentum).add_(scale * param_data_flat[indices_])
+                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
                             param_data_flat[indices] -= lr * velocity_flat[indices]
                             param_data_flat[indices_] -= lr * velocity_flat[indices_]
                         # Update parameters
@@ -291,6 +314,7 @@ class JenksSGD_Test(Optimizer):
                 print("Invalid parameter dimension")
                 continue
         return model
+    
 
 
 class JenksSGD_Noise(Optimizer):

@@ -22,6 +22,7 @@ from torch import tensor  # Tensor data structure
 import torchvision as tv  # PyTorch's computer vision library
 import torchvision.transforms.functional as tvf  # Functional image transformations
 from torchvision import io  # I/O operations for images and videos
+import pynvml
 
 # For loading custom CUDA extensions
 from torch.utils.cpp_extension import load_inline, CUDA_HOME
@@ -30,6 +31,12 @@ from torch.utils.cpp_extension import load_inline, CUDA_HOME
 
 # Verify the CUDA install path 
 print(CUDA_HOME)
+
+def get_memory_free_MiB(gpu_index):
+    pynvml.nvmlInit()
+    handle = pynvml.nvmlDeviceGetHandleByIndex(int(gpu_index))
+    mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return mem_info.free // 1024 ** 2
 
 
 def load_cuda(cuda_src, cpp_src, funcs, opt=False, verbose=False):
@@ -132,6 +139,8 @@ torch::Tensor jenks_optimization_biases_cuda(torch::Tensor B){
     // Check for errors
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 
+    cudaDeviceSynchronize();
+
     return var;
 }
 '''
@@ -194,6 +203,8 @@ torch::Tensor jenks_optimization_cuda(torch::Tensor WB){
 
     // Check for errors
     C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    cudaDeviceSynchronize();
 
     return var;
 }
