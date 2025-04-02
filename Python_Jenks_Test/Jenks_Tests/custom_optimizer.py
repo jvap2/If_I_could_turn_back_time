@@ -107,11 +107,16 @@ class JenksSGD(Optimizer):
         return loss
     
 class JenksSGD_Test(Optimizer):
-    def __init__(self, params, warmup_epochs, lr=5e-3, scale=5e-4, momentum=0.9, nestrov=False):
+    def __init__(self, params, warmup_epochs, lr=5e-3, scale=5e-4, momentum=0.9, nestrov=False, bias = True):
         defaults = dict(lr=lr, scale=scale, momentum=momentum)
         super().__init__(params, defaults)
         self.warmup_epochs = warmup_epochs
         self.nestrov = nestrov
+        self.bias = bias
+        if self.bias:
+            self.name = "JenksSGD_Test"
+        else:
+            self.name = "JenksSGD_Test_Weights"
         ##Define agg scores which should be the same size as the parameters
         for group in self.param_groups:
             for param in group['params']:
@@ -119,6 +124,9 @@ class JenksSGD_Test(Optimizer):
         for group in self.param_groups:
             for param in group['params']:
                 self.state[param]['lookahead'] = torch.zeros_like(param.data, requires_grad=True)
+        for group in self.param_groups:
+            for param in group['params']:
+                self.state[param]['prev_weights'] = torch.zeros_like(param.data, requires_grad=True)
 
     # @torch.no_grad()
     def step(self, epoch, closure=None):
@@ -142,125 +150,144 @@ class JenksSGD_Test(Optimizer):
                 if 'agg_score' not in self.state[param]:
                     print("Still no agg_score")
                     self.state[param]['agg_score'] = torch.zeros_like(param.data)
-                velocity = self.state[param]['velocity']
-                agg_score = self.state[param]['agg_score']
+                # self.state[param]['velocity'] = param.data - self.state[param]['prev_weights']
+                # self.state[param]['prev_weights'] = param.data
+                self.state[param]['agg_score']
+                # agg_score = self.state[param]['agg_score']
 
                 if self.nestrov:
                     # print(f"self.state[param]['lookahead'] requires_grad: {self.state[param]['lookahead'].requires_grad}")
                     # print(f"param requires_grad: {param.requires_grad}")
-                    self.state[param]['lookahead'] = (param + momentum * velocity).requires_grad_(True)
+                    self.state[param]['lookahead'] = (param - momentum * self.state[param]['velocity']).requires_grad_(True)
                     if param.grad is None:
                         raise RuntimeError("param.grad is None. Ensure gradients are computed before calling step().")
                     computed_grad = torch.autograd.grad(self.state[param]['lookahead'], param, grad_outputs=param.grad, retain_graph=True, allow_unused=True)[0]
                     param.grad = computed_grad.detach()
                 if epoch < self.warmup_epochs:
-                    if self.nestrov:
-                        # velocity = momentum * velocity - lr * (scale * self.state[param]['lookahead'] + param.grad)
-                        velocity.mul_(momentum).sub_(lr * (scale * self.state[param]['lookahead'] + param.grad))
-                        param.data= velocity
-                    else:
-                        # velocity = momentum * velocity + scale * param.data + param.grad
-                        velocity.mul_(momentum).add_(scale * param.data + param.grad)
-                        # param.data -= lr * velocity
-                        param.data.sub_(lr * velocity)
-                    self.state[param]['velocity'] = velocity
+                    # if self.nestrov:
+                    #     # velocity = momentum * velocity - lr * (scale * self.state[param]['lookahead'] + param.grad)
+                    #     self.state[param]['velocity'].mul_(momentum).add_(lr * (scale * param.data + param.grad))
+                    #     param.data.sub_(self.state[param]['velocity'])
+                    # else:
+                    # velocity = momentum * velocity + scale * param.data + param.grad
+                    self.state[param]['velocity'].mul_(momentum).add_(scale * param.data + param.grad)
+                    # param.data -= lr * velocity
+                    param.data.sub_(lr * self.state[param]['velocity'])
+                    # self.state[param]['velocity'] = velocity
                     score = torch.abs(param.grad * param.data)
-                    agg_score += score
-                    self.state[param]['agg_score'] = agg_score
+                    # agg_score += score
+                    self.state[param]['agg_score'] += score
                 else:
                     # Check if the parameter is a weight matrix or bias vector
                     if param.dim() in [2, 4]:  # Assuming weight matrices have more than 1 dimension
                         # Custom weight update: Scale gradients before applying update
                         # print(torch.mul(param, param.grad).cpu().numpy())
-                        s_W = torch.abs(param * param.grad)  # Move to CPU, convert to NumPy, and flatten
-                        agg_score += s_W
-                        self.state[param]['agg_score'] = agg_score
+                        s_W = torch.abs(param.data * param.grad)  # Move to CPU, convert to NumPy, and flatten
+                        # agg_score += s_W
+                        self.state[param]['agg_score'] += s_W
                         # s_W = -s_W
                         unique_values = torch.unique(s_W)
                         n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
                         if n_classes > 1:
                             # # Update velocity
-                            velocity_flat = velocity.view(-1)
+                            velocity_flat = self.state[param]['velocity'].view(-1)
                             param_data_flat = param.data.view(-1)
                             param_grad_flat = param.grad.data.view(-1)
                             WB_cuda_flatten = s_W.flatten()
                             WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                             WB_cuda_sorted = WB_cuda_sorted.reshape(s_W.shape)
-                            lookahead = self.state[param]['lookahead']
-                            lookahead_flat = lookahead.view(-1)
-
+                            # lookahead = self.state[param]['lookahead']
+                            # lookahead_flat = self.state[param]['lookahead'].view(-1)
                             var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                             var_min = var.argmin().item()
+                            # print(f"Weight")
+                            # print(f"var_min: {var_min}")
+                            # print(f"WB_cuda_indices size: {WB_cuda_indices.size()}")
 
                             indices_ = WB_cuda_indices[:var_min]
-                            indices = WB_cuda_indices[var_min:]
-                            if self.nestrov:
-                                # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
-                                velocity_flat[indices].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices] + param_grad_flat[indices]))
-                                # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
-                                velocity_flat[indices_].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices_]))
-                                # param_data_flat[indices] += velocity_flat[indices]
-                                param_data_flat.add_(velocity_flat)
-                                # param_data_flat[indices_] += velocity_flat[indices_]
-                            else:
-                                # velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
-                                velocity_flat[indices_].mul_(momentum).add_(scale * param_data_flat[indices_])
-                                velocity_flat[indices].mul_(momentum).add_(scale * param_data_flat[indices] + param_grad_flat[indices])
-                                # velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
-                                # param_data_flat[indices] -= lr * velocity_flat[indices]
-                                # param_data_flat[indices_] -= lr * velocity_flat[indices_]
-                                param_data_flat.add_(velocity_flat)
+                            del WB_cuda_sorted, WB_cuda_indices, var
+                            torch.cuda.empty_cache()
+                            param_grad_flat[indices_] = 0
+                            # if self.nestrov:
+                            #     # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
+                            #     velocity_flat[indices].mul_(momentum).add_(lr * (scale * param_data_flat[indices] + param_grad_flat[indices]))
+                            #     # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
+                            #     velocity_flat[indices_].mul_(momentum).add_(lr * (scale * param_data_flat[indices_]))
+                            #     # param_data_flat[indices] += velocity_flat[indices]
+                            #     param_data_flat.sub_(velocity_flat)
+                            #     # param_data_flat[indices_] += velocity_flat[indices_]
+                            # else:
+                            velocity_flat.mul_(momentum).add_(scale * param_data_flat + param_grad_flat)
+                            # velocity_flat[indices_].mul_(momentum).add_(scale * param_data_flat[indices_])
+                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
+                            param_data_flat -= lr * velocity_flat
+                            # param_data_flat[indices_] -= lr * velocity_flat[indices_]
 
                             # Update parameters
 
                             param.data = param_data_flat.view(param.data.shape)
-                            self.state[param]['velocity'] = velocity_flat.view(velocity.shape)
+                            self.state[param]['velocity'] = velocity_flat.view(self.state[param]['velocity'].shape)
+                            del param_data_flat, param_grad_flat, velocity_flat
+                            torch.cuda.empty_cache()
                         else:
                             velocity = momentum * velocity + scale * param.data + param.grad
                             param.data -= lr * velocity
                             self.state[param]['velocity'] = velocity
                     else:  # Assuming bias vectors have 1 dimension
-                        s_B = torch.mul(param, param.grad)  # Move to CPU, convert to NumPy, and flatten
-                        s_B = torch.abs(s_B)
-                        agg_score += s_B
-                        self.state[param]['agg_score'] = agg_score
-                        unique_values = torch.unique(s_B)
-                        n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
-                        # jnb = JenksNaturalBreaks(n_classes)
-                        # jnb.fit(s_B)
-                        # labels = jnb.labels_
-                        # indices = np.where(labels == 1)[0]
-                        # indices_ = np.where(labels == 0)[0]
-                        B_cuda_sorted, B_cuda_indices = s_B.sort()
-                        var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
-                        var_min = var.argmin().item()
-                        # Print the output
-                        indices_ = B_cuda_indices[:var_min]
-                        indices = B_cuda_indices[var_min:]
-                        lookahead = self.state[param]['lookahead']
-                        lookahead_flat = lookahead.view(-1)
-                        # Update velocity
-                        velocity_flat = velocity.view(-1)
-                        param_data_flat = param.data.view(-1)
-                        param_grad_flat = param.grad.data.view(-1)
-                        if self.nestrov:
-                            # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
-                            velocity_flat[indices].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices] + param_grad_flat[indices]))
-                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
-                            velocity_flat[indices_].mul_(momentum).sub_(lr * (scale * lookahead_flat[indices_]))
-                            # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
-                            param_data_flat += velocity_flat
-                        else:
+                        if self.bias:
+                            s_B = torch.mul(param, param.grad)  # Move to CPU, convert to NumPy, and flatten
+                            s_B = torch.abs(s_B)
+                            # agg_score += s_B
+                            self.state[param]['agg_score'] = s_B
+                            unique_values = torch.unique(s_B)
+                            n_classes = min(2, len(unique_values))  # Ensure n_classes is valid
+                            # jnb = JenksNaturalBreaks(n_classes)
+                            # jnb.fit(s_B)
+                            # labels = jnb.labels_
+                            # indices = np.where(labels == 1)[0]
+                            # indices_ = np.where(labels == 0)[0]
+                            B_cuda_sorted, B_cuda_indices = s_B.sort()
+                            var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                            var_min = var.argmin().item()
+                            # print(f"Bias")
+                            # print(f"var_min: {var_min}")
+                            # print(f"B_cuda_indices size: {B_cuda_indices.size()}")
+                            # Print the output
+                            indices_ = B_cuda_indices[:var_min]
+                            indices = B_cuda_indices[var_min:]
+                            del B_cuda_sorted, B_cuda_indices, var
+                            torch.cuda.empty_cache()
+                            # lookahead = self.state[param]['lookahead']
+                            # lookahead_flat = lookahead.view(-1)
+                            # Update velocity
+                            velocity_flat = self.state[param]['velocity'].view(-1)
+                            param_data_flat = param.data.view(-1)
+                            param_grad_flat = param.grad.data.view(-1)
+                            param_grad_flat[indices_] = 0
+                            # if self.nestrov:
+                            #     # velocity_flat[indices] = momentum * velocity_flat[indices] - lr * (scale * param_data_flat[indices] + param_grad_flat[indices])
+                            #     velocity_flat[indices].mul_(momentum).add_(lr * (scale * param_data_flat[indices] + param_grad_flat[indices]))
+                            #     # velocity_flat[indices_] = momentum * velocity_flat[indices_] - lr * (scale * param_data_flat[indices_] + param_grad_flat[indices_])
+                            #     velocity_flat[indices_].mul_(momentum).add_(lr * (scale * param_data_flat[indices_]))
+                            #     # param_data_flat[indices] += velocity_flat[indices]
+                            #     param_data_flat.sub_(velocity_flat)
+                            # else:
                             # velocity_flat[indices] = momentum * velocity_flat[indices] + scale * param_data_flat[indices] + param_grad_flat[indices]
-                            velocity_flat[indices].mul_(momentum).add_(scale * param_data_flat[indices] + param_grad_flat[indices])
-                            velocity_flat[indices_].mul_(momentum).add_(scale * param_data_flat[indices_])
+                            velocity_flat.mul_(momentum).add_(scale * param_data_flat + param_grad_flat)
                             # velocity_flat[indices_] = momentum * velocity_flat[indices_] + scale * param_data_flat[indices_]
-                            param_data_flat[indices] -= lr * velocity_flat[indices]
-                            param_data_flat[indices_] -= lr * velocity_flat[indices_]
-                        # Update parameters
-                        param.data = param_data_flat.view(param.data.shape)
-                        self.state[param]['velocity'] = velocity_flat.view(velocity.shape)
+                            param_data_flat -= lr * velocity_flat
+                            # Update parameters
+                            param.data = param_data_flat.view(param.data.shape)
+                            self.state[param]['velocity'] = velocity_flat.view(self.state[param]['velocity'].shape)
+                            del param_data_flat, param_grad_flat, velocity_flat
+                            torch.cuda.empty_cache()
+                        else:
+                            self.state[param]['velocity'].mul_(momentum).add_(scale * param.data + param.grad)
+                            param.data.sub_(lr * self.state[param]['velocity'])
         return loss
+    def set_lr(self, lr):
+        for group in self.param_groups:
+            group['lr'] = lr
     def PruneWeights_Test(self, model):    
         jnb = JenksNaturalBreaks(2)
         for param in model.parameters():
@@ -270,10 +297,129 @@ class JenksSGD_Test(Optimizer):
                     print("agg_score not found for param")
                     break
                 score = self.state[param]['agg_score']
-                print(f"agg_score for param: {score}")
-                print(f"agg_score shape: {score.shape}")    
+                # print(f"agg_score for param: {score}")
+                # print(f"agg_score shape: {score.shape}")    
                 WB_cuda_flatten = score.flatten()
-                print(f"WB_cuda_flatten shape: {WB_cuda_flatten.shape}")
+                # print(f"WB_cuda_flatten shape: {WB_cuda_flatten.shape}")
+
+                # Check for invalid values
+                if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
+                    print("Invalid values in WB_cuda_flatten")
+                    continue
+
+                WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                # print(f"WB_cuda_sorted shape: {WB_cuda_sorted.shape}")
+                # print(f"WB_cuda_indices shape: {WB_cuda_indices.shape}")
+                WB_cuda_sorted = WB_cuda_sorted.reshape(score.shape)
+
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var_min = var.argmin().item()
+
+                # Validate var_min
+                if var_min <= 0 or var_min > WB_cuda_indices.size(0):
+                    print(f"Invalid var_min: {var_min}")
+                    continue
+
+                indices_ = WB_cuda_indices[:var_min]
+                layer[indices_] = 0
+                layer = layer.reshape(param.data.shape)
+                param.data = layer
+            elif param.dim() == 1 and self.bias:
+                layer = param.data
+                if 'agg_score' not in self.state[param]:
+                    print("agg_score not found for param")
+                    break
+                score = self.state[param]['agg_score']
+                B_cuda_sorted, B_cuda_indices = score.sort()
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var_min = var.argmin().item()
+                # Print the output
+                indices_ = B_cuda_indices[:var_min]
+                layer[indices_] = 0
+                param.data = layer
+            else:
+                print("Invalid parameter dimension")
+                continue
+        return model
+    
+
+def torch_accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        is_correct = correct[:k].reshape(-1).float().sum(0, keepdim=True)  # Fix applied here
+        res.append(is_correct.mul_(100.0 / batch_size))
+    return res
+
+def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs):
+    ## Check if the agg score is already defined
+    if epoch == 0:
+        for group in optimizer.param_groups:
+            for param in group['params']:
+                if 'agg_score' not in optimizer.state[param]:
+                    optimizer.state[param]['agg_score'] = torch.zeros_like(param.data)
+
+    pred = net(data)
+    loss = criterion(pred, label)
+    loss.backward()
+
+    # to_concat_g = []
+    # to_concat_v = []
+    if epoch < warmup_epochs:
+        for name, param in net.named_parameters():
+            if param.dim() in [2, 4]:
+                param_data_flat = param.data.view(-1)
+                param_grad_flat = param.grad.data.view(-1)
+                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                # lookahead = self.state[param]['lookahead']
+                # lookahead_flat = self.state[param]['lookahead'].view(-1)
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = WB_cuda_indices[:var_min]
+                param_grad_flat[indices_] = 0       
+                param.grad = param_grad_flat.view(param.grad.data.shape)
+                ## Add the score to the agg score
+                optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
+            if param.dim() == 1:
+                param_data_flat = param.data.view(-1)
+                param_grad_flat = param.grad.data.view(-1)
+                B_cuda_sorted, B_cuda_indices = param_grad_flat.sort()
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = B_cuda_indices[:var_min]
+                param_grad_flat[indices_] = 0
+                param.grad = param_grad_flat.view(param.grad.data.shape)
+                optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
+
+    optimizer.step()
+    optimizer.zero_grad()
+    acc, acc5 = torch_accuracy(pred, label, (1,5))
+    return acc, acc5, loss
+
+
+def Prune_Score(optimizer):
+    ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.dim() in [2, 4]:
+                layer = param.data.flatten()
+                if 'agg_score' not in optimizer.state[param]:
+                    print("agg_score not found for param")
+                    break
+                score = optimizer.state[param]['agg_score']
+                # print(f"agg_score for param: {score}")
+                # print(f"agg_score shape: {score.shape}")    
+                WB_cuda_flatten = score.flatten()
+                # print(f"WB_cuda_flatten shape: {WB_cuda_flatten.shape}")
 
                 # Check for invalid values
                 if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
@@ -299,10 +445,10 @@ class JenksSGD_Test(Optimizer):
                 param.data = layer
             elif param.dim() == 1:
                 layer = param.data
-                if 'agg_score' not in self.state[param]:
+                if 'agg_score' not in optimizer.state[param]:
                     print("agg_score not found for param")
                     break
-                score = self.state[param]['agg_score']
+                score = optimizer.state[param]['agg_score']
                 B_cuda_sorted, B_cuda_indices = score.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
@@ -313,8 +459,10 @@ class JenksSGD_Test(Optimizer):
             else:
                 print("Invalid parameter dimension")
                 continue
-        return model
-    
+    return optimizer
+        
+
+
 
 
 class JenksSGD_Noise(Optimizer):

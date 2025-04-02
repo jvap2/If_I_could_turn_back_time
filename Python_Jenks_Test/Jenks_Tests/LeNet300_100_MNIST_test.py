@@ -78,7 +78,7 @@ fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
 BATCH_SIZE = 256
 
-train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
+train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
@@ -106,12 +106,12 @@ model_2 = nn.Sequential(
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.9
+momentum = 0.85
 warmup_epochs = 20
 # optimizer_SGD = SGD(params=model.parameters(), lr=5e-3, momentum=momentum)
-optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.03, scale=1e-3, momentum=momentum, nestrov=True)
+optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.02, scale=1e-3, momentum=momentum, nestrov=False, bias = True)
 # optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
-scheduler = StepLR(optimizer, step_size = 40, gamma = 0.1)
+scheduler = StepLR(optimizer, step_size = 50, gamma = 0.1)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -128,7 +128,6 @@ print(f"Using {device} device")
 accuracy = accuracy.to(device)
 top5accuracy = top5accuracy.to(device)
 os.makedirs("models", exist_ok=True)
-EPOCHS = 5
 train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
@@ -138,15 +137,17 @@ lambda_ = 0.01
 
 train_dir = "LeNet300_100_MNIST_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
-
-train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_(1).txt")
-trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_(1).txt")
-trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_(1).txt")
-val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_(1).txt")
-test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_(1).txt")
+name = optimizer.name 
+EPOCHS = 300
+train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+sparsity_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-EPOCHS = 200
+
 for epoch in range(EPOCHS):
     # Training loop
     print("Epoch: ", epoch)
@@ -167,14 +168,6 @@ for epoch in range(EPOCHS):
         X, y = X.to(device), y.to(device)
         master_count += 1
         model.train()
-        # def closure():
-        #     optimizer.zero_grad()  # Clear gradients
-        #     outputs = model(X)  # Forward pass
-        #     loss = loss_fn(outputs, y)  # Compute loss
-        #     l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-        #     loss = loss.clone() + lambda_ * l2_reg
-        #     loss.backward()  # Backward pass
-        #     return loss
         y_pred = model(X)
         loss = loss_fn(y_pred, y)
         train_loss += loss.item()
@@ -198,23 +191,33 @@ for epoch in range(EPOCHS):
         optimizer.step(epoch)
     stop = time()
     print(f"Time taken for epoch: {stop-start}")
-    if epoch < 121:
+    if epoch < 151:
         scheduler.step()
-    if epoch == EPOCHS/2:
-        for param_group in optimizer.param_groups:
-            param_group['momentum'] = 0.99
-
-    #     trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
-        # trace = exact_trace(model_lenet5v1)
-        # Calculate the trace
-        # trace_filename = f"LeNet300_100_MNIST_output/trace_log_{timestamp}_{momentum}.txt"
-    #     with open(trace_filename,"a") as f:
-    #         print(f"Iteration: {count}| Trace: {trace: .5f}", file=f)
-    # scheduler.step(train_acc)
-
-    # train_loss /= len(train_dataloader)
-    # train_acc /= len(train_dataloader)
-    # Validation loop
+    if epoch >= EPOCHS/3 and epoch % 5 == 0:
+        prunedmodel = optimizer.PruneWeights_Test(model)
+        '''Make sure the weights are back on the device'''
+        # with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
+        #     print("Able to prune the weights", file=f)
+        model = prunedmodel.to(device)
+        non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
+        total_params = sum(p.numel() for p in model.parameters())
+        sparsity = 1 - non_zero_params / total_params
+        with open(sparsity_filename,"a") as f:
+            print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+    if epoch == warmup_epochs:
+        '''Change the learning rate to the base value'''
+        optimizer.set_lr(3e-3)
+        # for param_group in optimizer.param_groups:
+        #     param_group['momentum'] = 0.99
+    # if epoch > EPOCHS/2:
+    #     '''Check the sparsity after the fact'''
+    #     non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
+    #     total_params = sum(p.numel() for p in model.parameters())
+    #     sparsity = 1 - non_zero_params / total_params
+    #     sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}_(1).txt"
+    #     with open(sparsity_filename,"a") as f:
+    #         print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
+        
     model.eval()
     with torch.inference_mode():
         with open(val_filename,"a") as f:
@@ -274,7 +277,6 @@ non_zero_params_2 = sum(torch.count_nonzero(p) for p in model_2.parameters())
 total_params = sum(p.numel() for p in model.parameters())
 sparsity = 1 - non_zero_params / total_params
 sparsity_2 = 1 - non_zero_params_2 / total_params
-sparsity_filename = f"LeNet300_100_MNIST_output/sparisty_log_{timestamp}_{momentum}_(1).txt"
 model.eval()
 with open(sparsity_filename,"a") as f:
     print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f} | Sparsity from Test: {sparsity_2: .5f}", file=f)

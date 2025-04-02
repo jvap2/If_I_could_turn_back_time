@@ -14,7 +14,7 @@ model = nn.Sequential(
 )
 
 # Load the state dictionary (weights) into the model
-state_dict = torch.load("2025-03-19_MNIST_LeNet300V100_epoch_16.pth")
+state_dict = torch.load("2025-03-27_MNIST_LeNet300V100_epoch_300.pth")
 model.load_state_dict(state_dict)
 
 # Create a directory to save the heatmaps
