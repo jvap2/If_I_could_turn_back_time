@@ -360,19 +360,25 @@ def torch_accuracy(output, target, topk=(1,)):
 
 def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs):
     ## Check if the agg score is already defined
-    if epoch == 0:
-        for group in optimizer.param_groups:
-            for param in group['params']:
-                if 'agg_score' not in optimizer.state[param]:
-                    optimizer.state[param]['agg_score'] = torch.zeros_like(param.data)
-
+    # if epoch == 0:
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if 'agg_score' not in optimizer.state[param]:
+                optimizer.state[param]['agg_score'] = torch.zeros_like(param.data)
+            if 'exp_avg' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg'] = torch.zeros_like(param.data)
+            if 'exp_avg_sq' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg_sq'] = torch.zeros_like(param.data)
+            if 'step' not in optimizer.state[param]:
+                optimizer.state[param]['step'] = torch.tensor(0, dtype = torch.float32, device = 'cpu')
+    optimizer.zero_grad()
     pred = net(data)
     loss = criterion(pred, label)
     loss.backward()
 
     # to_concat_g = []
     # to_concat_v = []
-    if epoch < warmup_epochs:
+    if epoch > warmup_epochs:
         for name, param in net.named_parameters():
             if param.dim() in [2, 4]:
                 param_data_flat = param.data.view(-1)
@@ -380,14 +386,10 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
                 WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                 WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
-                # lookahead = self.state[param]['lookahead']
-                # lookahead_flat = self.state[param]['lookahead'].view(-1)
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = WB_cuda_indices[:var_min]
-                param_grad_flat[indices_] = 0       
-                param.grad = param_grad_flat.view(param.grad.data.shape)
-                ## Add the score to the agg score
+                param.grad.view(-1)[indices_] = 0
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
             if param.dim() == 1:
                 param_data_flat = param.data.view(-1)
@@ -396,12 +398,11 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
-                param_grad_flat[indices_] = 0
-                param.grad = param_grad_flat.view(param.grad.data.shape)
+                param.grad.view(-1)[indices_] = 0
+                # param.grad = param_grad_flat.view(param.grad.data.shape)
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
 
     optimizer.step()
-    optimizer.zero_grad()
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss
 
@@ -459,7 +460,46 @@ def Prune_Score(optimizer):
             else:
                 print("Invalid parameter dimension")
                 continue
-    return optimizer
+
+def Prune_Score_Mag(optimizer):
+    ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.dim() in [2, 4]:   
+                WB_cuda_flatten = param.data.flatten()
+                # print(f"WB_cuda_flatten shape: {WB_cuda_flatten.shape}")
+
+                # Check for invalid values
+                if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
+                    print("Invalid values in WB_cuda_flatten")
+                    continue
+
+                WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                # print(f"WB_cuda_sorted shape: {WB_cuda_sorted.shape}")
+                # print(f"WB_cuda_indices shape: {WB_cuda_indices.shape}")
+                WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var_min = var.argmin().item()
+
+                # Validate var_min
+                if var_min <= 0 or var_min > WB_cuda_indices.size(0):
+                    print(f"Invalid var_min: {var_min}")
+                    continue
+
+                indices_ = WB_cuda_indices[:var_min]
+                param.data.view(-1)[indices_] = 0
+            elif param.dim() == 1:
+                score = param.data
+                B_cuda_sorted, B_cuda_indices = score.sort()
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var_min = var.argmin().item()
+                # Print the output
+                indices_ = B_cuda_indices[:var_min]
+                param.data.view(-1)[indices_] = 0
+            else:
+                print("Invalid parameter dimension")
+                continue
         
 
 
@@ -574,7 +614,7 @@ class JenksSGD_Noise(Optimizer):
         return loss
 
 
-import torch
+# import torch
 
 
 class SAM(torch.optim.Optimizer):

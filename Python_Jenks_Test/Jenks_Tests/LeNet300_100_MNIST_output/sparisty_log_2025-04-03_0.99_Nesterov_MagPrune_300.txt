@@ -1,0 +1,24 @@
+Epoch: 100| Sparsity:  0.13804
+Epoch: 120| Sparsity:  0.97972
+Epoch: 140| Sparsity:  0.98213
+Epoch: 160| Sparsity:  0.98284
+Epoch: 180| Sparsity:  0.98285
+Epoch: 200| Sparsity:  0.98288
+Epoch: 220| Sparsity:  0.98391
+Epoch: 240| Sparsity:  0.98399
+Epoch: 260| Sparsity:  0.98402
+Epoch: 280| Sparsity:  0.98406
+Epoch: 300| Sparsity:  0.98409
+Epoch: 300| Sparsity:  0.99405 | Sparsity from Test:  0.00000
+Epoch: 100| Sparsity:  0.01781
+Epoch: 120| Sparsity:  0.99436
+Epoch: 140| Sparsity:  0.99467
+Epoch: 160| Sparsity:  0.99608
+Epoch: 180| Sparsity:  0.99608
+Epoch: 200| Sparsity:  0.99609
+Epoch: 220| Sparsity:  0.99609
+Epoch: 240| Sparsity:  0.99609
+Epoch: 260| Sparsity:  0.99609
+Epoch: 280| Sparsity:  0.99610
+Epoch: 300| Sparsity:  0.99610
+Epoch: 300| Sparsity:  0.99914 | Sparsity from Test:  0.00000
