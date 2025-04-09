@@ -407,8 +407,14 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
     return acc, acc5, loss
 
 
-def Prune_Score(optimizer):
+def Prune_Score(optimizer, kill_velocity = False, mask = False):
     ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
+    print("Mask is ", mask)
+    if mask:
+        for group in optimizer.param_groups:
+            for param in group['params']:
+                if 'mask' not in optimizer.state[param]:
+                    optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
     for group in optimizer.param_groups:
         for param in group['params']:
             if param.dim() in [2, 4]:
@@ -442,6 +448,14 @@ def Prune_Score(optimizer):
 
                 indices_ = WB_cuda_indices[:var_min]
                 layer[indices_] = 0
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'][indices_] = 0
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        optimizer.state[param]['mask'][indices_] = 0
+                    else:
+                        print("Mask not found in optimizer state")
                 layer = layer.reshape(param.data.shape)
                 param.data = layer
             elif param.dim() == 1:
@@ -456,10 +470,21 @@ def Prune_Score(optimizer):
                 # Print the output
                 indices_ = B_cuda_indices[:var_min]
                 layer[indices_] = 0
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'][indices_] = 0
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        optimizer.state[param]['mask'][indices_] = 0
+                    else:
+                        print("Mask not found in optimizer state")
                 param.data = layer
             else:
                 print("Invalid parameter dimension")
                 continue
+
+
+
 
 def Prune_Score_Mag(optimizer):
     ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
