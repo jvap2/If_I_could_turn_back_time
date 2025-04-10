@@ -396,7 +396,8 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
             if param.dim() == 1:
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                B_cuda_sorted, B_cuda_indices = param_grad_flat.sort()
+                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
@@ -408,7 +409,7 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss
 
-def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_epochs, prune_epochs):
+def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_epochs, prune_epochs, mask = False):
     ## Check if the agg score is already defined
     # if epoch == 0:
     for group in optimizer.param_groups:
@@ -430,7 +431,8 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
 
     # to_concat_g = []
     # to_concat_v = []
-    if epoch > warmup_epochs:
+
+    if epoch > warmup_epochs and epoch < prune_epochs:
         for name, param in net.named_parameters():
             if param.dim() in [2, 4]:
                 param_data_flat = param.data.view(-1)
@@ -446,15 +448,46 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
             if param.dim() == 1:
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                B_cuda_sorted, B_cuda_indices = param_grad_flat.sort()
+                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
                 param.grad.view(-1)[indices_] = 0
                 # param.grad = param_grad_flat.view(param.grad.data.shape)
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
-
+    if epoch > prune_epochs:
+        if not mask:
+            for name, param in net.named_parameters():
+                if param.dim() in [2, 4]:
+                    param_data_flat = param.data.view(-1)
+                    param_grad_flat = param.grad.data.view(-1)
+                    WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    var_min = var.argmin().item()
+                    indices_ = WB_cuda_indices[:var_min]
+                    param.grad.view(-1)[indices_] = 0
+                    optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
+                if param.dim() == 1:
+                    param_data_flat = param.data.view(-1)
+                    param_grad_flat = param.grad.data.view(-1)
+                    B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                    B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
+                    var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                    var_min = var.argmin().item()
+                    indices_ = B_cuda_indices[:var_min]
+                    param.grad.view(-1)[indices_] = 0
+                    # param.grad = param_grad_flat.view(param.grad.data.shape)
+                    optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
+                
     optimizer.step()
+    if epoch > prune_epochs:
+        if mask:
+            for param,name in net.named_parameters():
+                ## Set the mask to 0 for the pruned weights
+                param[optimizer.state[param]['mask']==0]=0
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss    
 

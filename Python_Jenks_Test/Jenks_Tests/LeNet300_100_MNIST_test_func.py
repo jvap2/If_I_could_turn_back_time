@@ -18,7 +18,7 @@ from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
-from custom_optimizer import Prune_Score
+from custom_optimizer import Prune_Score,train_one_step_prune
 from custom_schedulers import WarmupMultiStepLR
 
 import torch
@@ -79,7 +79,7 @@ fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_datas
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 1024
+BATCH_SIZE = 512
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -114,7 +114,26 @@ learning_rate = .5e-2
 weight_decay = 1e-3
 warmup_epochs = 20
 nestrov = True
-optimizer = SGD(params=model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay, nesterov=nestrov)
+params = []
+bias_lr = True
+if bias_lr:
+    for key, value in model.named_parameters():
+        if not value.requires_grad:
+            continue
+        lr = learning_rate
+        weight_decay = weight_decay
+        # if "bias" in key or "bn" in key or "BN" in key:
+        #     # lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.BIAS_LR_FACTOR
+        #     weight_decay = cfg.weight_decay_bias
+        #     print('set weight_decay_bias={} for {}'.format(weight_decay, key))
+        if 'bias' in key:
+            apply_lr = 2 * lr
+        else:
+            apply_lr = lr
+        params += [{"params": [value], "lr": apply_lr, "weight_decay": weight_decay}]
+    optimizer = torch.optim.SGD(params, lr, momentum=momentum, nesterov=nestrov)
+else:
+    optimizer = SGD(params=model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay, nesterov=nestrov)
 # optimizer = AdamW(params=model.parameters(), lr=5e-3, weight_decay=1e-3)
 # optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.02, scale=1e-3, momentum=momentum, nestrov=False, bias = True)
 # optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
