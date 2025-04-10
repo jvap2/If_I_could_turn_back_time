@@ -1,0 +1,6 @@
+Epoch: 190
+Iteration: 1| Loss:  0.28016| Acc:  0.94531 | Top 5 Acc 0.9964576959609985
+Iteration: 2| Loss:  0.28579| Acc:  0.93994 | Top 5 Acc 0.9976794123649597
+Iteration: 3| Loss:  0.28009| Acc:  0.93978 | Top 5 Acc 0.9980866312980652
+Iteration: 4| Loss:  0.28001| Acc:  0.93848 | Top 5 Acc 0.9983397722244263
+Iteration: 5| Loss:  0.28508| Acc:  0.93574 | Top 5 Acc 0.9982119798660278

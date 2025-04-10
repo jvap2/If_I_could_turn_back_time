@@ -1,0 +1,12 @@
+Starting Learning rate: 0.005
+Momentum: 0.95
+Weight decay: 0.005
+Batch size: 1024
+Epochs: 150
+Epoch to start pruning: 2
+Warmup epochs: 0
+Opt type is Nesterov
+Velocity is not killed
+Mask is used
+Epoch: 1| Learning Rate: [0.00095]
+Epoch: 2| Learning Rate: [0.0014000000000000002]

@@ -1,0 +1,7 @@
+Epoch: 100| Sparsity:  0.93060
+Epoch: 110| Sparsity:  0.93060
+Epoch: 120| Sparsity:  0.93060
+Epoch: 130| Sparsity:  0.93060
+Epoch: 140| Sparsity:  0.93060
+Epoch: 150| Sparsity:  0.93060
+Epoch: 150| Sparsity:  0.93060 | Sparsity from Test:  0.00000

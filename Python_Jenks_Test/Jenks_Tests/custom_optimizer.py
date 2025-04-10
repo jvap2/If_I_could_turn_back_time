@@ -371,6 +371,8 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
                 optimizer.state[param]['exp_avg_sq'] = torch.zeros_like(param.data)
             if 'step' not in optimizer.state[param]:
                 optimizer.state[param]['step'] = torch.tensor(0, dtype = torch.float32, device = 'cpu')
+            if 'mask' not in optimizer.state[param]:
+                optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
     optimizer.zero_grad()
     pred = net(data)
     loss = criterion(pred, label)
@@ -406,15 +408,59 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss
 
+def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_epochs, prune_epochs):
+    ## Check if the agg score is already defined
+    # if epoch == 0:
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if 'agg_score' not in optimizer.state[param]:
+                optimizer.state[param]['agg_score'] = torch.zeros_like(param.data)
+            if 'exp_avg' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg'] = torch.zeros_like(param.data)
+            if 'exp_avg_sq' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg_sq'] = torch.zeros_like(param.data)
+            if 'step' not in optimizer.state[param]:
+                optimizer.state[param]['step'] = torch.tensor(0, dtype = torch.float32, device = 'cpu')
+            if 'mask' not in optimizer.state[param]:
+                optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
+    optimizer.zero_grad()
+    pred = net(data)
+    loss = criterion(pred, label)
+    loss.backward()
+
+    # to_concat_g = []
+    # to_concat_v = []
+    if epoch > warmup_epochs:
+        for name, param in net.named_parameters():
+            if param.dim() in [2, 4]:
+                param_data_flat = param.data.view(-1)
+                param_grad_flat = param.grad.data.view(-1)
+                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = WB_cuda_indices[:var_min]
+                param.grad.view(-1)[indices_] = 0
+                optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
+            if param.dim() == 1:
+                param_data_flat = param.data.view(-1)
+                param_grad_flat = param.grad.data.view(-1)
+                B_cuda_sorted, B_cuda_indices = param_grad_flat.sort()
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = B_cuda_indices[:var_min]
+                param.grad.view(-1)[indices_] = 0
+                # param.grad = param_grad_flat.view(param.grad.data.shape)
+                optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
+
+    optimizer.step()
+    acc, acc5 = torch_accuracy(pred, label, (1,5))
+    return acc, acc5, loss    
+
 
 def Prune_Score(optimizer, kill_velocity = False, mask = False):
     ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
-    print("Mask is ", mask)
-    if mask:
-        for group in optimizer.param_groups:
-            for param in group['params']:
-                if 'mask' not in optimizer.state[param]:
-                    optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
     for group in optimizer.param_groups:
         for param in group['params']:
             if param.dim() in [2, 4]:
@@ -437,14 +483,21 @@ def Prune_Score(optimizer, kill_velocity = False, mask = False):
                 # print(f"WB_cuda_sorted shape: {WB_cuda_sorted.shape}")
                 # print(f"WB_cuda_indices shape: {WB_cuda_indices.shape}")
                 WB_cuda_sorted = WB_cuda_sorted.reshape(score.shape)
+                # WB_cuda_indices = WB_cuda_indices.reshape(score.shape)
 
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
+                    print("Invalid values in var")
+                    return
+                # print(f"var shape: {var.shape}")
+                # print(f"var: {var}")
                 var_min = var.argmin().item()
+                # print(f"var_min: {var_min}")    
 
                 # Validate var_min
-                if var_min <= 0 or var_min > WB_cuda_indices.size(0):
-                    print(f"Invalid var_min: {var_min}")
-                    continue
+                # if var_min < 0 or var_min > WB_cuda_indices.size(0):
+                #     print(f"Invalid var_min: {var_min}")
+                #     continue
 
                 indices_ = WB_cuda_indices[:var_min]
                 layer[indices_] = 0
@@ -453,7 +506,10 @@ def Prune_Score(optimizer, kill_velocity = False, mask = False):
                         optimizer.state[param]['velocity'][indices_] = 0
                 if mask:
                     if 'mask' in optimizer.state[param]:
-                        optimizer.state[param]['mask'][indices_] = 0
+                        mask_dummy = torch.ones_like(layer, requires_grad=False)
+                        mask_dummy[indices_] = 0
+                        optimizer.state[param]['mask'] = mask_dummy.reshape(param.data.shape)
+                        del mask_dummy
                     else:
                         print("Mask not found in optimizer state")
                 layer = layer.reshape(param.data.shape)

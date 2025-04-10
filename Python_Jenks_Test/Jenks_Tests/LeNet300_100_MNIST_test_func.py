@@ -22,7 +22,6 @@ from custom_optimizer import Prune_Score
 from custom_schedulers import WarmupMultiStepLR
 
 import torch
-# from custom_optimizer import JenksSGD,PruneWeights
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -110,17 +109,17 @@ model_2 = nn.Sequential(
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.95
-learning_rate = 5e-3
-weight_decay = 5e-3
-warmup_epochs = 0
+momentum = 0.9
+learning_rate = .5e-2
+weight_decay = 1e-3
+warmup_epochs = 20
 nestrov = True
 optimizer = SGD(params=model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay, nesterov=nestrov)
 # optimizer = AdamW(params=model.parameters(), lr=5e-3, weight_decay=1e-3)
 # optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.02, scale=1e-3, momentum=momentum, nestrov=False, bias = True)
 # optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
 # scheduler = StepLR(optimizer, step_size = 50, gamma = 0.1)
-scheduler = WarmupMultiStepLR(optimizer, milestones=[160, 200, 240], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
+scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -147,7 +146,7 @@ lambda_ = 0.01
 train_dir = "LeNet300_100_MNIST_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 150
+EPOCHS = 280
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -157,7 +156,7 @@ val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{n
 test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 2
+prune_epoch = 100
 
 with open(log_filename,"a") as f:
     print(f"Starting Learning rate: {learning_rate}", file=f)
@@ -224,13 +223,14 @@ for epoch in range(EPOCHS):
     scheduler.step()
     with open (log_filename,"a") as f:
         print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
-    if epoch >= prune_epoch and epoch % 20 == 0:
+    if epoch >= prune_epoch and epoch % 10 == 0:
         # if kill_velocity and epoch==prune_epoch:
         #     Prune_Score(optimizer, kill_velocity=True)
         if mask and epoch==prune_epoch:
+            print("Pruning the weights")
             Prune_Score(optimizer, mask=True)
-        if not kill_velocity or not mask:
-            Prune_Score(optimizer)
+        # if not kill_velocity or not mask:
+        #     Prune_Score(optimizer)
         '''Make sure the weights are back on the device'''
         # with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
         #     print("Able to prune the weights", file=f)
@@ -292,11 +292,11 @@ count_val = 0
 # model_2.load_state_dict(model.state_dict())
 # model_2 = model_2.to(device)
 # model_2.eval()
-Prune_Score(optimizer)
+# Prune_Score(optimizer)
 # prunedmodel_2 = optimizer.PruneWeights_Test(model_2)
 '''Make sure the weights are back on the device'''
-with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-    print("Able to prune the weights", file=f)
+# with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
+#     print("Able to prune the weights", file=f)
 # model = prunedmodel.to(device)
 # model_2 = prunedmodel_2.to(device)
 # model.eval()
