@@ -79,7 +79,7 @@ fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_datas
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -197,6 +197,10 @@ with open(log_filename,"a") as f:
         print(f"Mask is used", file=f)
     else:
         print(f"Mask is not used", file=f)
+    if bias_lr:
+        print(f"Bias LR is used", file=f)
+    else:
+        print(f"Bias LR is not used", file=f)
 
 for epoch in range(EPOCHS):
     # Training loop

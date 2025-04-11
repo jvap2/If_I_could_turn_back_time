@@ -432,7 +432,7 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
     # to_concat_g = []
     # to_concat_v = []
 
-    if epoch > warmup_epochs and epoch < prune_epochs:
+    if epoch > warmup_epochs and epoch <= prune_epochs:
         for name, param in net.named_parameters():
             if param.dim() in [2, 4]:
                 param_data_flat = param.data.view(-1)
@@ -485,9 +485,9 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
     optimizer.step()
     if epoch > prune_epochs:
         if mask:
-            for param,name in net.named_parameters():
-                ## Set the mask to 0 for the pruned weights
-                param[optimizer.state[param]['mask']==0]=0
+            for group in optimizer.param_groups:
+                for param in group['params']:
+                    param.data = param.data * optimizer.state[param]['mask']
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss    
 
