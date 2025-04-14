@@ -457,7 +457,7 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
                 for kernel_idx in range(param.shape[0]):
-                    kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
                     kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
 
                     # Flatten the kernel and its gradient
@@ -502,7 +502,7 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                     # Iterate over each kernel (slice along the output channel dimension)
                     for kernel_idx in range(param.shape[0]):
-                        kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                        kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
                         kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
 
                         # Flatten the kernel and its gradient
@@ -559,7 +559,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
                 for kernel_idx in range(param.shape[0]):
-                    kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
                     if 'agg_score' not in optimizer.state[param]:
                         print("agg_score not found for param")
                         break
@@ -572,7 +572,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                         continue
 
                     WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
                     var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                     if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
                         print("Invalid values in var")
@@ -582,24 +582,25 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                     indices_ = WB_cuda_indices[:var_min]
 
                     # Prune the kernel
-                    kernel_flat = kernel.view(-1)
-                    kernel_flat[indices_] = 0
-                    kernel = kernel_flat.view(kernel.shape)
+                    with torch.no_grad():  # Disable gradient tracking
+                        kernel_flat = kernel.view(-1)
+                        kernel_flat[indices_] = 0
+                        param[kernel_idx].data = kernel_flat.view(kernel.shape)
 
                     # Update velocity and mask if required
-                    if kill_velocity:
-                        if 'velocity' in optimizer.state[param]:
-                            optimizer.state[param]['velocity'][kernel_idx].view(-1)[indices_] = 0
-                    if mask:
-                        if 'mask' in optimizer.state[param]:
-                            mask_dummy = torch.ones_like(kernel_flat, requires_grad=False)
-                            mask_dummy[indices_] = 0
-                            optimizer.state[param]['mask'][kernel_idx] = mask_dummy.view(kernel.shape)
-                        else:
-                            print("Mask not found in optimizer state")
+                        if kill_velocity:
+                            if 'velocity' in optimizer.state[param]:
+                                optimizer.state[param]['velocity'][kernel_idx].view(-1)[indices_] = 0
+                        if mask:
+                            if 'mask' in optimizer.state[param]:
+                                mask_dummy = torch.ones_like(kernel_flat, requires_grad=False)
+                                mask_dummy[indices_] = 0
+                                optimizer.state[param]['mask'][kernel_idx] = mask_dummy.view(kernel.shape)
+                            else:
+                                print("Mask not found in optimizer state")
 
-                    # Update the kernel in the parameter tensor
-                    param[kernel_idx] = kernel
+                        # Update the kernel in the parameter tensor
+                        param[kernel_idx] = kernel
 
             elif param.dim() == 2:  # Fully connected layer weights
                 layer = param.data.flatten()
@@ -615,7 +616,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                     continue
 
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-
+                WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = WB_cuda_indices[:var_min]
