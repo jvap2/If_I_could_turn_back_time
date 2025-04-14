@@ -382,10 +382,30 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
     # to_concat_v = []
     if epoch > warmup_epochs:
         for name, param in net.named_parameters():
-            if param.dim() in [2, 4]:
+            if param.dim() == 4:  # Convolutional layer weights (4D tensor)
+                # Iterate over each kernel (slice along the output channel dimension)
+                for kernel_idx in range(param.shape[0]):
+                    kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                    kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
+
+                    # Flatten the kernel and its gradient
+                    kernel_data_flat = kernel.view(-1)
+                    kernel_grad_flat = kernel_grad.view(-1)
+
+                    # Perform the calculations from lines 386-395
+                    WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
+                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    var_min = var.argmin().item()
+                    indices_ = WB_cuda_indices[:var_min]
+                    kernel_grad_flat[indices_] = 0
+                    optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
+
+            elif param.dim() == 2:  # Fully connected layer weights
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                 WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
@@ -393,16 +413,16 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
                 indices_ = WB_cuda_indices[:var_min]
                 param.grad.view(-1)[indices_] = 0
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
-            if param.dim() == 1:
+
+            elif param.dim() == 1:  # Bias terms
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
                 param.grad.view(-1)[indices_] = 0
-                # param.grad = param_grad_flat.view(param.grad.data.shape)
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
 
     optimizer.step()
@@ -434,10 +454,30 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
 
     if epoch > warmup_epochs and epoch <= prune_epochs:
         for name, param in net.named_parameters():
-            if param.dim() in [2, 4]:
+            if param.dim() == 4:  # Convolutional layer weights (4D tensor)
+                # Iterate over each kernel (slice along the output channel dimension)
+                for kernel_idx in range(param.shape[0]):
+                    kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                    kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
+
+                    # Flatten the kernel and its gradient
+                    kernel_data_flat = kernel.view(-1)
+                    kernel_grad_flat = kernel_grad.view(-1)
+
+                    # Perform the calculations from lines 386-395
+                    WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
+                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    var_min = var.argmin().item()
+                    indices_ = WB_cuda_indices[:var_min]
+                    kernel_grad_flat[indices_] = 0
+                    optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
+
+            elif param.dim() == 2:  # Fully connected layer weights
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                 WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
@@ -445,24 +485,44 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 indices_ = WB_cuda_indices[:var_min]
                 param.grad.view(-1)[indices_] = 0
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
-            if param.dim() == 1:
+
+            elif param.dim() == 1:  # Bias terms
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
-                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
                 param.grad.view(-1)[indices_] = 0
-                # param.grad = param_grad_flat.view(param.grad.data.shape)
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
     if epoch > prune_epochs:
         if not mask:
             for name, param in net.named_parameters():
-                if param.dim() in [2, 4]:
+                if param.dim() == 4:  # Convolutional layer weights (4D tensor)
+                    # Iterate over each kernel (slice along the output channel dimension)
+                    for kernel_idx in range(param.shape[0]):
+                        kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                        kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
+
+                        # Flatten the kernel and its gradient
+                        kernel_data_flat = kernel.view(-1)
+                        kernel_grad_flat = kernel_grad.view(-1)
+
+                        # Perform the calculations from lines 386-395
+                        WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
+                        WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                        WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
+                        var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                        var_min = var.argmin().item()
+                        indices_ = WB_cuda_indices[:var_min]
+                        kernel_grad_flat[indices_] = 0
+                        optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
+
+                elif param.dim() == 2:  # Fully connected layer weights
                     param_data_flat = param.data.view(-1)
                     param_grad_flat = param.grad.data.view(-1)
-                    WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                    WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                     WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                     WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
                     var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
@@ -470,16 +530,16 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     indices_ = WB_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
                     optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
-                if param.dim() == 1:
+
+                elif param.dim() == 1:  # Bias terms
                     param_data_flat = param.data.view(-1)
                     param_grad_flat = param.grad.data.view(-1)
-                    B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)  # Move to CPU, convert to NumPy, and flatten
+                    B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                     B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                     var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                     var_min = var.argmin().item()
                     indices_ = B_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
-                    # param.grad = param_grad_flat.view(param.grad.data.shape)
                     optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
                 
     optimizer.step()
@@ -492,20 +552,62 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
     return acc, acc5, loss    
 
 
-def Prune_Score(optimizer, kill_velocity = False, mask = False):
+def Prune_Score(optimizer, kill_velocity=False, mask=False):
     ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
     for group in optimizer.param_groups:
         for param in group['params']:
-            if param.dim() in [2, 4]:
+            if param.dim() == 4:  # Convolutional layer weights (4D tensor)
+                # Iterate over each kernel (slice along the output channel dimension)
+                for kernel_idx in range(param.shape[0]):
+                    kernel = param[kernel_idx]  # Access the kernel (3D tensor)
+                    if 'agg_score' not in optimizer.state[param]:
+                        print("agg_score not found for param")
+                        break
+                    score = optimizer.state[param]['agg_score'][kernel_idx]  # Access the agg_score for this kernel
+                    WB_cuda_flatten = score.flatten()
+
+                    # Check for invalid values
+                    if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
+                        print("Invalid values in WB_cuda_flatten")
+                        continue
+
+                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
+                        print("Invalid values in var")
+                        return
+
+                    var_min = var.argmin().item()
+                    indices_ = WB_cuda_indices[:var_min]
+
+                    # Prune the kernel
+                    kernel_flat = kernel.view(-1)
+                    kernel_flat[indices_] = 0
+                    kernel = kernel_flat.view(kernel.shape)
+
+                    # Update velocity and mask if required
+                    if kill_velocity:
+                        if 'velocity' in optimizer.state[param]:
+                            optimizer.state[param]['velocity'][kernel_idx].view(-1)[indices_] = 0
+                    if mask:
+                        if 'mask' in optimizer.state[param]:
+                            mask_dummy = torch.ones_like(kernel_flat, requires_grad=False)
+                            mask_dummy[indices_] = 0
+                            optimizer.state[param]['mask'][kernel_idx] = mask_dummy.view(kernel.shape)
+                        else:
+                            print("Mask not found in optimizer state")
+
+                    # Update the kernel in the parameter tensor
+                    param[kernel_idx] = kernel
+
+            elif param.dim() == 2:  # Fully connected layer weights
                 layer = param.data.flatten()
                 if 'agg_score' not in optimizer.state[param]:
                     print("agg_score not found for param")
                     break
                 score = optimizer.state[param]['agg_score']
-                # print(f"agg_score for param: {score}")
-                # print(f"agg_score shape: {score.shape}")    
                 WB_cuda_flatten = score.flatten()
-                # print(f"WB_cuda_flatten shape: {WB_cuda_flatten.shape}")
 
                 # Check for invalid values
                 if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
@@ -513,41 +615,26 @@ def Prune_Score(optimizer, kill_velocity = False, mask = False):
                     continue
 
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-                # print(f"WB_cuda_sorted shape: {WB_cuda_sorted.shape}")
-                # print(f"WB_cuda_indices shape: {WB_cuda_indices.shape}")
-                WB_cuda_sorted = WB_cuda_sorted.reshape(score.shape)
-                # WB_cuda_indices = WB_cuda_indices.reshape(score.shape)
 
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-                if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
-                    print("Invalid values in var")
-                    return
-                # print(f"var shape: {var.shape}")
-                # print(f"var: {var}")
                 var_min = var.argmin().item()
-                # print(f"var_min: {var_min}")    
-
-                # Validate var_min
-                # if var_min < 0 or var_min > WB_cuda_indices.size(0):
-                #     print(f"Invalid var_min: {var_min}")
-                #     continue
-
                 indices_ = WB_cuda_indices[:var_min]
+
+                # Prune the layer
                 layer[indices_] = 0
                 if kill_velocity:
                     if 'velocity' in optimizer.state[param]:
-                        optimizer.state[param]['velocity'][indices_] = 0
+                        optimizer.state[param]['velocity'].view(-1)[indices_] = 0
                 if mask:
                     if 'mask' in optimizer.state[param]:
                         mask_dummy = torch.ones_like(layer, requires_grad=False)
                         mask_dummy[indices_] = 0
-                        optimizer.state[param]['mask'] = mask_dummy.reshape(param.data.shape)
-                        del mask_dummy
+                        optimizer.state[param]['mask'] = mask_dummy.view(param.data.shape)
                     else:
                         print("Mask not found in optimizer state")
-                layer = layer.reshape(param.data.shape)
-                param.data = layer
-            elif param.dim() == 1:
+                param.data = layer.view(param.data.shape)
+
+            elif param.dim() == 1:  # Bias terms
                 layer = param.data
                 if 'agg_score' not in optimizer.state[param]:
                     print("agg_score not found for param")
@@ -556,8 +643,9 @@ def Prune_Score(optimizer, kill_velocity = False, mask = False):
                 B_cuda_sorted, B_cuda_indices = score.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
-                # Print the output
                 indices_ = B_cuda_indices[:var_min]
+
+                # Prune the bias
                 layer[indices_] = 0
                 if kill_velocity:
                     if 'velocity' in optimizer.state[param]:

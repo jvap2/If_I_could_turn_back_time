@@ -1,0 +1,21 @@
+Epoch: 280
+Iteration: 1| Loss:  0.30581| Acc:  0.91016 | Top 5 Acc 0.9919484853744507
+Iteration: 2| Loss:  0.33893| Acc:  0.90234 | Top 5 Acc 0.9897580742835999
+Iteration: 3| Loss:  0.31383| Acc:  0.90755 | Top 5 Acc 0.9920610189437866
+Iteration: 4| Loss:  0.31841| Acc:  0.90234 | Top 5 Acc 0.9917684197425842
+Iteration: 5| Loss:  0.33879| Acc:  0.88906 | Top 5 Acc 0.9921290278434753
+Iteration: 6| Loss:  0.34246| Acc:  0.89193 | Top 5 Acc 0.9934408664703369
+Iteration: 7| Loss:  0.33225| Acc:  0.89565 | Top 5 Acc 0.9943779110908508
+Iteration: 8| Loss:  0.33199| Acc:  0.89551 | Top 5 Acc 0.993018388748169
+Iteration: 9| Loss:  0.33540| Acc:  0.89410 | Top 5 Acc 0.9926627278327942
+Iteration: 10| Loss:  0.34147| Acc:  0.89336 | Top 5 Acc 0.9926261901855469
+Iteration: 11| Loss:  0.34426| Acc:  0.89276 | Top 5 Acc 0.991648256778717
+Iteration: 12| Loss:  0.34069| Acc:  0.89583 | Top 5 Acc 0.9916883707046509
+Iteration: 13| Loss:  0.34058| Acc:  0.89603 | Top 5 Acc 0.9918450713157654
+Iteration: 14| Loss:  0.33447| Acc:  0.89872 | Top 5 Acc 0.9924275875091553
+Iteration: 15| Loss:  0.33935| Acc:  0.89583 | Top 5 Acc 0.9926760196685791
+Iteration: 16| Loss:  0.33538| Acc:  0.89673 | Top 5 Acc 0.992612898349762
+Iteration: 17| Loss:  0.33748| Acc:  0.89660 | Top 5 Acc 0.9918656945228577
+Iteration: 18| Loss:  0.33464| Acc:  0.89865 | Top 5 Acc 0.9918274283409119
+Iteration: 19| Loss:  0.33645| Acc:  0.89720 | Top 5 Acc 0.9918928742408752
+Iteration: 20| Loss:  0.33420| Acc:  0.89720 | Top 5 Acc 0.9922982454299927

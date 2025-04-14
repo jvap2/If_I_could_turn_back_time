@@ -79,7 +79,7 @@ fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_datas
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 2048
+BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -109,8 +109,8 @@ model_2 = nn.Sequential(
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.99
-learning_rate = .5e-2
+momentum = 0.9
+learning_rate = 2.5e-3
 weight_decay = 2e-3
 warmup_epochs = 20
 nestrov = False
