@@ -16,3 +16,5 @@ Epoch: 240| Sparsity:  0.94989
 Epoch: 250| Sparsity:  0.94989
 Epoch: 260| Sparsity:  0.94989
 Epoch: 270| Sparsity:  0.94989
+Epoch: 280| Sparsity:  0.94989
+Epoch: 280| Sparsity:  0.94989

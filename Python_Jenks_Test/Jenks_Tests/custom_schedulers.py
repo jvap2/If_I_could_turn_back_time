@@ -116,3 +116,71 @@ class WarmupLinearLR(torch.optim.lr_scheduler._LRScheduler):
 #                               warmup_factor=cfg.warmup_factor,
 #                               warmup_iters=cfg.warmup_epochs * it_ep,
 #                               warmup_method=cfg.warmup_method,)
+
+
+
+def compute_layer_lr(base_lr, percent_pruned, std_saliency, alpha=1.0, beta=0.1):
+    # alpha controls pruning sensitivity; beta controls saliency sensitivity
+    scale = 1.0 + alpha * percent_pruned + beta * std_saliency
+    return base_lr * scale
+
+
+class LayerwiseAdaptiveLRScheduler:
+    def __init__(self, optimizer, base_lrs, get_saliency_stats_fn):
+        self.optimizer = optimizer
+        self.base_lrs = base_lrs  # Dict[layer_name] = base_lr
+        self.get_saliency_stats_fn = get_saliency_stats_fn
+
+    def step(self):
+        saliency_stats = self.get_saliency_stats_fn()  # Should return layerwise dict
+        for param_group in self.optimizer.param_groups:
+            layer_name = param_group['name']
+            stats = saliency_stats[layer_name]
+            percent_pruned = stats['percent_pruned']
+            std_saliency = stats['std_saliency']
+            param_group['lr'] = compute_layer_lr(
+                self.base_lrs[layer_name],
+                percent_pruned,
+                std_saliency
+            )
+
+
+
+
+def init_lr_weight_decay(model, learning_rate, weight_decay, momentum=0.9, nestrov=False, bias_lr=False):
+    base_lrs = {}
+    layerwise_lr_stats = {}
+    params = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+
+        # Set learning rate and weight decay
+        lr = 2 * learning_rate if (bias_lr and 'bias' in name) else learning_rate
+        wd = weight_decay
+
+        # Store base LR and initialize stats
+        base_lrs[name] = lr
+        layerwise_lr_stats[name] = {
+            'percent_pruned': 0.0,
+            'saliency_std': 0.0,
+        }
+
+        # Add to param group
+        params.append({
+            "params": [param],
+            "lr": lr,
+            "weight_decay": wd,
+            "name": name  # Tag group with param name
+        })
+
+    # Create optimizer
+    optimizer = torch.optim.SGD(params, lr=learning_rate, momentum=momentum, nesterov=nestrov)
+
+    # 🧠 Embed layerwise stats and base LRs directly into the optimizer
+    optimizer.layerwise_lr_stats = layerwise_lr_stats
+    optimizer.base_lrs_by_name = base_lrs
+
+    return optimizer
+
