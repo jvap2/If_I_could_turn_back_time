@@ -51,6 +51,68 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
             for base_lr in self.base_lrs
         ]
 
+class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(
+        self,
+        optimizer,
+        milestones,
+        gamma=0.1,
+        warmup_factor=1.0 / 3,
+        warmup_iters=500,
+        warmup_method="linear",
+        alpha=0.5,     # Custom scaling factor for pruning-based adjustment
+        beta=0.0,      # Optionally add saliency std as another factor
+        last_epoch=-1,
+    ):
+        if not list(milestones) == sorted(milestones):
+            raise ValueError(
+                f"Milestones should be a list of increasing integers. Got {milestones}"
+            )
+        if warmup_method not in ("constant", "linear"):
+            raise ValueError(
+                "Only 'constant' or 'linear' warmup_method accepted, got {}".format(warmup_method)
+            )
+
+        self.milestones = milestones
+        self.gamma = gamma
+        self.warmup_factor = warmup_factor
+        self.warmup_iters = warmup_iters
+        self.warmup_method = warmup_method
+        self.alpha = alpha
+        self.beta = beta
+
+        super(WarmupMultiStepLR, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        warmup_factor = 1.0
+        if self.last_epoch < self.warmup_iters:
+            if self.warmup_method == "constant":
+                warmup_factor = self.warmup_factor
+            elif self.warmup_method == "linear":
+                alpha = float(self.last_epoch) / self.warmup_iters
+                warmup_factor = self.warmup_factor * (1 - alpha) + alpha
+
+        scaled_lrs = []
+        for group in self.optimizer.param_groups:
+            base_lr = group['initial_lr'] if 'initial_lr' in group else group['lr']
+            milestone_scale = self.gamma ** bisect_right(self.milestones, self.last_epoch)
+
+            # Fetch param group name
+            name = group.get("name", None)
+            if name and hasattr(self.optimizer, "layerwise_lr_stats"):
+                stats = self.optimizer.layerwise_lr_stats.get(name, {})
+                percent_pruned = stats.get('percent_pruned', 0.0)
+                saliency_std = stats.get('saliency_std', 0.0)
+
+                # Custom scaling logic
+                dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
+            else:
+                dynamic_scale = 1.0  # fallback
+
+            scaled_lr = base_lr * warmup_factor * milestone_scale * dynamic_scale
+            scaled_lrs.append(scaled_lr)
+
+        return scaled_lrs
 
 
 class WarmupLinearLR(torch.optim.lr_scheduler._LRScheduler):
@@ -125,24 +187,22 @@ def compute_layer_lr(base_lr, percent_pruned, std_saliency, alpha=1.0, beta=0.1)
     return base_lr * scale
 
 
-class LayerwiseAdaptiveLRScheduler:
-    def __init__(self, optimizer, base_lrs, get_saliency_stats_fn):
+class LayerwiseAdaptiveLRScheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, milestones, alpha=1.0, beta=0.1, gamma=0.1,warmup_factor=1.0 / 3,warmup_iters=500,warmup_method="linear",last_epoch=-1):
         self.optimizer = optimizer
-        self.base_lrs = base_lrs  # Dict[layer_name] = base_lr
-        self.get_saliency_stats_fn = get_saliency_stats_fn
+        self.alpha = alpha
+        self.beta = beta
 
     def step(self):
-        saliency_stats = self.get_saliency_stats_fn()  # Should return layerwise dict
-        for param_group in self.optimizer.param_groups:
-            layer_name = param_group['name']
-            stats = saliency_stats[layer_name]
-            percent_pruned = stats['percent_pruned']
-            std_saliency = stats['std_saliency']
-            param_group['lr'] = compute_layer_lr(
-                self.base_lrs[layer_name],
-                percent_pruned,
-                std_saliency
-            )
+        for group in self.optimizer.param_groups:
+            name = group.get("name", None)
+            if name and hasattr(self.optimizer, "layerwise_lr_stats"):
+                stats = self.optimizer.layerwise_lr_stats.get(name, {})
+                base_lr = self.optimizer.base_lrs_by_name.get(name, group['lr'])
+
+                # Custom scaling rule
+                scale = 1.0 + self.alpha * stats.get('percent_pruned', 0.0) + self.beta * stats.get('saliency_std', 0.0)
+                group['lr'] = base_lr * scale
 
 
 
@@ -178,7 +238,7 @@ def init_lr_weight_decay(model, learning_rate, weight_decay, momentum=0.9, nestr
     # Create optimizer
     optimizer = torch.optim.SGD(params, lr=learning_rate, momentum=momentum, nesterov=nestrov)
 
-    # 🧠 Embed layerwise stats and base LRs directly into the optimizer
+    # Embed layerwise stats and base LRs directly into the optimizer
     optimizer.layerwise_lr_stats = layerwise_lr_stats
     optimizer.base_lrs_by_name = base_lrs
 
