@@ -37,6 +37,8 @@ from torch.autograd.functional import hessian
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 
+one_shot = True
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 model = nn.Sequential(            
@@ -98,7 +100,7 @@ fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_datas
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -109,11 +111,11 @@ test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffl
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.9
-learning_rate = 75e-2
+momentum = 0.95
+learning_rate = .5e-2
 weight_decay = 1e-3
 warmup_epochs = 20
-nestrov = True
+nestrov = False
 params = []
 bias_lr = True
 if bias_lr:
@@ -206,7 +208,7 @@ with open(log_filename,"a") as f:
         print(f"No Jenks is used", file=f)
     else:
         print(f"Jenks is used", file=f)
-
+prune_count = 0
 for epoch in range(EPOCHS):
     # Training loop
     print("Epoch: ", epoch)
@@ -254,9 +256,14 @@ for epoch in range(EPOCHS):
     if epoch >= prune_epoch and epoch % 10 == 0:
         # if kill_velocity and epoch==prune_epoch:
         #     Prune_Score(optimizer, kill_velocity=True)
-        if mask and epoch==prune_epoch:
+        if one_shot and epoch==prune_epoch and mask:
             print("Pruning the weights")
             Prune_Score(optimizer, mask=True)
+            prune_count += 1
+        elif not one_shot and epoch>=prune_epoch and epoch % 20 == 0 and prune_count<10:
+            print("Pruning the weights")
+            Prune_Score(optimizer, mask=True)
+            prune_count += 1
         # if not kill_velocity or not mask:
         #     Prune_Score(optimizer)
         '''Make sure the weights are back on the device'''
