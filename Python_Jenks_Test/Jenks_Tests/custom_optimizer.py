@@ -553,6 +553,8 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
         for name, param in net.named_parameters():
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
+                agg_sal = []
+                percent_pruned_list = []
                 for kernel_idx in range(param.shape[0]):
                     kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
                     kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
@@ -564,13 +566,23 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     # Perform the calculations from lines 386-395
                     WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
                     if not mask:
+                        agg_sal.append(WB_cuda_flatten)
                         WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                         WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
                         var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                         var_min = var.argmin().item()
                         indices_ = WB_cuda_indices[:var_min]
+                        percent_pruned = len(indices_) / len(kernel_grad_flat)
+                        percent_pruned_list.append(percent_pruned)
                         kernel_grad_flat[indices_] = 0
                     optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
+                if not mask:
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        print(f"Layerwise scaling for {name}")
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        stats['percent_pruned'] = mean(percent_pruned_list)
+                        stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
+                        optimizer.layerwise_lr_stats[name] = stats
 
             elif param.dim() == 2:  # Fully connected layer weights
                 param_data_flat = param.data.view(-1)
@@ -583,6 +595,13 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     var_min = var.argmin().item()
                     indices_ = WB_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        print(f"Layerwise scaling for {name}")
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        percent_pruned = len(indices_) / len(param_grad_flat)
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
+                        optimizer.layerwise_lr_stats[name] = stats
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
 
             elif param.dim() == 1:  # Bias terms
@@ -595,6 +614,12 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     var_min = var.argmin().item()
                     indices_ = B_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        print(f"Layerwise scaling for {name}")
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(B_cuda_flatten).item()
+                        optimizer.layerwise_lr_stats[name] = stats
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
                 
     optimizer.step()
