@@ -19,7 +19,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
 from custom_optimizer import Prune_Score,train_one_step_prune
-from custom_schedulers import WarmupMultiStepLR
+from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
 
 import torch
 from torchvision import datasets, transforms
@@ -111,36 +111,16 @@ test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffl
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.95
-learning_rate = .5e-2
-weight_decay = 2e-3
+momentum = 0.9
+learning_rate = 8.75e-2
+weight_decay = 1e-3
 warmup_epochs = 20
 nestrov = False
 params = []
 bias_lr = True
-if bias_lr:
-    for key, value in model.named_parameters():
-        if not value.requires_grad:
-            continue
-        lr = learning_rate
-        weight_decay = weight_decay
-        # if "bias" in key or "bn" in key or "BN" in key:
-        #     # lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.BIAS_LR_FACTOR
-        #     weight_decay = cfg.weight_decay_bias
-        #     print('set weight_decay_bias={} for {}'.format(weight_decay, key))
-        if 'bias' in key:
-            apply_lr = 2 * lr
-        else:
-            apply_lr = lr
-        params += [{"params": [value], "lr": apply_lr, "weight_decay": weight_decay}]
-    optimizer = torch.optim.SGD(params, lr, momentum=momentum, nesterov=nestrov)
-else:
-    optimizer = SGD(params=model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay, nesterov=nestrov)
-# optimizer = AdamW(params=model.parameters(), lr=5e-3, weight_decay=1e-3)
-# optimizer = JenksSGD_Test(params=model.parameters(),warmup_epochs=warmup_epochs, lr=.02, scale=1e-3, momentum=momentum, nestrov=False, bias = True)
-# optimizer = SAM(params=model.parameters(), base_optimizer=JenksSGD_Test, lr=5e-3, momentum=momentum)
-# scheduler = StepLR(optimizer, step_size = 50, gamma = 0.1)
-scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
+optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
+# scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
+scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
