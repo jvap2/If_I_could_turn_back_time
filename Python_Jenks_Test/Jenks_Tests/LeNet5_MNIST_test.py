@@ -115,9 +115,9 @@ momentum = 0.9
 learning_rate = 8.75e-2
 weight_decay = 1e-3
 warmup_epochs = 20
-nestrov = False
+nestrov = True
 params = []
-bias_lr = True
+bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
 scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")

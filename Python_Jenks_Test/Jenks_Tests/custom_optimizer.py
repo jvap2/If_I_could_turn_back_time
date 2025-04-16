@@ -496,6 +496,7 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     # Perform the calculations from lines 386-395
                     WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
                     WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
                     agg_sal.append(WB_cuda_flatten)
                     var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                     var_min = var.argmin().item()
@@ -505,7 +506,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     kernel_grad_flat[indices_] = 0
                     optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
-                    print(f"Layerwise scaling for {name}")
                     stats = optimizer.layerwise_lr_stats.get(name, {})
                     stats['percent_pruned'] = mean(percent_pruned_list)
                     stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
@@ -523,7 +523,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 param.grad.view(-1)[indices_] = 0
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
-                    print(f"Layerwise scaling for {name}")
                     stats = optimizer.layerwise_lr_stats.get(name, {})
                     percent_pruned = len(indices_) / len(param_grad_flat)
                     stats['percent_pruned'] = percent_pruned
@@ -542,7 +541,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
                 percent_pruned = len(indices_) / len(param_grad_flat)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
-                    print(f"Layerwise scaling for {name}")
                     stats = optimizer.layerwise_lr_stats.get(name, {})
                     stats['percent_pruned'] = percent_pruned
                     stats['saliency_std'] = torch.std(B_cuda_flatten).item()
@@ -578,7 +576,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
                 if not mask:
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
-                        print(f"Layerwise scaling for {name}")
                         stats = optimizer.layerwise_lr_stats.get(name, {})
                         stats['percent_pruned'] = mean(percent_pruned_list)
                         stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
@@ -596,7 +593,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     indices_ = WB_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
-                        print(f"Layerwise scaling for {name}")
                         stats = optimizer.layerwise_lr_stats.get(name, {})
                         percent_pruned = len(indices_) / len(param_grad_flat)
                         stats['percent_pruned'] = percent_pruned
@@ -615,7 +611,6 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                     indices_ = B_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
-                        print(f"Layerwise scaling for {name}")
                         stats = optimizer.layerwise_lr_stats.get(name, {})
                         stats['percent_pruned'] = percent_pruned
                         stats['saliency_std'] = torch.std(B_cuda_flatten).item()
@@ -638,6 +633,8 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
         for param in group['params']:
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
+                agg_sal = []
+                percent_pruned_list = []
                 for kernel_idx in range(param.shape[0]):
                     kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
                     if 'agg_score' not in optimizer.state[param]:
@@ -645,7 +642,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                         break
                     score = optimizer.state[param]['agg_score'][kernel_idx]  # Access the agg_score for this kernel
                     WB_cuda_flatten = score.flatten()
-
+                    agg_sal.append(WB_cuda_flatten)
                     # Check for invalid values
                     if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
                         print("Invalid values in WB_cuda_flatten")
@@ -660,7 +657,8 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
 
                     var_min = var.argmin().item()
                     indices_ = WB_cuda_indices[:var_min]
-
+                    percent_pruned = len(indices_) / len(kernel.grad.view(-1))
+                    percent_pruned_list.append(percent_pruned)
                     # Prune the kernel
                     with torch.no_grad():  # Disable gradient tracking
                         kernel_flat = kernel.view(-1)
@@ -681,6 +679,12 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
 
                         # Update the kernel in the parameter tensor
                         param[kernel_idx] = kernel
+                if hasattr(optimizer, "layerwise_lr_stats"):
+                    if param.grad is not None:
+                        stats = optimizer.layerwise_lr_stats.get(param, {})
+                        stats['percent_pruned'] = mean(percent_pruned_list)
+                        stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
+                        optimizer.layerwise_lr_stats[param] = stats    
 
             elif param.dim() == 2:  # Fully connected layer weights
                 layer = param.data.flatten()
@@ -700,7 +704,13 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = WB_cuda_indices[:var_min]
-
+                if hasattr(optimizer, "layerwise_lr_stats"):
+                    if param.grad is not None:
+                        stats = optimizer.layerwise_lr_stats.get(param, {})
+                        percent_pruned = len(indices_) / len(param.grad.view(-1))
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
+                        optimizer.layerwise_lr_stats[param] = stats
                 # Prune the layer
                 layer[indices_] = 0
                 if kill_velocity:
@@ -725,7 +735,13 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
-
+                if hasattr(optimizer, "layerwise_lr_stats"):
+                    if param.grad is not None:
+                        stats = optimizer.layerwise_lr_stats.get(param, {})
+                        percent_pruned = len(indices_) / len(param.grad.view(-1))
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(score).item()
+                        optimizer.layerwise_lr_stats[param] = stats
                 # Prune the bias
                 layer[indices_] = 0
                 if kill_velocity:

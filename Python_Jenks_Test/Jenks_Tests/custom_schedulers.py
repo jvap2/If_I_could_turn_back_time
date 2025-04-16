@@ -106,16 +106,13 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
                 # Fetch param group name
                 name = group.get("name", None)
                 if name and hasattr(self.optimizer, "layerwise_lr_stats"):
-                    print(f"Layerwise scaling for {name}")
                     stats = self.optimizer.layerwise_lr_stats.get(name, {})
                     percent_pruned = stats.get('percent_pruned', 0.0)
                     saliency_std = stats.get('saliency_std', 0.0)
-                    print(f"Percent pruned: {percent_pruned}, Saliency std: {saliency_std}")
 
                     # Custom scaling logic
                     dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
                 else:
-                    print(f"Default scaling for {name}")
                     dynamic_scale = 1.0  # fallback
 
                 scaled_lr = base_lr * warmup_factor * milestone_scale * dynamic_scale
