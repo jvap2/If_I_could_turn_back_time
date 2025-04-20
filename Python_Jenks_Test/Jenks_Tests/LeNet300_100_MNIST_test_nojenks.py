@@ -74,7 +74,7 @@ train_size = int(0.8 * len(train_val_dataset))
 val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
-fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_dataset, lengths=[int(0.5 * len(test_dataset)), int(0.5 * len(test_dataset))])
+fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), int(0.5 * len(val_dataset))])
 
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
@@ -82,7 +82,7 @@ test_dataset.dataset.transform = mnist_transforms
 BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 

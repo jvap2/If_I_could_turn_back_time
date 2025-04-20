@@ -405,7 +405,7 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
                     indices_ = WB_cuda_indices[:var_min]
                     percent_pruned = len(indices_) / len(kernel_grad_flat)
                     percent_pruned_list.append(percent_pruned)
-                    kernel_grad_flat[indices_] = 0
+                    param.grad[kernel_idx].view(-1)[indices_] = 0
                     optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
                     print(f"Layerwise scaling for {name}")
@@ -657,7 +657,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
 
                     var_min = var.argmin().item()
                     indices_ = WB_cuda_indices[:var_min]
-                    percent_pruned = len(indices_) / len(kernel.grad.view(-1))
+                    percent_pruned = len(indices_) / len(WB_cuda_flatten)
                     percent_pruned_list.append(percent_pruned)
                     # Prune the kernel
                     with torch.no_grad():  # Disable gradient tracking
@@ -707,7 +707,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 if hasattr(optimizer, "layerwise_lr_stats"):
                     if param.grad is not None:
                         stats = optimizer.layerwise_lr_stats.get(param, {})
-                        percent_pruned = len(indices_) / len(param.grad.view(-1))
+                        percent_pruned = len(indices_) / len(WB_cuda_flatten)
                         stats['percent_pruned'] = percent_pruned
                         stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
                         optimizer.layerwise_lr_stats[param] = stats
@@ -738,7 +738,7 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 if hasattr(optimizer, "layerwise_lr_stats"):
                     if param.grad is not None:
                         stats = optimizer.layerwise_lr_stats.get(param, {})
-                        percent_pruned = len(indices_) / len(param.grad.view(-1))
+                        percent_pruned = len(indices_) / len(B_cuda_sorted)
                         stats['percent_pruned'] = percent_pruned
                         stats['saliency_std'] = torch.std(score).item()
                         optimizer.layerwise_lr_stats[param] = stats
@@ -800,6 +800,163 @@ def Prune_Score_Mag(optimizer):
                 print("Invalid parameter dimension")
                 continue
         
+
+def Prune_Score_Select(optimizer, prune_ratio = .95, kill_velocity=False, mask=False):
+    '''In this function, we will still be using Jenk's natural break to find layerwise saliency scores and their break
+        however, we will use the layerwise sparsity from the natural break to guide the selection of which weights to prune
+        for example, say x weights pruned are from layer1.weights, and the overall pruning ratio is only .9, then we will have to prune
+        (9.5/9)*x of the lowest saliency scores in layer1.weights. This will ensure if it is underpruning or overpruning, we can still have
+        some semblance of control.
+    
+    '''
+    pruned_val = []
+    sorted_idx = []
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.dim() == 4:  # Convolutional layer weights (4D tensor)
+                # Iterate over each kernel (slice along the output channel dimension)
+                agg_sal = []
+                percent_pruned_list = []
+                for kernel_idx in range(param.shape[0]):
+                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
+                    if 'agg_score' not in optimizer.state[param]:
+                        print("agg_score not found for param")
+                        break
+                    score = optimizer.state[param]['agg_score'][kernel_idx]  # Access the agg_score for this kernel
+                    WB_cuda_flatten = score.flatten()
+                    agg_sal.append(WB_cuda_flatten)
+                    # Check for invalid values
+                    if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
+                        print("Invalid values in WB_cuda_flatten")
+                        continue
+
+                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
+                        print("Invalid values in var")
+                        return
+
+                    var_min = var.argmin().item()
+                    indices_ = WB_cuda_indices[:var_min]
+                    pruned_val.append(len(indices_))
+                    sorted_idx.append(WB_cuda_indices)
+
+            elif param.dim() == 2:  # Fully connected layer weights
+                layer = param.data.flatten()
+                if 'agg_score' not in optimizer.state[param]:
+                    print("agg_score not found for param")
+                    break
+                score = optimizer.state[param]['agg_score']
+                WB_cuda_flatten = score.flatten()
+
+                # Check for invalid values
+                if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
+                    print("Invalid values in WB_cuda_flatten")
+                    continue
+
+                WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = WB_cuda_indices[:var_min]
+                pruned_val.append(len(indices_))
+                sorted_idx.append(WB_cuda_indices)
+
+            elif param.dim() == 1:  # Bias terms
+                layer = param.data
+                if 'agg_score' not in optimizer.state[param]:
+                    print("agg_score not found for param")
+                    break
+                score = optimizer.state[param]['agg_score']
+                B_cuda_sorted, B_cuda_indices = score.sort()
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var_min = var.argmin().item()
+                indices_ = B_cuda_indices[:var_min]
+                pruned_val.append(len(indices_))
+                sorted_idx.append(WB_cuda_indices)
+            else:
+                print("Invalid parameter dimension")
+                continue
+    # Calculate the total number of weights to prune
+    pruned_weights = sum(pruned_val)
+    # Calculate the total number of weights in the model
+    total_weights = sum([param.numel() for group in optimizer.param_groups for param in group['params']])
+    # Calculate the target number of weights to prune based on the pruning ratio
+    current_prune_ratio = pruned_weights / total_weights
+    target_prune_ratio = prune_ratio
+    for i,value in enumerate(pruned_val):
+        pruned_val[i] = int((target_prune_ratio/current_prune_ratio) * value)
+    ## Pass back through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.dim() == 4:
+                # Iterate over each kernel (slice along the output channel dimension)
+                for kernel_idx in range(param.shape[0]):
+                    kernel = param.data[kernel_idx]
+                    kernel_flat = kernel.view(-1)
+                    indices_ = sorted_idx[0][:pruned_val[0]]
+                    sorted_idx.pop(0)
+                    pruned_val.pop(0)
+                    if indices_.max() >= kernel_flat.numel() or indices_.min() < 0 or indices_.numel()>= kernel_flat.numel():
+                        print(f"indices_ max: {indices_.max()}, indices_ min: {indices_.min()}")
+                        print(f"Size of indices_: {indices_.size()}")
+                        print(f"Invalid indices_: {indices_}")
+                        continue
+                    print(f"indices_ max: {indices_.max()}, indices_ min: {indices_.min()}")
+                    print(f"Size of indices_: {indices_.size()}")
+                    print(f"Invalid indices_: {indices_}")
+                    print(f"kernel_flat size: {kernel_flat.size()}")
+                    kernel_flat[indices_] = 0
+                    param[kernel_idx].data = kernel_flat.view(kernel.shape)
+                    if kill_velocity:
+                        if 'velocity' in optimizer.state[param]:
+                            optimizer.state[param]['velocity'][kernel_idx].view(-1)[indices_] = 0
+                    if mask:
+                        if 'mask' in optimizer.state[param]:
+                            mask_dummy = torch.ones_like(kernel_flat, requires_grad=False)
+                            mask_dummy[indices_] = 0
+                            optimizer.state[param]['mask'][kernel_idx] = mask_dummy.view(kernel.shape)
+                        else:
+                            print("Mask not found in optimizer state")
+            elif param.dim() == 2:
+                layer = param.data.flatten()
+                indices_ = sorted_idx[0][:pruned_val[0]]
+                pruned_val.pop(0)
+                sorted_idx.pop(0)
+                layer[indices_] = 0
+                param.data = layer.view(param.data.shape)
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'].view(-1)[indices_] = 0
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        mask_dummy = torch.ones_like(layer, requires_grad=False)
+                        mask_dummy[indices_] = 0
+                        optimizer.state[param]['mask'] = mask_dummy.view(param.data.shape)
+                    else:
+                        print("Mask not found in optimizer state")
+            elif param.dim() == 1:
+                layer = param.data
+                indices_ = sorted_idx[0][:pruned_val[0]]
+                pruned_val.pop(0)
+                sorted_idx.pop(0)
+                layer[indices_] = 0
+                param.data = layer
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'][indices_] = 0
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        optimizer.state[param]['mask'][indices_] = 0
+                    else:
+                        print("Mask not found in optimizer state")
+            else:
+                print("Invalid parameter dimension")
+                continue
+            
+                
+
 
 
 

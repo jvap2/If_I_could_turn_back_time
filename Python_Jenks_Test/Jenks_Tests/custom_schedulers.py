@@ -112,11 +112,14 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
 
                     # Custom scaling logic
                     dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
+                    if "weight_decay" in group:
+                        group["weight_decay"] *= (1-percent_pruned)**self.alpha
                 else:
                     dynamic_scale = 1.0  # fallback
 
                 scaled_lr = base_lr * warmup_factor * milestone_scale * dynamic_scale
                 scaled_lrs.append(scaled_lr)
+
 
             return scaled_lrs
 

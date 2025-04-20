@@ -18,7 +18,7 @@ from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
-from custom_optimizer import Prune_Score,train_one_step_prune
+from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select
 from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
 
 import torch
@@ -40,6 +40,7 @@ from backpack.extensions import HMP, DiagHessian
 one_shot = False
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+prune_ratio = .95
 
 model = nn.Sequential(            
     nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, stride=1, padding=2),   # 28*28->32*32-->28*28
@@ -60,10 +61,10 @@ model = nn.Sequential(
 ).to(device)
 
 kill_velocity = False
-train_lr_decay_factor = 0.1
+train_lr_decay_factor = 0.25
 
 gsm_lr_base_value = 1e-2
-gsm_lr_boundaries = [160, 200, 240]
+gsm_lr_boundaries = [200, 230, 260]
 gsm_momentum = 0.99
 gsm_max_epochs = 280
 mask = True
@@ -95,15 +96,15 @@ train_size = int(0.8 * len(train_val_dataset))
 val_size = len(train_val_dataset) - train_size
 
 train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
-fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=test_dataset, lengths=[int(0.5 * len(test_dataset)), int(0.5 * len(test_dataset))])
+fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), int(0.5 * len(val_dataset))])
 
 train_dataset.dataset.transform = mnist_transforms
 fin_val_dataset.dataset.transform = mnist_transforms
 test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 512
+BATCH_SIZE = 128
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 
@@ -157,7 +158,7 @@ val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{n
 test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 100
+prune_epoch = 40
 no_jenks =True
 
 with open(log_filename,"a") as f:

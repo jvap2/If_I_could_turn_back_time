@@ -7,3 +7,6 @@
 [submodule "Python_Jenks_Test/snip-public"]
 	path = Python_Jenks_Test/snip-public
 	url = https://github.com/namhoonlee/snip-public.git
+[submodule "Python_Jenks_Test/Jenks_Tests/Python_Jenks_Test/Jenks_Tests/ResNet56"]
+	path = Python_Jenks_Test/Jenks_Tests/Python_Jenks_Test/Jenks_Tests/ResNet56
+	url = https://github.com/DeweshPandey/ResNet-56
