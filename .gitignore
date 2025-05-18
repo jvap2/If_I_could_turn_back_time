@@ -21,3 +21,4 @@ LeNet300_MNIST_output/
 LeNet300_100_MNIST_output/
 LeNet5_MNIST_output/
 ResNet56_CIFAR_output/
+datasets/
