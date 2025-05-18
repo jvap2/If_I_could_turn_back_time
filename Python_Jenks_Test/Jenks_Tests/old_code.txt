@@ -1,0 +1,33 @@
+train one step prune old conv loop:
+                    for kernel_idx in range(param.shape[0]):
+                        for out_idx in range(param.shape[1]):
+                            kernel = param.data[kernel_idx,out_idx]  # Access the kernel (3D tensor)
+                            kernel_grad = param.grad[kernel_idx,out_idx]  # Access the gradient of the kernel
+
+                            # Flatten the kernel and its gradient
+                            kernel_data_flat = kernel.view(-1)
+                            kernel_grad_flat = kernel_grad.view(-1)
+
+                            # Perform the calculations from lines 386-395
+                            WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
+                            WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                            WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
+                            agg_sal.append(WB_cuda_flatten)
+                            var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+
+                            var_min = var.argmin().item()
+                            indices_ = WB_cuda_indices[:var_min]
+                            total_params += len(kernel_grad_flat)
+                            total_pruned += len(indices_)
+                            percent_pruned = len(indices_) / len(kernel_grad_flat)                                
+                            percent_pruned_list.append(percent_pruned)
+                            # kernel_grad_flat[indices_] = 0
+                            param.grad[kernel_idx,out_idx].view(-1)[indices_] = 0
+                            WB_cuda_flatten[indices_] = 0
+                            if debug:
+                                print(f"Layer Name: {name}")
+                                print(f"Kernel Index: {kernel_idx}")
+                                print(f"Out Index: {out_idx}")
+                                print(f"Length of indices_: {len(indices_)}")
+                                print(f"Percent Pruned: {percent_pruned}")
+                                print(f"param.grad: {param.grad[kernel_idx,out_idx]}")

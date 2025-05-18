@@ -2,8 +2,73 @@ import numpy as np
 from jenkspy import JenksNaturalBreaks
 import torch
 from torch.optim import Optimizer
-from cuda_helpers import module_weights, module_bias
+from cuda_helpers import module_weights, module_bias, Conv_Mask, Linear_Mask, Bias_Mask
 from statistics import mean, stdev
+import time
+
+class InfiniteDataLoader(torch.utils.data.DataLoader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Initialize an iterator over the dataset.
+        self.dataset_iterator = super().__iter__()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            batch = next(self.dataset_iterator)
+        except StopIteration:
+            # Dataset exhausted, use a new fresh iterator.
+            self.dataset_iterator = super().__iter__()
+            batch = next(self.dataset_iterator)
+        return batch
+
+def train_one_step_gsm(net, data, label, optimizer, criterion, nonzero_ratio):
+    pred = net(data)
+    loss = criterion(pred, label)
+    loss.backward()
+
+    to_concat_g = []
+    to_concat_v = []
+    for name, param in net.named_parameters():
+        if param.dim() in [2, 4]:
+            to_concat_g.append(param.grad.data.view(-1))
+            to_concat_v.append(param.data.view(-1))
+    all_g = torch.cat(to_concat_g)
+    all_v = torch.cat(to_concat_v)
+    metric = torch.abs(all_g * all_v)
+    num_params = all_v.size(0)
+    nz = int(nonzero_ratio * num_params)
+    top_values, _ = torch.topk(metric, nz)
+    thresh = top_values[-1]
+
+    for name, param in net.named_parameters():
+        if param.dim() in [2, 4]:
+            mask = (torch.abs(param.data * param.grad.data) >= thresh).type(torch.cuda.FloatTensor)
+            param.grad.data = mask * param.grad.data
+
+    optimizer.step()
+    optimizer.zero_grad()
+    acc, acc5 = torch_accuracy(pred, label, (1,5))
+    return acc, acc5, loss
+
+def prune_by_magnitude(model, nonzero_ratio):
+    ##Prune only the weight matrices or convolutional layers, and we will do this one globally
+    vals = []
+    for name, param in model.named_parameters():
+        if param.dim() in [2, 4]:
+            vals.append(torch.abs(param.data.view(-1)))
+    all_vals = torch.cat(vals)
+    num_params = all_vals.size(0)
+    nz = int((1-nonzero_ratio) * num_params)
+    top_values, _ = torch.topk(all_vals, nz)
+    thresh = top_values[-1]
+    for name, param in model.named_parameters():
+        if param.dim() in [2,4]:
+            mask = (torch.abs(param.data) >= thresh).type(torch.cuda.FloatTensor)
+            param.data = mask * param.data
+    return model
 
 class JenksSGD(Optimizer):
     def __init__(self, params, lr=5e-3, scale=5e-4, momentum=0.99):
@@ -456,7 +521,7 @@ def train_one_step(net, data, label, optimizer, criterion, epoch, warmup_epochs)
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss
 
-def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_epochs, prune_epochs, mask = False):
+def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
     ## Check if the agg score is already defined
     # if epoch == 0:
     for group in optimizer.param_groups:
@@ -474,59 +539,105 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
     optimizer.zero_grad()
     pred = net(data)
     loss = criterion(pred, label)
+    if L2:
+        l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
+        loss = loss + lambda_ * l2_reg
     loss.backward()
-
+    total_params = 0
+    total_pruned = 0
     # to_concat_g = []
     # to_concat_v = []
 
-    if epoch > warmup_epochs and epoch <= prune_epochs:
+    if (epoch > warmup_epochs and epoch <= prune_epochs):
         for name, param in net.named_parameters():
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
-                agg_sal = []
-                percent_pruned_list = []
-                for kernel_idx in range(param.shape[0]):
-                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
-                    kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
-
-                    # Flatten the kernel and its gradient
-                    kernel_data_flat = kernel.view(-1)
-                    kernel_grad_flat = kernel_grad.view(-1)
-
-                    # Perform the calculations from lines 386-395
-                    WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
+                if filter_based:
+                    agg_sal = []
+                    percent_pruned_list = []
+                    WB = torch.abs(param.data * param.grad)
+                    mask = Conv_Mask(WB.contiguous())
+                    mask = mask.to(param.device)
+                    param.grad = mask * param.grad
+                    WB_prime = mask * WB
+                    total_params += mask.numel()
+                    total_pruned += (mask.numel()-mask.sum().item())
+                    percent_pruned = (mask.numel()-mask.sum().item()) / mask.numel()
+                    percent_pruned_list.append(percent_pruned)
+                    optimizer.state[param]['agg_score'] += WB_prime
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(WB).item()
+                        if debug:
+                            if debugfile != None:
+                                with open(debugfile, 'a') as f:
+                                    f.write(f"Layer Name: {name}\n")
+                                    f.write(f"Percent Pruned: {stats['percent_pruned']}\n")
+                                    f.write(f"Saliency Std: {stats['saliency_std']}\n")
+                        optimizer.layerwise_lr_stats[name] = stats
+                else:
+                    ## Perform Jenks on the entire layer, not kernel by kernel
+                    param_data_flat = param.data.view(-1)
+                    param_grad_flat = param.grad.data.view(-1)
+                    WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                     WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
-                    agg_sal.append(WB_cuda_flatten)
+                    WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                    WB_cuda_sorted = WB_cuda_sorted.contiguous()
                     var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
                     var_min = var.argmin().item()
                     indices_ = WB_cuda_indices[:var_min]
-                    percent_pruned = len(indices_) / len(kernel_grad_flat)
-                    percent_pruned_list.append(percent_pruned)
-                    kernel_grad_flat[indices_] = 0
-                    optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
-                if name and hasattr(optimizer, "layerwise_lr_stats"):
-                    stats = optimizer.layerwise_lr_stats.get(name, {})
-                    stats['percent_pruned'] = mean(percent_pruned_list)
-                    stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
-                    optimizer.layerwise_lr_stats[name] = stats
-
+                    total_params += len(param_grad_flat)
+                    total_pruned += len(indices_)
+                    mask = torch.ones_like(param.data, requires_grad=False)
+                    mask.view(-1)[indices_] = 0
+                    mask = mask.to(param.device)
+                    param.grad = mask * param.grad
+                    WB_prime = mask * WB_cuda_flatten.view(param.data.shape)
+                    WB_cuda_flatten[indices_] = 0
+                    optimizer.state[param]['agg_score'] += WB_prime
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        percent_pruned = len(indices_) / len(param_grad_flat)
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
+                        if debug:
+                            if debugfile != None:
+                                with open(debugfile, 'a') as f:
+                                    f.write(f"Layer Name: {name}\n")
+                                    f.write(f"Percent Pruned: {stats['percent_pruned']}\n")
+                                    f.write(f"Saliency Std: {stats['saliency_std']}\n")
+                        optimizer.layerwise_lr_stats[name] = stats
             elif param.dim() == 2:  # Fully connected layer weights
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
                 WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                 WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
-                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                var = module_weights.jenks_optimization_cuda(WB_cuda_sorted.contiguous())
                 var_min = var.argmin().item()
+                percent_pruned = len(indices_) / len(param_grad_flat)
                 indices_ = WB_cuda_indices[:var_min]
-                param.grad.view(-1)[indices_] = 0
+                mask = torch.ones_like(param.data, requires_grad=False)
+                mask.view(-1)[indices_] = 0
+                mask = mask.to(param.device)
+                param.grad = mask * param.grad
+                WB_cuda_flatten = mask * WB_cuda_flatten.view(param.data.shape)
+                total_params += len(param_grad_flat)
+                total_pruned += len(indices_)
                 optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
                     stats = optimizer.layerwise_lr_stats.get(name, {})
                     percent_pruned = len(indices_) / len(param_grad_flat)
                     stats['percent_pruned'] = percent_pruned
                     stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
+                    if debug:
+                        if debugfile != None:
+                            with open(debugfile, 'a') as f:
+                                f.write(f"Layer Name: {name}\n")
+                                f.write(f"Percent Pruned: {stats['percent_pruned']}\n")
+                                f.write(f"Length of indices_: {len(indices_)}")
+                                f.write(f"Saliency Std: {stats['saliency_std']}\n")
                     optimizer.layerwise_lr_stats[name] = stats
 
             elif param.dim() == 1:  # Bias terms
@@ -534,64 +645,100 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 param_grad_flat = param.grad.data.view(-1)
                 B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
                 B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
-                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
+                var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted.contiguous())
                 var_min = var.argmin().item()
                 indices_ = B_cuda_indices[:var_min]
+                # if debug:
+                #     print(f"Layer Name: {name}")
+                #     print(f"Var: {var}")
+                #     print(f"Var Min: {var.min()}")
+                #     print(f"B_cuda_indices size: {B_cuda_indices.size()}")
+                #     print(f"Indices_ size: {indices_.size()}")
                 param.grad.view(-1)[indices_] = 0
                 optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
                 percent_pruned = len(indices_) / len(param_grad_flat)
+                total_params += len(param_grad_flat)
+                total_pruned += len(indices_)
                 if name and hasattr(optimizer, "layerwise_lr_stats"):
                     stats = optimizer.layerwise_lr_stats.get(name, {})
                     stats['percent_pruned'] = percent_pruned
                     stats['saliency_std'] = torch.std(B_cuda_flatten).item()
+                    if debug:
+                        if debugfile != None:
+                            with open(debugfile, 'a') as f:
+                                f.write(f"Layer Name: {name}\n")
+                                f.write(f"Percent Pruned: {stats['percent_pruned']}\n")
+                                f.write(f"Saliency Std: {stats['saliency_std']}\n")
                     optimizer.layerwise_lr_stats[name] = stats
                 param.grad.view(-1)[indices_] = 0
-                optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
+                B_cuda_flatten[indices_] = 0
+                optimizer.state[param]['agg_score'] += B_cuda_flatten.view(param.data.shape)
     if epoch > prune_epochs:
         for name, param in net.named_parameters():
             if param.dim() == 4:  # Convolutional layer weights (4D tensor)
                 # Iterate over each kernel (slice along the output channel dimension)
-                agg_sal = []
-                percent_pruned_list = []
-                for kernel_idx in range(param.shape[0]):
-                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
-                    kernel_grad = param.grad[kernel_idx]  # Access the gradient of the kernel
-
-                    # Flatten the kernel and its gradient
-                    kernel_data_flat = kernel.view(-1)
-                    kernel_grad_flat = kernel_grad.view(-1)
-
-                    # Perform the calculations from lines 386-395
-                    WB_cuda_flatten = torch.abs(kernel_data_flat * kernel_grad_flat)
-                    if not mask:
-                        agg_sal.append(WB_cuda_flatten)
-                        WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-                        WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
-                        var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-                        var_min = var.argmin().item()
-                        indices_ = WB_cuda_indices[:var_min]
-                        percent_pruned = len(indices_) / len(kernel_grad_flat)
-                        percent_pruned_list.append(percent_pruned)
-                        kernel_grad_flat[indices_] = 0
-                    optimizer.state[param]['agg_score'][kernel_idx] += WB_cuda_flatten.view(kernel.shape)
-                if not mask:
+                if filter_based:
+                    WB = torch.abs(param.data * param.grad)
+                    mask = Conv_Mask(WB)
+                    mask = mask.to(param.device)
+                    if not no_jenks:
+                        param.grad = mask * param.grad
+                        WB_prime = mask * WB
+                    total_params += mask.numel()
+                    total_pruned += (mask.numel()-mask.sum().item())
+                    percent_pruned = (mask.numel()-mask.sum().item()) / mask.numel()
+                    percent_pruned_list.append(percent_pruned)
+                    optimizer.state[param]['agg_score'] += WB_prime
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
                         stats = optimizer.layerwise_lr_stats.get(name, {})
-                        stats['percent_pruned'] = mean(percent_pruned_list)
-                        stats['saliency_std'] = torch.std(torch.cat(agg_sal)).item()
+                        stats['percent_pruned'] = percent_pruned
+                        stats['saliency_std'] = torch.std(WB).item()
+                        if debug:
+                            if debugfile != None:
+                                with open(debugfile, 'a') as f:
+                                    f.write(f"Layer Name: {name}\n")
+                                    f.write(f"Percent Pruned: {stats['percent_pruned']}\n")
+                                    f.write(f"Saliency Std: {stats['saliency_std']}\n")
                         optimizer.layerwise_lr_stats[name] = stats
-
+                else:
+                    ## Perform Jenks on the entire layer, not kernel by kernel
+                    param_data_flat = param.data.view(-1)
+                    param_grad_flat = param.grad.data.view(-1)
+                    WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
+                    if not no_jenks:
+                        WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
+                        WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
+                        var = module_weights.jenks_optimization_cuda(WB_cuda_sorted.contiguous())
+                        var_min = var.argmin().item()
+                        indices_ = WB_cuda_indices[:var_min]
+                        mask = torch.ones_like(param.data, requires_grad=False)
+                        mask.view(-1)[indices_] = 0
+                        mask = mask.to(param.device)
+                        param.grad *= mask
+                        WB_cuda_flatten[indices_] = 0
+                        if name and hasattr(optimizer, "layerwise_lr_stats"):
+                            stats = optimizer.layerwise_lr_stats.get(name, {})
+                            percent_pruned = len(indices_) / len(param_grad_flat)
+                            stats['percent_pruned'] = percent_pruned
+                            stats['saliency_std'] = torch.std(WB_cuda_flatten).item()
+                            optimizer.layerwise_lr_stats[name] = stats
+                    total_params += len(param_grad_flat)
+                    total_pruned += len(indices_)
+                    optimizer.state[param]['agg_score'] += WB_cuda_flatten.view(param.data.shape)
             elif param.dim() == 2:  # Fully connected layer weights
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
                 WB_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
-                if not mask:
+                if not no_jenks:
                     WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
                     WB_cuda_sorted = WB_cuda_sorted.reshape(param.data.shape)
-                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
+                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted.contiguous())
                     var_min = var.argmin().item()
                     indices_ = WB_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
+                    total_params += len(param_grad_flat)
+                    total_pruned += len(indices_)
+                    WB_cuda_flatten[indices_] = 0
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
                         stats = optimizer.layerwise_lr_stats.get(name, {})
                         percent_pruned = len(indices_) / len(param_grad_flat)
@@ -604,19 +751,35 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
                 param_data_flat = param.data.view(-1)
                 param_grad_flat = param.grad.data.view(-1)
                 B_cuda_flatten = torch.abs(param_data_flat * param_grad_flat)
-                if not mask:
+                if not no_jenks:
                     B_cuda_sorted, B_cuda_indices = B_cuda_flatten.sort()
                     var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                     var_min = var.argmin().item()
                     indices_ = B_cuda_indices[:var_min]
                     param.grad.view(-1)[indices_] = 0
+                    total_params += len(param_grad_flat)
+                    total_pruned += len(indices_)
+                    B_cuda_flatten[indices_] = 0
                     if name and hasattr(optimizer, "layerwise_lr_stats"):
                         stats = optimizer.layerwise_lr_stats.get(name, {})
                         stats['percent_pruned'] = percent_pruned
                         stats['saliency_std'] = torch.std(B_cuda_flatten).item()
                         optimizer.layerwise_lr_stats[name] = stats
-                optimizer.state[param]['agg_score'] += param_grad_flat.view(param.data.shape)
-                
+                optimizer.state[param]['agg_score'] += B_cuda_flatten.view(param.data.shape)
+    if epoch > warmup_epochs:
+        if total_params != 0:
+            with open(jenksfile, 'a') as f:
+                f.write(f"Epoch: {epoch}\n")
+                f.write(f"Total Params: {total_params}\n")
+                f.write(f"Total Pruned: {total_pruned}\n")
+                f.write(f"Percent Pruned: {total_pruned/total_params}\n")
+                f.write("\n")  
+        else:
+            with open(jenksfile, 'a') as f:
+                f.write(f"Epoch: {epoch}\n")
+                f.write(f"Total Params: {total_params}\n")
+                f.write(f"Total Pruned: {total_pruned}\n")   
+                f.write("\n")  
     optimizer.step()
     if epoch > prune_epochs:
         if mask:
@@ -626,8 +789,129 @@ def train_one_step_prune(net, data, label, optimizer, criterion, epoch, warmup_e
     acc, acc5 = torch_accuracy(pred, label, (1,5))
     return acc, acc5, loss    
 
+def init_network(optimizer):
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if 'agg_score' not in optimizer.state[param]:
+                optimizer.state[param]['agg_score'] = torch.zeros_like(param.data)
+            if 'exp_avg' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg'] = torch.zeros_like(param.data)
+            if 'exp_avg_sq' not in optimizer.state[param]:
+                optimizer.state[param]['exp_avg_sq'] = torch.zeros_like(param.data)
+            if 'step' not in optimizer.state[param]:
+                optimizer.state[param]['step'] = torch.tensor(0, dtype = torch.float32, device = 'cpu')
+            if 'mask' not in optimizer.state[param]:
+                optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
 
-def Prune_Score(optimizer, kill_velocity=False, mask=False):
+def compute_mask(param, WB, filter_based = True):
+    if param.dim() == 4:
+        return Conv_Mask(WB) if filter_based else Bias_Mask(WB.view(-1)).view(param.shape)
+    elif param.dim() == 2:
+        return Linear_Mask(WB)
+    elif param.dim() == 1:
+        return Bias_Mask(WB)
+    else:
+        raise ValueError("Unsupported parameter dimension")
+
+def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
+    debug_logs = []
+    jenks_logs = []
+    accumulation_steps = 1
+    print_steps = 10
+    optimizer.zero_grad()
+    count = 0
+    loss = 0
+    acc = 0
+    acc5 = 0
+    device = next(net.parameters()).device
+    for i, (data, label) in enumerate(dataloader):
+        if mask and epoch>prune_epochs:
+                ## Go through all the parameters and set the pruned ones to zero
+            for name, param in net.named_parameters():
+                param.data = param.data * optimizer.state[param]['mask']
+        count+=1
+        start = time.time()
+        data,label = data.to(device), label.to(device)
+        pred = net(data)
+        loss_iter = criterion(pred, label)
+        if L2:
+            l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
+            loss_iter = loss_iter + lambda_ * l2_reg
+        loss_iter.backward()
+        loss += loss_iter.item()
+        acc_dummy, acc5_dummy = torch_accuracy(pred, label, (1,5))
+        acc += acc_dummy
+        acc5 += acc5_dummy
+        num_layers = len(list(net.parameters()))
+        if (i+1)%accumulation_steps == 0:
+            total_params = 0
+            total_pruned = 0
+            if warmup_epochs < epoch <= prune_epochs or epoch > prune_epochs:
+                for name, param in net.named_parameters():
+                    layer_pruned = 0
+                    layer_params = 0
+                    WB = torch.abs(param.data * param.grad)
+                    mask_tensor = compute_mask(param, WB, filter_based).to(device)
+                    with torch.no_grad():
+                        if epoch > prune_epochs and mask:
+                            param.data.mul_(optimizer.state[param]['mask'])
+
+                        if epoch > warmup_epochs:
+                            if not no_jenks:
+                                param.grad.mul_(mask_tensor)
+                                WB_prime = WB * mask_tensor
+                            else:
+                                WB_prime = WB
+
+                        optimizer.state[param]['agg_score'] += WB_prime
+
+                        total_params += mask_tensor.numel()
+                        total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        layer_params += mask_tensor.numel()
+                        layer_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        # Debug stats
+                        if name and hasattr(optimizer, "layerwise_lr_stats"):
+                            stats = optimizer.layerwise_lr_stats.get(name, {})
+                            stats['percent_pruned'] = layer_pruned / layer_params
+                            stats['saliency_std'] = torch.std(WB).item()
+                            optimizer.layerwise_lr_stats[name] = stats
+
+                            if debug and debugfile:
+                                debug_logs.append(
+                                    f"Layer Name: {name}\nPercent Pruned: {stats['percent_pruned']:.4f}\nSaliency Std: {stats['saliency_std']:.4f}\n"
+                                )
+                                    
+            optimizer.step()
+            optimizer.zero_grad()
+
+            # Logging after pruning starts
+            if epoch > warmup_epochs:
+                elapsed = time.time() - start
+                log = (
+                    f"Epoch: {epoch}\nIteration: {i}\nElapsed Time: {elapsed:.4f}\n"
+                    f"Total Params: {total_params}\nTotal Pruned: {total_pruned}\n"
+                )
+                if total_params > 0:
+                    log += f"Percent Pruned: {total_pruned / total_params:.4f}\n"
+                    log += f"Accuracy: {acc.item() / count:.4f}\n"
+                jenks_logs.append(log + "\n")
+        if (i+1) % print_steps == 0:
+            # Write logs once per epoch
+            if debug and debugfile:
+                with open(debugfile, 'a') as f:
+                    f.writelines(debug_logs)
+            if jenksfile and epoch > warmup_epochs:
+                with open(jenksfile, 'a') as f:
+                    f.writelines(jenks_logs)
+
+    loss_avg = loss/ count
+    acc_avg = acc / count
+    acc5_avg = acc5 / count
+    return acc_avg, acc5_avg, loss_avg
+
+
+
+def Prune_Score(optimizer, kill_velocity=False, mask=False, mag_prune = False):
     ## Pass through the network and decide which weights to prune based on optimizer.state[param]['agg_score']
     for group in optimizer.param_groups:
         for param in group['params']:
@@ -635,50 +919,23 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 # Iterate over each kernel (slice along the output channel dimension)
                 agg_sal = []
                 percent_pruned_list = []
-                for kernel_idx in range(param.shape[0]):
-                    kernel = param.data[kernel_idx]  # Access the kernel (3D tensor)
-                    if 'agg_score' not in optimizer.state[param]:
-                        print("agg_score not found for param")
-                        break
-                    score = optimizer.state[param]['agg_score'][kernel_idx]  # Access the agg_score for this kernel
-                    WB_cuda_flatten = score.flatten()
-                    agg_sal.append(WB_cuda_flatten)
-                    # Check for invalid values
-                    if torch.isnan(WB_cuda_flatten).any() or torch.isinf(WB_cuda_flatten).any():
-                        print("Invalid values in WB_cuda_flatten")
-                        continue
+                if 'agg_score' not in optimizer.state[param]:
+                    print("agg_score not found for param")
+                    break
+                if mag_prune:
+                    score = param.data
+                else:
+                    score = optimizer.state[param]['agg_score']  # Access the agg_score for this kernel
 
-                    WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-                    WB_cuda_sorted = WB_cuda_sorted.reshape(kernel.shape)
-                    var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-                    if torch.isnan(var).any() or torch.isinf(var).any() or var.numel() == 0 or var.shape[0] == 0:
-                        print("Invalid values in var")
-                        return
-
-                    var_min = var.argmin().item()
-                    indices_ = WB_cuda_indices[:var_min]
-                    percent_pruned = len(indices_) / len(WB_cuda_flatten)
-                    percent_pruned_list.append(percent_pruned)
-                    # Prune the kernel
-                    with torch.no_grad():  # Disable gradient tracking
-                        kernel_flat = kernel.view(-1)
-                        kernel_flat[indices_] = 0
-                        param[kernel_idx].data = kernel_flat.view(kernel.shape)
-
-                    # Update velocity and mask if required
-                        if kill_velocity:
-                            if 'velocity' in optimizer.state[param]:
-                                optimizer.state[param]['velocity'][kernel_idx].view(-1)[indices_] = 0
-                        if mask:
-                            if 'mask' in optimizer.state[param]:
-                                mask_dummy = torch.ones_like(kernel_flat, requires_grad=False)
-                                mask_dummy[indices_] = 0
-                                optimizer.state[param]['mask'][kernel_idx] = mask_dummy.view(kernel.shape)
-                            else:
-                                print("Mask not found in optimizer state")
-
-                        # Update the kernel in the parameter tensor
-                        param[kernel_idx] = kernel
+                # Check for invalid values
+                if torch.isnan(score).any() or torch.isinf(score).any():
+                    print("Invalid values in score")
+                    continue
+                param_mask = Conv_Mask(score.contiguous())
+                param_mask = param_mask.to(param.device)
+                param.data = param_mask * param.data
+                if param.grad is not None:
+                    param.grad = param_mask * param.grad
                 if hasattr(optimizer, "layerwise_lr_stats"):
                     if param.grad is not None:
                         stats = optimizer.layerwise_lr_stats.get(param, {})
@@ -691,7 +948,10 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 if 'agg_score' not in optimizer.state[param]:
                     print("agg_score not found for param")
                     break
-                score = optimizer.state[param]['agg_score']
+                if mag_prune:
+                    score = layer
+                else:
+                    score = optimizer.state[param]['agg_score']
                 WB_cuda_flatten = score.flatten()
 
                 # Check for invalid values
@@ -730,7 +990,10 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
                 if 'agg_score' not in optimizer.state[param]:
                     print("agg_score not found for param")
                     break
-                score = optimizer.state[param]['agg_score']
+                if mag_prune:
+                    score = layer
+                else:
+                    score = optimizer.state[param]['agg_score']
                 B_cuda_sorted, B_cuda_indices = score.sort()
                 var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
                 var_min = var.argmin().item()
@@ -756,6 +1019,32 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False):
             else:
                 print("Invalid parameter dimension")
                 continue
+
+def Prune_Score_v2(optimizer, kill_velocity=False, mask=False, mag_prune = False, filter_based = True):
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if mag_prune:
+                score = torch.abs(param.data)
+            else:
+                score = optimizer.state[param]['agg_score']
+            prune_mask = compute_mask(param, score, filter_based).to(param.device)
+            if param.grad is not None:
+                param.grad = prune_mask * param.grad
+            param.data = prune_mask * param.data
+            if kill_velocity:
+                if 'velocity' in optimizer.state[param]:
+                    optimizer.state[param]['velocity'] = prune_mask * optimizer.state[param]['velocity']
+            if mask:
+                if 'mask' in optimizer.state[param]:
+                    optimizer.state[param]['mask'] = prune_mask
+                else:
+                    print("Mask not found in optimizer state")
+            if hasattr(optimizer, "layerwise_lr_stats"):
+                stats = optimizer.layerwise_lr_stats.get(param, {})
+                stats['percent_pruned'] = (prune_mask.numel() - prune_mask.sum().item()) / prune_mask.numel()
+                stats['saliency_std'] = torch.std(score).item()
+                optimizer.layerwise_lr_stats[param] = stats
+
 
 
 

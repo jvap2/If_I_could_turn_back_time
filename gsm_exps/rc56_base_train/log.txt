@@ -1,0 +1,7 @@
+2025-05-10 13:32:30,375 train WARNING: A exception occurred during Engine initialization, give up running process
+2025-05-10 13:37:25,068 train WARNING: A exception occurred during Engine initialization, give up running process
+2025-05-10 13:45:18,053 train INFO: 
+
+Start training with pytorch version 2.6.0+cu118
+2025-05-10 13:45:18,080 train INFO: num of params in hdf5=860083
+2025-05-10 13:45:19,593 train INFO: validate at epoch 0, top1=10.00000, top5=50.03000, loss=13.103655

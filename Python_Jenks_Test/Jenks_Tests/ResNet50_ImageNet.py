@@ -21,6 +21,7 @@ from time import time
 from cuda_helpers import get_memory_free_MiB
 from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select
 from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
+from torchvision.models import resnet50
 
 import torch
 from torchvision import datasets, transforms
@@ -56,7 +57,7 @@ mask = True
 
 
 
-train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
+train_val_dataset = datasets.ImageNet(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
 
 
 imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
@@ -65,10 +66,10 @@ mean = imgs.view(1, -1).mean(dim=1)
 std = imgs.view(1, -1).std(dim=1)     
 
 mnist_transforms = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Resize((224, 224)),
+                                       transforms.Resize((256, 256)),
                                        transforms.Normalize(mean=mean, std=std)])
 
-train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=False, transform=mnist_transforms)
+train_val_dataset = datasets.ImageNet(root="./datasets/", train=True, download=False, transform=mnist_transforms)
 
 
 train_size = int(0.8 * len(train_val_dataset))
@@ -88,7 +89,7 @@ train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuf
 val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
-model = ResNet56().to(device)
+model = resnet50(weights=None,progress=True).to(device)
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
@@ -102,14 +103,14 @@ bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
 scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
-accuracy = Accuracy(task='multiclass', num_classes=10)
-top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
+accuracy = Accuracy(task='multiclass', num_classes=1000)
+top5accuracy = MulticlassAccuracy(num_classes=1000, top_k=5)
 
 
 # Experiment tracking
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-experiment_name = "MNIST"
-model_name = "VGG16"
+experiment_name = "ImageNet"
+model_name = "ResNet50"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -125,7 +126,7 @@ original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
 lambda_ = 0.01
 
 
-train_dir = "ResNet56_CIFAR_output/"
+train_dir = "ResNet50_ImageNet_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
 EPOCHS = 280
@@ -161,7 +162,7 @@ for epoch in range(EPOCHS):
         # loss = loss.clone() + lambda_ * l2_reg
         X, y = X.to(device), y.to(device)
         master_count += 1
-        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch, mask=mask)
+        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch, mask=mask,)
         if mask and epoch>prune_epoch:
             ## Go through all the parameters and set the pruned ones to zero
             for name, param in model.named_parameters():

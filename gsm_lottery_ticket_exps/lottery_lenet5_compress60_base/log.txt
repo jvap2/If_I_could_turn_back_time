@@ -1,0 +1,37 @@
+2025-04-30 21:39:27,135 train INFO: 
+
+Start training with pytorch version 2.6.0+cu118
+2025-04-30 21:39:27,141 train INFO: num of params in hdf5=431080
+2025-04-30 21:39:28,219 train INFO: validate at epoch 0, top1=7.85000, top5=47.07000, loss=2.386169
+2025-04-30 21:39:40,025 train INFO: validate at epoch 2, top1=98.08000, top5=99.99000, loss=0.063699
+2025-04-30 21:39:51,698 train INFO: validate at epoch 4, top1=98.56000, top5=99.99000, loss=0.047651
+2025-04-30 21:40:03,354 train INFO: validate at epoch 6, top1=98.90000, top5=100.00000, loss=0.032860
+2025-04-30 21:40:15,019 train INFO: validate at epoch 8, top1=98.91000, top5=100.00000, loss=0.031087
+2025-04-30 21:40:26,642 train INFO: validate at epoch 10, top1=99.15000, top5=100.00000, loss=0.024697
+2025-04-30 21:40:38,289 train INFO: validate at epoch 12, top1=99.24000, top5=100.00000, loss=0.024003
+2025-04-30 21:40:49,952 train INFO: validate at epoch 14, top1=99.06000, top5=99.99000, loss=0.027536
+2025-04-30 21:41:01,584 train INFO: validate at epoch 16, top1=99.17000, top5=100.00000, loss=0.028487
+2025-04-30 21:41:13,258 train INFO: validate at epoch 18, top1=99.24000, top5=100.00000, loss=0.022616
+2025-04-30 21:41:24,934 train INFO: validate at epoch 20, top1=99.16000, top5=100.00000, loss=0.024684
+2025-04-30 21:41:36,569 train INFO: validate at epoch 22, top1=99.16000, top5=100.00000, loss=0.027198
+2025-04-30 21:41:48,201 train INFO: validate at epoch 24, top1=98.94000, top5=100.00000, loss=0.032280
+2025-04-30 21:41:59,798 train INFO: validate at epoch 26, top1=99.30000, top5=100.00000, loss=0.020990
+2025-04-30 21:42:11,414 train INFO: validate at epoch 28, top1=99.14000, top5=100.00000, loss=0.025276
+2025-04-30 21:42:23,006 train INFO: validate at epoch 30, top1=99.25000, top5=100.00000, loss=0.021769
+2025-04-30 21:42:34,672 train INFO: validate at epoch 32, top1=99.22000, top5=100.00000, loss=0.025829
+2025-04-30 21:42:46,345 train INFO: validate at epoch 34, top1=99.14000, top5=100.00000, loss=0.025380
+2025-04-30 21:42:57,970 train INFO: validate at epoch 36, top1=99.22000, top5=100.00000, loss=0.025083
+2025-04-30 21:43:09,652 train INFO: validate at epoch 38, top1=99.16000, top5=100.00000, loss=0.026144
+2025-04-30 21:43:21,276 train INFO: validate at epoch 40, top1=99.22000, top5=100.00000, loss=0.024352
+2025-04-30 21:43:32,887 train INFO: validate at epoch 42, top1=99.33000, top5=100.00000, loss=0.020958
+2025-04-30 21:43:44,562 train INFO: validate at epoch 44, top1=99.31000, top5=100.00000, loss=0.020752
+2025-04-30 21:43:56,174 train INFO: validate at epoch 46, top1=99.31000, top5=100.00000, loss=0.020616
+2025-04-30 21:44:07,799 train INFO: validate at epoch 48, top1=99.29000, top5=100.00000, loss=0.020642
+2025-04-30 21:44:19,514 train INFO: validate at epoch 50, top1=99.31000, top5=100.00000, loss=0.020740
+2025-04-30 21:44:31,180 train INFO: validate at epoch 52, top1=99.30000, top5=100.00000, loss=0.020519
+2025-04-30 21:44:42,770 train INFO: validate at epoch 54, top1=99.28000, top5=100.00000, loss=0.020650
+2025-04-30 21:44:54,364 train INFO: validate at epoch 56, top1=99.27000, top5=100.00000, loss=0.020611
+2025-04-30 21:45:05,968 train INFO: validate at epoch 58, top1=99.29000, top5=100.00000, loss=0.020412
+2025-04-30 21:45:17,605 train INFO: validate at epoch 60, top1=99.28000, top5=100.00000, loss=0.020345
+2025-04-30 21:45:29,225 train INFO: validate at epoch 62, top1=99.31000, top5=100.00000, loss=0.020402
+2025-04-30 21:45:40,880 train INFO: validate at epoch 64, top1=99.27000, top5=100.00000, loss=0.020402

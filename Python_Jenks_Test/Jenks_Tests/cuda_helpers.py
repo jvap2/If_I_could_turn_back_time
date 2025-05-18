@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Specific PyTorch imports
 from torch import tensor  # Tensor data structure
-
+import torch
 # Computer vision libraries
 import torchvision as tv  # PyTorch's computer vision library
 import torchvision.transforms.functional as tvf  # Functional image transformations
@@ -58,7 +58,8 @@ def load_cuda(cuda_src, cpp_src, funcs, opt=False, verbose=False):
     """
     # Use load_inline to compile and load the CUDA and C++ source code
     return load_inline(cuda_sources=[cuda_src], cpp_sources=[cpp_src], functions=funcs,
-                       extra_cuda_cflags=["-O3"] if opt else [], verbose=verbose, name="inline_ext")
+                       extra_cuda_cflags=["-O3","--use_fast_math","-Xcompiler", "-fPIC","--ptxas-options=-v","-gencode", "arch=compute_86,code=sm_86"] if opt else [], 
+                       verbose=verbose, name="inline_ext")
 
 
 # Define CUDA boilerplate code and utility macros
@@ -212,15 +213,194 @@ torch::Tensor jenks_optimization_cuda(torch::Tensor WB){
 
 '''
 
+## Perform for convolutional layers
+cuda_conv = cuda_begin + r'''
+
+template <typename T>
+__global__ void Jenks_Optimization(T* d_WB, T* d_var, int rows, int cols, int in_channels, int out_channels){
+    int in = threadIdx.x + blockIdx.x * blockDim.x;
+    int out = threadIdx.y + blockIdx.y * blockDim.y;
+    T mean_1,mean_2;
+    if (in < in_channels && out < out_channels){
+        // We will find the variance for each entry in this specific filter
+        T* d_WB_filter = d_WB + in*out_channels*rows*cols + out*rows*cols;
+        T* d_var_filter = d_var + in*out_channels*rows*cols + out*rows*cols;
+        // Fill the indices array and then sort the weights, and move the indices around to keep track of the original indices
+
+
+        for(int i = 0; i<rows*cols; i++){
+            mean_1 = 0;
+            for(int j = 0; j<i; j++){
+                mean_1 += d_WB_filter[j];
+            }
+            if(i != 0){
+                mean_1 = mean_1/i;
+            }
+            //We will calculate the mean of the second group
+            mean_2 = 0;
+            for(int j = i; j<rows*cols; j++){
+                mean_2 += d_WB_filter[j];
+            }
+            mean_2 = mean_2/(rows*cols-i);
+            T var = 0;
+            for(int j = 0; j<i; j++){
+                var += (d_WB_filter[j] - mean_1)*(d_WB_filter[j] - mean_1);
+            }
+            for(int j = i; j<rows*cols; j++){
+                var += (d_WB_filter[j] - mean_2)*(d_WB_filter[j] - mean_2);
+            }
+            d_var_filter[i] = var;
+        }
+    }
+}
+
+
+torch::Tensor jenks_optimization_cuda_conv(torch::Tensor WB){
+    // Check input
+    CHECK_INPUT(WB);
+
+    // Get dimensions
+    int in_channels = WB.size(0);
+    int out_channels = WB.size(1);
+    int rows = WB.size(2);
+    int cols = WB.size(3);
+
+    // Allocate output tensor
+    auto var = torch::empty({rows*cols*in_channels*out_channels}, WB.options());
+
+    // Launch kernel
+    const int threads = 16;
+    const int blocks = cdiv(rows*cols, threads);
+
+    int block_size = 16;
+    dim3 blockDim2D(block_size, block_size);
+
+    dim3 gridDim2D((in_channels + block_size - 1) / block_size, (out_channels+block_size-1)/block_size, 1);
+    AT_DISPATCH_FLOATING_TYPES(WB.scalar_type(), "jenks_optimization_cuda", ([&] {
+        Jenks_Optimization<scalar_t><<<gridDim2D, blockDim2D>>>(WB.data_ptr<scalar_t>(), var.data_ptr<scalar_t>(), rows, cols, in_channels, out_channels);
+    }));
+
+    // Check for errors
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    cudaDeviceSynchronize();
+
+    return var;
+}
+
+'''
+
 cpp_src = "torch::Tensor jenks_optimization_cuda(torch::Tensor WB);"
 cpp_bias_src = "torch::Tensor jenks_optimization_biases_cuda(torch::Tensor B);"
+cpp_conv_src = "torch::Tensor jenks_optimization_cuda_conv(torch::Tensor WB);"
 
 module_weights = load_cuda(cuda_src, cpp_src, ["jenks_optimization_cuda"], opt=True, verbose=True)
 module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cuda"], opt=True, verbose=True)
+module_conv = load_cuda(cuda_conv, cpp_conv_src, ["jenks_optimization_cuda_conv"], opt=True, verbose=True)
 
 # Test
+def vectorized_filter_mask(indices: torch.Tensor, min_indices: torch.Tensor) -> torch.Tensor:
+    """
+    Vectorized replacement for:
+        for i in range(B):
+            for j in range(C):
+                arr[i, j, indices[i][j][:min_indices[i][j].item()]] = 0
+    
+    Parameters:
+        indices (LongTensor): shape (B, C, K), sorted index positions of weights
+        min_indices (LongTensor): shape (B, C), number of elements to zero per filter
+
+    Returns:
+        mask (FloatTensor): shape (B, C, K), 1s and 0s, where 0s mark pruned weights
+    """
+    B, C, K = indices.shape
+    device = indices.device
+
+    # Step 1: Create a range [0, 1, ..., K-1] and compare with min_indices
+    range_tensor = torch.arange(K, device=device).view(1, 1, K)  # (1, 1, K)
+    cutoff_mask = range_tensor < min_indices.unsqueeze(-1)       # (B, C, K), bool
+
+    # Step 2: Create a mask filled with ones
+    mask = torch.ones((B, C, K), device=device)
+
+    # Step 3: Use scatter to zero-out the selected indices
+    flat_indices = indices.view(B, C, K)
+    mask.scatter_(dim=2, index=flat_indices, src=(~cutoff_mask).float())  # invert mask to zero-out
+
+    return mask
 
 # Create a random tensor
+def Conv_Mask(weights_cuda):
+    B, C, H, W = weights_cuda.shape
+    indices = torch.zeros(B, C, H, W, dtype=torch.int64)
+    weights_sorted = torch.zeros(B, C, H, W, weights_cuda.shape[3])
+    # streams = [torch.cuda.Stream() for _ in range(weights_cuda.shape[0] * weights_cuda.shape[1])]
+    # count = 0
+    # for i in range(weights_cuda.shape[0]):
+    #     for j in range(weights_cuda.shape[1]):
+    #         with torch.cuda.stream(streams[count]):
+    #             count += 1
+    #             sorted_weights, sorted_indices = weights_cuda[i, j].view(-1).sort()
+    #             weights_sorted[i,j]=sorted_weights.reshape(weights_cuda[i, j].shape)
+    #             indices[i,j] =sorted_indices.reshape(weights_cuda[i, j].shape)
+    flat = weights_cuda.view(B * C, -1)
+    sorted_weights, sorted_indices = torch.sort(flat, dim=1)
+    weights_sorted = sorted_weights.view(B, C, H, W)
+    indices = sorted_indices.view(B, C, -1)
+    # Flatten weights_sorted
+    # Call the custom CUDA function
+    # Combine weights_sorted into a single 4D tensor
+    weights_sorted = weights_sorted.cuda()  # Move weights_sorted to the GPU
+    weights_sorted = weights_sorted.contiguous()
+    var = module_conv.jenks_optimization_cuda_conv(weights_sorted)
+    ## Reshape the var
+    var = var.reshape(B, C, H, W)
+    ## Find the minimums for each filter
+    # Find the minimums for each filter
+    min_values, min_indices = var.view(var.shape[0], var.shape[1], -1).min(dim=2)
+    # Split weights_sorted based on var_min
+    # Now indices holds the original indices of the sorted weights sorted on a filter basis
+    # min_indices holds the minimum indices for each filter
+    # Now we can use the indices to create the arr
+    arr = torch.ones(B, C, H * W)
+    indices_flatten = indices.view(B, C, -1)
+    # for i in range(B):
+    #     for j in range(C):
+    #         arr[i, j, indices[i][j][:min_indices[i][j].item()]]=0
+    arr = vectorized_filter_mask(indices_flatten, min_indices)
+    arr = arr.view(B, C, H, W)
+    del weights_sorted, indices, min_indices, min_values
+    return arr
+
+def Linear_Mask(weights_cuda):
+    weights_cuda_flatten = weights_cuda.view(-1)
+    weights_cuda_sorted, weights_cuda_indices = weights_cuda_flatten.sort()
+    # Call the custom CUDA function
+    weights_cuda_sorted = weights_cuda_sorted.view(weights_cuda.shape)
+    weights_cuda_sorted = weights_cuda_sorted.contiguous()
+    var = module_weights.jenks_optimization_cuda(weights_cuda_sorted)
+    var_min = var.argmin().item()
+    # Print the output
+    ones = weights_cuda_indices[var_min:]
+    arr = torch.zeros(weights_cuda_flatten.shape)
+    arr[ones] = 1
+    arr = arr.reshape(weights_cuda.shape)
+    del weights_cuda_sorted, weights_cuda_indices, var, ones
+    return arr
+
+def Bias_Mask(weights_cuda):
+    weights_cuda_sorted, weights_cuda_indices = weights_cuda.sort()
+    weights_cuda_sorted = weights_cuda_sorted.contiguous()
+    var = module_bias.jenks_optimization_biases_cuda(weights_cuda_sorted)
+    var_min = var.argmin().item()
+    # Print the output
+    # zeros = weights_cuda_indices[:var_min]
+    ones = weights_cuda_indices[var_min:]
+    arr = torch.zeros(weights_cuda.shape)
+    arr[ones] = 1
+    del weights_cuda_sorted, weights_cuda_indices, var, ones
+    return arr
+
 
 # WB = torch.rand(4, 5)
 # WB_cuda = WB.cuda()
@@ -228,27 +408,7 @@ module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cud
  
 # ## Sort it
 
-# WB_cuda_flatten = WB_cuda.flatten()
-# WB_cuda_sorted, WB_cuda_indices = WB_cuda_flatten.sort()
-# WB_cuda_sorted = WB_cuda_sorted.reshape(WB_cuda.shape)
-# print(WB_cuda_sorted)
-# # Call the custom CUDA function
-# print(WB_cuda_indices)
-
-# var = module_weights.jenks_optimization_cuda(WB_cuda_sorted)
-# print(var.shape)
-# print(WB_cuda_sorted.shape)
-# var_min = var.argmin().item()
-# # Print the output
-
-# print(var)
-# zeros = WB_cuda_indices[:var_min]
-# ones = WB_cuda_indices[var_min:]
-# arr = torch.zeros(WB_cuda.flatten().shape)
-# arr[zeros] = 0
-# arr[ones] = 1
-# arr = arr.reshape(WB_cuda.shape)
-# print(arr)
+# arr = Linear_Mask(WB_cuda)
 # ''' We now need to find the break point which '''
 
 # arr_score = WB.numpy()
@@ -266,7 +426,7 @@ module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cud
 # test_arr = test_arr.reshape(arr_score.shape)
 # print(test_arr)
 
-# ''' Test they are equal'''
+# # ''' Test they are equal'''
 
 # print(np.allclose(arr.numpy(), test_arr, atol=1e-4))
 
@@ -274,20 +434,7 @@ module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cud
 # B = torch.rand(4)
 # B_cuda = B.cuda()
 # # Call the custom CUDA function
-# B_cuda_sorted, B_cuda_indices = B_cuda.sort()
-# var = module_bias.jenks_optimization_biases_cuda(B_cuda_sorted)
-# print(var)
-# print(B_cuda_sorted)
-# var_min = var.argmin().item()
-# # Print the output
-# print(var_min)
-# print(B_cuda_sorted)
-# zeros = B_cuda_indices[:var_min]
-# ones = B_cuda_indices[var_min:]
-# arr = torch.zeros(B_cuda.shape)
-# arr[zeros] = 0
-# arr[ones] = 1
-# print(arr)
+# arr = Bias_Mask(B_cuda)
 
 # # Test
 # arr_score = B.numpy()
@@ -308,3 +455,41 @@ module_bias = load_cuda(cuda_bias, cpp_bias_src, ["jenks_optimization_biases_cud
 # ''' Test they are equal'''
 
 # print(np.allclose(arr, test_arr, atol=1e-4))
+
+
+## Test how this works on convolutional layers
+
+layer = torch.nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
+layer_cpu = layer.cpu()
+# Get the weights
+layer_cuda = layer.cuda()
+# Get the weights
+weights = layer_cuda.weight
+weights_cuda = weights.cuda()
+arr = Conv_Mask(weights_cuda)
+# Test
+
+
+for i in range(weights_cuda.shape[0]):
+    for j in range(weights_cuda.shape[1]):
+        arr_score = layer.weight[i,j].cpu().detach().numpy()
+        arr_score_flat = arr_score.flatten()
+        jnb = JenksNaturalBreaks(2)
+        jnb.fit(arr_score_flat)
+        # print(jnb.labels_)
+        labels = jnb.labels_
+        indices = np.where(labels == 1)[0]
+        indices_ = np.where(labels == 0)[0]
+        test_arr = np.zeros(arr_score_flat.shape)
+        test_arr[indices] = 1
+        test_arr[indices_] = 0
+        test_arr = test_arr.reshape(arr_score.shape)
+        print(test_arr)
+        print(arr[i,j].cpu().detach().numpy())
+
+        ''' Test they are equal'''
+        print(np.allclose(arr[i,j].cpu().numpy(), test_arr, atol=1e-4))
+
+
+
+

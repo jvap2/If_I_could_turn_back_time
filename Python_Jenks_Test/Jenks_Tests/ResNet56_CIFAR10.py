@@ -1,5 +1,6 @@
 from models import ResNet56
 import torch
+torch.set_float32_matmul_precision('highest')
 from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test, PruneWeights_Test, train_one_step, Prune_Score_Mag
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -19,9 +20,9 @@ from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
-from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select
+from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select, train_one_step_prune_v2, init_network, Prune_Score_v2
 from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
-
+from rcnet import create_RC56
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -37,9 +38,12 @@ from torch.autograd.functional import hessian
 # from functions import hutchinson_trace_hmp,rademacher
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
+from torch.autograd import profiler as prof
+from torch import compile
+
 
 one_shot = True
-
+prune_ratio = .9
 torch.cuda.empty_cache()
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
@@ -54,62 +58,56 @@ gsm_momentum = 0.99
 gsm_max_epochs = 280
 mask = True
 
+CIFAR10_PATH = "./datasets"
+
+# train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
+train_dataset = datasets.CIFAR10(root = CIFAR10_PATH, train=True, download=True,
+                               transform=transforms.Compose([
+                                   transforms.Pad(padding=(4, 4, 4, 4)),
+                                   transforms.RandomCrop(32),
+                                   transforms.RandomHorizontalFlip(),
+                                   transforms.ToTensor(),
+                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
+val_dataset = datasets.CIFAR10(CIFAR10_PATH, train=False,
+                                transform=transforms.Compose([
+                                    transforms.ToTensor(),
+                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
 
 
-train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
+fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)),len(val_dataset) - int(0.5 * len(val_dataset))])
 
-
-imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
-
-mean = imgs.view(1, -1).mean(dim=1)    
-std = imgs.view(1, -1).std(dim=1)     
-
-mnist_transforms = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Resize((224, 224)),
-                                       transforms.Normalize(mean=mean, std=std)])
-
-train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=False, transform=mnist_transforms)
-
-
-train_size = int(0.8 * len(train_val_dataset))
-val_size = len(train_val_dataset) - train_size
-
-
-train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
-fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), int(0.5 * len(val_dataset))])
-
-train_dataset.dataset.transform = mnist_transforms
-fin_val_dataset.dataset.transform = mnist_transforms
-test_dataset.dataset.transform = mnist_transforms
-
-BATCH_SIZE = 16
+BATCH_SIZE = 256
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
-model = ResNet56().to(device)
-model = extend(model)
+model = create_RC56()
+model = torch.compile(model, mode="reduce-overhead", backend="inductor")
+model = model.to(device)
+print(model)  
+min_epochs = 300
 loss_fn = nn.CrossEntropyLoss()
-loss_fn = extend(loss_fn)
-momentum = 0.9
+momentum = 0.98
 learning_rate = .1e-2
-weight_decay = 1e-3
-warmup_epochs = 20
-nestrov = True
+weight_decay = 1e-4
+warmup_epochs = 10
+nestrov = False
 params = []
 bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
+init_network(optimizer)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
 scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
+ ## Check the number of parameters in the model vs number of trainiable parameters
 
 
 # Experiment tracking
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-experiment_name = "MNIST"
-model_name = "VGG16"
+experiment_name = "CIFAR10"
+model_name = "ResNet56"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -122,13 +120,13 @@ train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
 original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
-lambda_ = 0.01
+lambda_ = 1e-4
 
 
-train_dir = "ResNet56_CIFAR_output/"
+train_dir = "ResNet56_CIFAR10_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 280
+EPOCHS = 500
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -136,11 +134,14 @@ sparsity_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum
 trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+debug_filename = os.path.join(train_dir,f"debug_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+jenks_filename = os.path.join(train_dir,f"jenks_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 40
-no_jenks =True
-
+prune_epoch = 80
+no_jenks =False
+l2 = True
+mag_prune = False
 with open(log_filename,"a") as f:
     print(f"Starting Learning rate: {learning_rate}", file=f)
     print(f"Momentum: {momentum}", file=f)
@@ -169,10 +170,14 @@ with open(log_filename,"a") as f:
         print(f"No Jenks is used", file=f)
     else:
         print(f"Jenks is used", file=f)
+    if mag_prune:
+        print(f"Mag prune is used", file=f)
+    else:
+        print(f"Mag prune is not used", file=f)
 prune_count = 0
-
-for epoch in range(EPOCHS):
-    # Training loop
+sparsity = 0.0
+one_update = True
+while (sparsity < prune_ratio and epoch<EPOCHS) or epoch<=min_epochs:    # Training loop
     print("Epoch: ", epoch)
     epoch += 1
     model.train()
@@ -184,29 +189,42 @@ for epoch in range(EPOCHS):
     train_top5acc = 0.0
     start = time()
     print(f"Memory free: {get_memory_free_MiB(0)} MiB")
-    for X, y in train_dataloader:
-        # print(torch.cuda.memory_summary())
+    if sparsity >= prune_ratio:
+        no_jenks = True
+    if one_update:
+        count +=1
         torch.cuda.empty_cache()
-        count += 1
-        # loss = loss.clone() + lambda_ * l2_reg
-        X, y = X.to(device), y.to(device)
-        master_count += 1
-        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch, mask=mask)
-        if mask and epoch>prune_epoch:
-            ## Go through all the parameters and set the pruned ones to zero
-            for name, param in model.named_parameters():
-                param.data = param.data *optimizer.state[param]['mask']
-        # acc = accuracy(y_pred, y)
-        # acc_5 = top5accuracy(y_pred, y)
-        train_loss += loss.item()
-        train_top5acc += acc5.item()
-        train_acc += acc.item()
+        # with prof.profile(use_cuda=True, record_shapes=True) as prof:
+        acc, acc5, loss = train_one_step_prune_v2(model,train_dataloader, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch,no_jenks=no_jenks ,filter_based=True, mask=mask, L2 = l2, lambda_=lambda_, debug = False, debugfile = debug_filename, jenksfile=jenks_filename)
+        # with open(debug_filename,"a") as f:
+        #     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20), file=f)
         l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-        # print("Train loss type : ", type(train_loss))
-        # print("Train Acc type : ", type(train_acc))
-        # print("Train Top5Acc type : ", type(train_top5acc))
-        # print("Loss type : ", type(loss))
-        # print("l2_reg type : ", type(l2_reg))
+        with open(train_filename, "a") as f:
+            print(f"Iteration: {count}| Loss: {loss: .5f}| Acc: {acc.item(): .5f} | Top 5 Acc: {acc5.item(): .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
+    else:    
+        for X, y in train_dataloader:
+            # print(torch.cuda.memory_summary())
+            torch.cuda.empty_cache()
+            count += 1
+            # loss = loss.clone() + lambda_ * l2_reg
+            X, y = X.to(device), y.to(device)
+            master_count += 1
+            acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch,no_jenks=no_jenks ,filter_based=True, mask=mask, L2 = l2, lambda_=lambda_, debug = False, debugfile = debug_filename, jenksfile=jenks_filename)
+            if mask and epoch>prune_epoch:
+                ## Go through all the parameters and set the pruned ones to zero
+                for name, param in model.named_parameters():
+                    param.data = param.data * optimizer.state[param]['mask']
+            # acc = accuracy(y_pred, y)
+            # acc_5 = top5accuracy(y_pred, y)
+            train_loss += loss.item()
+            train_top5acc += acc5.item()
+            train_acc += acc.item()
+            l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
+            # print("Train loss type : ", type(train_loss))
+            # print("Train Acc type : ", type(train_acc))
+            # print("Train Top5Acc type : ", type(train_top5acc))
+            # print("Loss type : ", type(loss))
+            # print("l2_reg type : ", type(l2_reg))
         with open(train_filename, "a") as f:
             print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Top 5 Acc: {train_top5acc/count: .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
     stop = time()
@@ -215,16 +233,16 @@ for epoch in range(EPOCHS):
     scheduler.step()
     with open (log_filename,"a") as f:
         print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
-    if epoch >= prune_epoch and epoch % 10 == 0:
+    if epoch >= prune_epoch and epoch % 5 == 0:
         # if kill_velocity and epoch==prune_epoch:
         #     Prune_Score(optimizer, kill_velocity=True)
         if one_shot and epoch==prune_epoch and mask:
             print("Pruning the weights")
-            Prune_Score(optimizer, mask=True)
+            Prune_Score_v2(optimizer, mask=True, mag_prune=mag_prune, filter_based=True)
             prune_count += 1
-        elif not one_shot and epoch>=prune_epoch and epoch % 20 == 0 and prune_count<10:
+        elif not one_shot and epoch>=prune_epoch and epoch % 5 == 0 and mask:
             print("Pruning the weights")
-            Prune_Score(optimizer, mask=True)
+            Prune_Score_v2(optimizer, mask=True, mag_prune=mag_prune, filter_based=True)
             prune_count += 1
         # if not kill_velocity or not mask:
         #     Prune_Score(optimizer)
@@ -237,10 +255,10 @@ for epoch in range(EPOCHS):
         sparsity = 1 - non_zero_params / total_params
         with open(sparsity_filename,"a") as f:
             print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
-    if epoch == warmup_epochs:
-        '''Change the learning rate to the base value'''
-        for group in optimizer.param_groups:
-            group['lr'] = 3e-3
+    # if epoch == warmup_epochs:
+    #     '''Change the learning rate to the base value'''
+    #     for group in optimizer.param_groups:
+    #         group['lr'] = 3e-3
         # for param_group in optimizer.param_groups:
         #     param_group['momentum'] = 0.99
         
@@ -280,8 +298,9 @@ for epoch in range(EPOCHS):
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
     with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
         print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
-    ## Save model
-    torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+
+
+torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
 
 val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0

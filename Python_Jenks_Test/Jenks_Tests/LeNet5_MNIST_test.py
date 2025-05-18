@@ -18,7 +18,7 @@ from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
-from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select
+from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select, InfiniteDataLoader
 from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
 
 import torch
@@ -60,9 +60,30 @@ model = nn.Sequential(
     nn.Linear(in_features=84, out_features=10),
 ).to(device)
 
+## Print the number of parameters in the model
+print(f"Number of parameters in the model: {sum(p.numel() for p in model.parameters())}")
+
+# model_compare = nn.Sequential(
+#     nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, stride=1, padding=2),   # 28*28->32*32-->28*28
+#     nn.Tanh(),
+#     nn.AvgPool2d(kernel_size=2, stride=2),  # 14*14
+    
+#     #2
+#     nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=1),  # 10*10
+#     nn.Tanh(),
+#     nn.AvgPool2d(kernel_size=2, stride=2),  
+
+#     nn.Flatten(),
+#     nn.Linear(in_features=16*5*5, out_features=120),
+#     nn.Tanh(),
+#     nn.Linear(in_features=120, out_features=84),
+#     nn.Tanh(),
+#     nn.Linear(in_features=84, out_features=10),
+# ).to(device)
+
 kill_velocity = False
 train_lr_decay_factor = 0.25
-
+BATCH_SIZE = 256
 gsm_lr_base_value = 1e-2
 gsm_lr_boundaries = [200, 230, 260]
 gsm_momentum = 0.99
@@ -72,49 +93,33 @@ torch.cuda.empty_cache()
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-print(f"Using {device} device")
-
-
-train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=False, transform=transforms.ToTensor())
-
-imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
-
-mean = imgs.view(1, -1).mean(dim=1)
-std = imgs.view(1, -1).std(dim=1)
-
-# mnist_transforms_train = transforms.Compose([transforms.ToTensor(),
-#                                        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
-#                                        transforms.Normalize(mean=mean, std=std)])
-
-mnist_transforms = transforms.Compose([transforms.ToTensor(),
-                                        transforms.Normalize(mean=mean, std=std)])
+train_dataset =  datasets.MNIST("./datasets/", train=True, download=True,
+                               transform=transforms.Compose([
+                                   transforms.ToTensor(),
+                                   transforms.Normalize((0.1307,), (0.3081,))]))
+val_dataset= datasets.MNIST("./datasets/", train=False, transform=transforms.Compose([
+                transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]))
 
 
 
-train_size = int(0.8 * len(train_val_dataset))
-val_size = len(train_val_dataset) - train_size
 
-train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
-fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), int(0.5 * len(val_dataset))])
 
-train_dataset.dataset.transform = mnist_transforms
-fin_val_dataset.dataset.transform = mnist_transforms
-test_dataset.dataset.transform = mnist_transforms
-BATCH_SIZE = 128
+fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), len(val_dataset)-int(0.5 * len(val_dataset))])
+
+
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 
-
+min_epochs = 300
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
-momentum = 0.9
-learning_rate = 8.75e-2
-weight_decay = 1e-3
+momentum = 0.99
+learning_rate = 1e-2
+weight_decay = 6.25e-4
 warmup_epochs = 20
 nestrov = True
 params = []
@@ -142,13 +147,13 @@ train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
 original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
-lambda_ = 0.01
+lambda_ = 1e-4
 
 
 train_dir = "LeNet5_MNIST_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 280
+EPOCHS = 1000
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -158,8 +163,9 @@ val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{n
 test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 40
-no_jenks =True
+prune_epoch = 60
+no_jenks =False
+l2 = True
 
 with open(log_filename,"a") as f:
     print(f"Starting Learning rate: {learning_rate}", file=f)
@@ -190,8 +196,8 @@ with open(log_filename,"a") as f:
     else:
         print(f"Jenks is used", file=f)
 prune_count = 0
-for epoch in range(EPOCHS):
-    # Training loop
+sparsity = 0.0
+while (sparsity < prune_ratio and epoch<EPOCHS) or epoch<=min_epochs:    # Training loop
     print("Epoch: ", epoch)
     epoch += 1
     model.train()
@@ -203,6 +209,8 @@ for epoch in range(EPOCHS):
     train_top5acc = 0.0
     start = time()
     print(f"Memory free: {get_memory_free_MiB(0)} MiB")
+    if sparsity >= prune_ratio:
+        no_jenks = True
     for X, y in train_dataloader:
         # print(torch.cuda.memory_summary())
         torch.cuda.empty_cache()
@@ -210,7 +218,7 @@ for epoch in range(EPOCHS):
         # loss = loss.clone() + lambda_ * l2_reg
         X, y = X.to(device), y.to(device)
         master_count += 1
-        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch, mask=mask)
+        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch,filter_based=False, mask=mask, L2 = l2, lambda_=lambda_)
         if mask and epoch>prune_epoch:
             ## Go through all the parameters and set the pruned ones to zero
             for name, param in model.named_parameters():
@@ -234,14 +242,14 @@ for epoch in range(EPOCHS):
     scheduler.step()
     with open (log_filename,"a") as f:
         print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
-    if epoch >= prune_epoch and epoch % 10 == 0:
+    if epoch >= prune_epoch and epoch % 5 == 0:
         # if kill_velocity and epoch==prune_epoch:
         #     Prune_Score(optimizer, kill_velocity=True)
         if one_shot and epoch==prune_epoch and mask:
             print("Pruning the weights")
             Prune_Score(optimizer, mask=True)
             prune_count += 1
-        elif not one_shot and epoch>=prune_epoch and epoch % 20 == 0 and prune_count<10:
+        elif not one_shot and epoch>=prune_epoch and epoch % 5 == 0 and mask:
             print("Pruning the weights")
             Prune_Score(optimizer, mask=True)
             prune_count += 1
@@ -299,8 +307,9 @@ for epoch in range(EPOCHS):
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
     with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
         print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+
     ## Save model
-    torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
+torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
 
 val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0
