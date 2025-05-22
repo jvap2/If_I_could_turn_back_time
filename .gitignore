@@ -22,3 +22,4 @@ LeNet300_100_MNIST_output/
 LeNet5_MNIST_output/
 ResNet56_CIFAR_output/
 datasets/
+Python_Jenks_Test/Jenks_Tests/datasets/cifar-10-python.tar.gz
