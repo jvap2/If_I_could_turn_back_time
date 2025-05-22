@@ -78,7 +78,7 @@ val_dataset = datasets.CIFAR10(CIFAR10_PATH, train=False,
 
 fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)),len(val_dataset) - int(0.5 * len(val_dataset))])
 
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -92,7 +92,7 @@ min_epochs = 300
 label_smoothing = 0.1
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 momentum = 0.9
-learning_rate = 5e-3
+learning_rate = 7.5e-3
 weight_decay = 5e-4
 warmup_epochs = 10
 nestrov = False
