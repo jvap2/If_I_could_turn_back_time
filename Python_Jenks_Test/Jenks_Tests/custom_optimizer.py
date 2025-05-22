@@ -5,6 +5,7 @@ from torch.optim import Optimizer
 from cuda_helpers import module_weights, module_bias, Conv_Mask, Linear_Mask, Bias_Mask
 from statistics import mean, stdev
 import time
+import gc
 
 class InfiniteDataLoader(torch.utils.data.DataLoader):
     def __init__(self, *args, **kwargs):
@@ -803,17 +804,20 @@ def init_network(optimizer):
             if 'mask' not in optimizer.state[param]:
                 optimizer.state[param]['mask'] = torch.ones_like(param.data, requires_grad=False)
 
-def compute_mask(param, WB, filter_based = True):
+def compute_mask(param, WB, filter_based = True, bias_prune = True):
     if param.dim() == 4:
         return Conv_Mask(WB) if filter_based else Bias_Mask(WB.view(-1)).view(param.shape)
     elif param.dim() == 2:
         return Linear_Mask(WB)
     elif param.dim() == 1:
-        return Bias_Mask(WB)
+        if bias_prune:
+            return Bias_Mask(WB)
+        else:
+            return torch.ones_like(param, requires_grad=False)
     else:
         raise ValueError("Unsupported parameter dimension")
 
-def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
+def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
     debug_logs = []
     jenks_logs = []
     accumulation_steps = 1
@@ -825,10 +829,7 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
     acc5 = 0
     device = next(net.parameters()).device
     for i, (data, label) in enumerate(dataloader):
-        if mask and epoch>prune_epochs:
-                ## Go through all the parameters and set the pruned ones to zero
-            for name, param in net.named_parameters():
-                param.data = param.data * optimizer.state[param]['mask']
+        torch.cuda.empty_cache()
         count+=1
         start = time.time()
         data,label = data.to(device), label.to(device)
@@ -838,6 +839,12 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
             l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
             loss_iter = loss_iter + lambda_ * l2_reg
         loss_iter.backward()
+        with torch.no_grad():
+            if mask and epoch>prune_epochs:
+                    ## Go through all the parameters and set the pruned ones to zero
+                for name, param in net.named_parameters():
+                    param.data.mul_(optimizer.state[param]['mask'])
+                    param.grad.mul_(optimizer.state[param]['mask'])
         loss += loss_iter.item()
         acc_dummy, acc5_dummy = torch_accuracy(pred, label, (1,5))
         acc += acc_dummy
@@ -851,7 +858,7 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
                     layer_pruned = 0
                     layer_params = 0
                     WB = torch.abs(param.data * param.grad)
-                    mask_tensor = compute_mask(param, WB, filter_based).to(device)
+                    mask_tensor = compute_mask(param, WB, filter_based, bias_prune).to(device)
                     with torch.no_grad():
                         if epoch > prune_epochs and mask:
                             param.data.mul_(optimizer.state[param]['mask'])
@@ -864,9 +871,15 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
                                 WB_prime = WB
 
                         optimizer.state[param]['agg_score'] += WB_prime
-
-                        total_params += mask_tensor.numel()
-                        total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        if param.dim() == 1:
+                            if bias_prune:
+                                total_params += mask_tensor.numel()
+                                total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                            else:
+                                continue
+                        elif param.dim() in [2, 4]:
+                            total_params += mask_tensor.numel()
+                            total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
                         layer_params += mask_tensor.numel()
                         layer_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
                         # Debug stats
@@ -903,6 +916,8 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
             if jenksfile and epoch > warmup_epochs:
                 with open(jenksfile, 'a') as f:
                     f.writelines(jenks_logs)
+            debug_logs.clear()
+            jenks_logs.clear()
 
     loss_avg = loss/ count
     acc_avg = acc / count
@@ -1020,30 +1035,34 @@ def Prune_Score(optimizer, kill_velocity=False, mask=False, mag_prune = False):
                 print("Invalid parameter dimension")
                 continue
 
-def Prune_Score_v2(optimizer, kill_velocity=False, mask=False, mag_prune = False, filter_based = True):
-    for group in optimizer.param_groups:
-        for param in group['params']:
-            if mag_prune:
-                score = torch.abs(param.data)
-            else:
-                score = optimizer.state[param]['agg_score']
-            prune_mask = compute_mask(param, score, filter_based).to(param.device)
-            if param.grad is not None:
-                param.grad = prune_mask * param.grad
-            param.data = prune_mask * param.data
-            if kill_velocity:
-                if 'velocity' in optimizer.state[param]:
-                    optimizer.state[param]['velocity'] = prune_mask * optimizer.state[param]['velocity']
-            if mask:
-                if 'mask' in optimizer.state[param]:
-                    optimizer.state[param]['mask'] = prune_mask
+def Prune_Score_v2(optimizer, kill_velocity=False, mask=False, mag_prune = False, filter_based = True, bias_prune = True):
+    gc.collect()
+    with torch.no_grad():
+        for group in optimizer.param_groups:
+            for param in group['params']:
+                if mag_prune:
+                    score = torch.abs(param.data)
                 else:
-                    print("Mask not found in optimizer state")
-            if hasattr(optimizer, "layerwise_lr_stats"):
-                stats = optimizer.layerwise_lr_stats.get(param, {})
-                stats['percent_pruned'] = (prune_mask.numel() - prune_mask.sum().item()) / prune_mask.numel()
-                stats['saliency_std'] = torch.std(score).item()
-                optimizer.layerwise_lr_stats[param] = stats
+                    score = optimizer.state[param]['agg_score']
+                prune_mask = compute_mask(param, score, filter_based, bias_prune).to(param.device)
+                if param.grad is not None:
+                    param.grad.mul_(prune_mask)
+                param.data.mul_(prune_mask)
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'].mul_(prune_mask)
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        optimizer.state[param]['mask'].mul_(prune_mask)
+                    else:
+                        print("Mask not found in optimizer state")
+                if hasattr(optimizer, "layerwise_lr_stats"):
+                    stats = optimizer.layerwise_lr_stats.get(param, {})
+                    stats['percent_pruned'] = (prune_mask.numel() - prune_mask.sum().item()) / prune_mask.numel()
+                    stats['saliency_std'] = torch.std(score).item()
+                    optimizer.layerwise_lr_stats[param] = stats
+                del score, prune_mask
+    torch.cuda.empty_cache()
 
 
 
