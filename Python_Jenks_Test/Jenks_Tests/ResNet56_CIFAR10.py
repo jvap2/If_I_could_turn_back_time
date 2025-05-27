@@ -14,8 +14,7 @@ import torch.nn as nn
 from networks import LeNet5V1,alexnet,lenet5v1
 from torch.autograd.functional import hessian
 from functions import hutchinson_trace_hmp,rademacher
-from backpack import backpack, extend
-from backpack.extensions import HMP, DiagHessian
+
 from functions import exact_trace
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
@@ -36,11 +35,10 @@ import torch.nn as nn
 # from networks import LeNet5V1,alexnet,lenet5v1
 from torch.autograd.functional import hessian
 # from functions import hutchinson_trace_hmp,rademacher
-from backpack import backpack, extend
-from backpack.extensions import HMP, DiagHessian
 from torch.autograd import profiler as prof
 from torch import compile
 
+print(torch.cuda.is_available())
 
 one_shot = False
 prune_ratio = .9
@@ -85,14 +83,14 @@ val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuf
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 model = create_RC56()
-model = torch.compile(model, mode="reduce-overhead", backend="inductor")
+# model = torch.compile(model, mode="reduce-overhead", backend="inductor")
 model = model.to(device)
 print(model)  
 min_epochs = 300
 label_smoothing = 0.1
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-momentum = 0.9
-learning_rate = 7.5e-3
+momentum = 0.98
+learning_rate = 5e-3
 weight_decay = 5e-4
 warmup_epochs = 10
 nestrov = False
@@ -129,7 +127,7 @@ lambda_ = 0
 train_dir = "ResNet56_CIFAR10_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 600
+EPOCHS = 800
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -141,7 +139,7 @@ debug_filename = os.path.join(train_dir,f"debug_log_{timestamp}_{momentum}_{name
 jenks_filename = os.path.join(train_dir,f"jenks_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 400
+prune_epoch = 600
 no_jenks =False
 l2 = False
 mag_prune = False

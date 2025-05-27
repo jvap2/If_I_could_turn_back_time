@@ -1,7 +1,7 @@
 import time
 import torch
 
-from backpack import backpack, extend
+from backpack import extend
 from backpack.extensions import HMP, DiagHessian
 from backpack.hessianfree.hvp import hessian_vector_product
 from backpack.utils.examples import load_one_batch_mnist

@@ -59,7 +59,7 @@ def load_cuda(cuda_src, cpp_src, funcs, opt=False, verbose=False):
     # Use load_inline to compile and load the CUDA and C++ source code
     return load_inline(cuda_sources=[cuda_src], cpp_sources=[cpp_src], functions=funcs,
                        extra_cuda_cflags=["-O3","--use_fast_math","-Xcompiler", "-fPIC","--ptxas-options=-v","-gencode", "arch=compute_86,code=sm_86"] if opt else [], 
-                       verbose=verbose, name="inline_ext")
+                       verbose=verbose, name=f"inline_ext_{os.getpid()}")
 
 
 # Define CUDA boilerplate code and utility macros
