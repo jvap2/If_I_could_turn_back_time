@@ -307,9 +307,8 @@ val_loss, val_acc = 0.0, 0.0
 val_top5acc = 0.0
 count_val = 0
 '''Make sure the weights are back on the device'''
-non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
-# non_zero_params_2 = sum(torch.count_nonzero(p) for p in model_2.parameters())
-total_params = sum(p.numel() for p in model.parameters())
+non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters() if p.dim() in [2, 4])
+total_params = sum(p.numel() for p in model.parameters() if p.dim() in [2, 4])
 sparsity = 1 - non_zero_params / total_params
 # sparsity_2 = 1 - non_zero_params_2 / total_params
 model.eval()
