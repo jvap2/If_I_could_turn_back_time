@@ -90,10 +90,10 @@ min_epochs = 300
 label_smoothing = 0.1
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 momentum = 0.98
-learning_rate = 5e-3
+learning_rate = .25e-2
 weight_decay = 5e-4
 warmup_epochs = 10
-nestrov = False
+nestrov = True
 params = []
 bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
@@ -142,7 +142,7 @@ epoch = 0
 prune_epoch = 600
 no_jenks =False
 l2 = False
-mag_prune = False
+mag_prune = True
 with open(log_filename,"a") as f:
     print(f"Starting Learning rate: {learning_rate}", file=f)
     print(f"Momentum: {momentum}", file=f)
