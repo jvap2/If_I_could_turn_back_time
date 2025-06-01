@@ -90,8 +90,8 @@ min_epochs = 300
 label_smoothing = 0.1
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 momentum = 0.98
-learning_rate = 5e-3
-weight_decay = 5e-4
+learning_rate = 2.5e-3
+weight_decay = 1e-3
 warmup_epochs = 10
 nestrov = False
 params = []
