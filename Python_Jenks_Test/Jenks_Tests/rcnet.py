@@ -352,3 +352,39 @@ class RCNet(nn.Module):
 
 def create_RC56():
     return RCNet(block_counts=[9,9,9], num_classes=10, builder=ConvBuilder(gsm_config), deps=gsm_config.deps)
+
+
+class ResNet(nn.Module):
+    def __init__(self, builder:ConvBuilder, block, num_blocks, num_classes=10):
+        super(ResNet, self).__init__()
+        self.bd = builder
+        self.in_planes = 64
+        self.conv1 = builder.Conv2dBNReLU(3, 64, kernel_size=7, stride=2, padding=3)
+        self.stage1 = self._make_stage(block, 64, num_blocks[0], stride=1)
+        self.stage2 = self._make_stage(block, 128, num_blocks[1], stride=2)
+        self.stage3 = self._make_stage(block, 256, num_blocks[2], stride=2)
+        self.stage4 = self._make_stage(block, 512, num_blocks[3], stride=2)
+        self.linear = self.bd.Linear(512*block.expansion, num_classes)
+
+    def _make_stage(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        blocks = []
+        for stride in strides:
+            blocks.append(block(builder=self.bd, in_planes=self.in_planes, planes=planes, stride=stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*blocks)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.bd.max_pool2d(out, kernel_size=3, stride=2, padding=1)
+        out = self.stage1(out)
+        out = self.stage2(out)
+        out = self.stage3(out)
+        out = self.stage4(out)
+        out = self.bd.avg_pool2d(out, 7, 1, 0)
+        out = self.bd.flatten(out)
+        out = self.linear(out)
+        return out
+
+def create_ResNet18():
+    return ResNet(builder=ConvBuilder(gsm_config), block=BasicBlock, num_blocks=[2,2,2,2], num_classes=1000)
