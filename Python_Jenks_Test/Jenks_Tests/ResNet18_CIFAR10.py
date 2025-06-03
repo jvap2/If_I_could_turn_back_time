@@ -21,7 +21,7 @@ from time import time
 from cuda_helpers import get_memory_free_MiB
 from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select, train_one_step_prune_v2, init_network, Prune_Score_v2
 from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
-from rcnet import create_RC56
+from rcnet import create_ResNet18
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -82,7 +82,7 @@ train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuf
 val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
-model = create_RC56()
+model = create_ResNet18()
 # model = torch.compile(model, mode="reduce-overhead", backend="inductor")
 model = model.to(device)
 print(model)  
