@@ -1,0 +1,17 @@
+Starting Learning rate: 0.01
+Momentum: 0.98
+Weight decay: 0.0005
+Batch size: 256
+Epochs: 320
+Epoch to start pruning: 280
+Warmup epochs: 10
+Opt type is Jenks SGD
+Velocity is not killed
+Mask is used
+Bias LR is used
+Jenks is used
+Mag prune is used
+Epoch: 1| Learning Rate: [0.0019, 0.0038, 0.0019, 0.0038, 0.0019, 0.0038, 0.0019, 0.0038]
+Epoch: 2| Learning Rate: [0.0028000000000000004, 0.005600000000000001, 0.0028000000000000004, 0.005600000000000001, 0.0028000000000000004, 0.005600000000000001, 0.0028000000000000004, 0.005600000000000001]
+Epoch: 3| Learning Rate: [0.0037, 0.0074, 0.0037, 0.0074, 0.0037, 0.0074, 0.0037, 0.0074]
+Epoch: 4| Learning Rate: [0.0046, 0.0092, 0.0046, 0.0092, 0.0046, 0.0092, 0.0046, 0.0092]

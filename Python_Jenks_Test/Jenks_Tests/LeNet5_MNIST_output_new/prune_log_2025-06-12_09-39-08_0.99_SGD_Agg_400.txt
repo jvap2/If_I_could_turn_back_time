@@ -1,0 +1,80 @@
+Layer: torch.Size([20, 1, 5, 5])
+GVF: 0.7833560705184937
+Layer: torch.Size([20])
+GVF: 1
+Layer: torch.Size([50, 20, 5, 5])
+GVF: 0.663338303565979
+Layer: torch.Size([50])
+GVF: 1
+Layer: torch.Size([500, 800])
+GVF: 0.6677244305610657
+Layer: torch.Size([500])
+GVF: 1
+Layer: torch.Size([10, 500])
+GVF: 0.7831375002861023
+Layer: torch.Size([10])
+GVF: 1
+Layer: torch.Size([20, 1, 5, 5])
+GVF: 0.9129393100738525
+Layer: torch.Size([20])
+GVF: 1
+Layer: torch.Size([50, 20, 5, 5])
+GVF: 0.8966799378395081
+Layer: torch.Size([50])
+GVF: 1
+Layer: torch.Size([500, 800])
+GVF: 0.8642162680625916
+Layer: torch.Size([500])
+GVF: 1
+Layer: torch.Size([10, 500])
+GVF: 0.8930288553237915
+Layer: torch.Size([10])
+GVF: 1
+Layer: torch.Size([20, 1, 5, 5])
+GVF: 0.9132720828056335
+Layer: torch.Size([20])
+GVF: 1
+Layer: torch.Size([50, 20, 5, 5])
+GVF: 0.8986119031906128
+Layer: torch.Size([50])
+GVF: 1
+Layer: torch.Size([500, 800])
+GVF: 0.8681676387786865
+Layer: torch.Size([500])
+GVF: 1
+Layer: torch.Size([10, 500])
+GVF: 0.8965007662773132
+Layer: torch.Size([10])
+GVF: 1
+Layer: torch.Size([20, 1, 5, 5])
+GVF: 0.9132188558578491
+Layer: torch.Size([20])
+GVF: 1
+Layer: torch.Size([50, 20, 5, 5])
+GVF: 0.8989138007164001
+Layer: torch.Size([50])
+GVF: 1
+Layer: torch.Size([500, 800])
+GVF: 0.8689112067222595
+Layer: torch.Size([500])
+GVF: 1
+Layer: torch.Size([10, 500])
+GVF: 0.896555483341217
+Layer: torch.Size([10])
+GVF: 1
+Layer: torch.Size([20, 1, 5, 5])
+GVF: 0.9132152795791626
+Layer: torch.Size([20])
+GVF: 1
+Layer: torch.Size([50, 20, 5, 5])
+GVF: 0.898298442363739
+Layer: torch.Size([50])
+GVF: 1
+Layer: torch.Size([500, 800])
+GVF: 0.8694899082183838
+Layer: torch.Size([500])
+GVF: 1
+Layer: torch.Size([10, 500])
+GVF: 0.8965883851051331
+Layer: torch.Size([10])
+GVF: 1

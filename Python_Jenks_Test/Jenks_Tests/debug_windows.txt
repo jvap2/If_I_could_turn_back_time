@@ -3,3 +3,4 @@ set PATH=%PATH%;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin
 
 Activate virtual environment: .\.venv\Scripts\activate
 Activate Visual Studio C++ installer: "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+Clear torch cache: rmdir /s /q C:\Users\jayva\.cache\torch

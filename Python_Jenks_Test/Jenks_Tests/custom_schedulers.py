@@ -80,6 +80,7 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         self.warmup_method = warmup_method
         self.alpha = alpha
         self.beta = beta
+        self.count = 0  # Counter for Jenks iterations
 
         super(WarmupMultiStepJenks, self).__init__(optimizer, last_epoch)
 
@@ -98,6 +99,12 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
                 for base_lr in self.base_lrs
             ]
         else:
+            if self.count >=0 and self.count < len(self.milestones):
+                if self.last_epoch == self.milestones[self.count]:
+                    self.count += 1
+                    for group in self.optimizer.param_groups:
+                        #Decay the learning rate by gamma
+                        group['lr'] *= self.gamma
             scaled_lrs = []
             for group in self.optimizer.param_groups:
                 base_lr = group['initial_lr'] if 'initial_lr' in group else group['lr']

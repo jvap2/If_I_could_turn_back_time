@@ -108,7 +108,7 @@ bias_prune = False
 # Experiment tracking
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 experiment_name = "CIFAR10"
-model_name = "ResNet56"
+model_name = "DenseNet40"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -124,7 +124,7 @@ original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
 lambda_ = 0
 
 
-train_dir = "ResNet56_CIFAR10_output/"
+train_dir = "DenseNet40_CIFAR10_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
 EPOCHS = 800
@@ -297,8 +297,7 @@ while (sparsity < prune_ratio and epoch<EPOCHS) or epoch<=min_epochs:    # Train
 
     writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
     writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-    with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
+    
 
 
 torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")

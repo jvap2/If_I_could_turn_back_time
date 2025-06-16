@@ -1,0 +1,5200 @@
+Epoch: 11
+Iteration: 0
+Elapsed Time: 0.4582
+Total Params: 430500
+Total Pruned: 412281.0
+Percent Pruned: 0.9577
+Accuracy: 98.8281
+
+Epoch: 11
+Iteration: 1
+Elapsed Time: 0.2565
+Total Params: 430500
+Total Pruned: 415730.0
+Percent Pruned: 0.9657
+Accuracy: 99.0234
+
+Epoch: 11
+Iteration: 2
+Elapsed Time: 0.2627
+Total Params: 430500
+Total Pruned: 409088.0
+Percent Pruned: 0.9503
+Accuracy: 99.2188
+
+Epoch: 11
+Iteration: 3
+Elapsed Time: 0.2577
+Total Params: 430500
+Total Pruned: 410475.0
+Percent Pruned: 0.9535
+Accuracy: 99.4141
+
+Epoch: 11
+Iteration: 4
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 412344.0
+Percent Pruned: 0.9578
+Accuracy: 99.1406
+
+Epoch: 11
+Iteration: 5
+Elapsed Time: 0.2655
+Total Params: 430500
+Total Pruned: 408370.0
+Percent Pruned: 0.9486
+Accuracy: 98.8932
+
+Epoch: 11
+Iteration: 6
+Elapsed Time: 0.2587
+Total Params: 430500
+Total Pruned: 411462.0
+Percent Pruned: 0.9558
+Accuracy: 99.0513
+
+Epoch: 11
+Iteration: 7
+Elapsed Time: 0.2568
+Total Params: 430500
+Total Pruned: 413832.0
+Percent Pruned: 0.9613
+Accuracy: 99.1211
+
+Epoch: 11
+Iteration: 8
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 410297.0
+Percent Pruned: 0.9531
+Accuracy: 99.0885
+
+Epoch: 11
+Iteration: 9
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 411352.0
+Percent Pruned: 0.9555
+Accuracy: 99.1797
+
+Epoch: 11
+Iteration: 10
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 411808.0
+Percent Pruned: 0.9566
+Accuracy: 99.2543
+
+Epoch: 11
+Iteration: 11
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 410733.0
+Percent Pruned: 0.9541
+Accuracy: 99.2513
+
+Epoch: 11
+Iteration: 12
+Elapsed Time: 0.2702
+Total Params: 430500
+Total Pruned: 410816.0
+Percent Pruned: 0.9543
+Accuracy: 99.2788
+
+Epoch: 11
+Iteration: 13
+Elapsed Time: 0.2696
+Total Params: 430500
+Total Pruned: 412719.0
+Percent Pruned: 0.9587
+Accuracy: 99.2467
+
+Epoch: 11
+Iteration: 14
+Elapsed Time: 0.2760
+Total Params: 430500
+Total Pruned: 410730.0
+Percent Pruned: 0.9541
+Accuracy: 99.2188
+
+Epoch: 11
+Iteration: 15
+Elapsed Time: 0.2827
+Total Params: 430500
+Total Pruned: 411522.0
+Percent Pruned: 0.9559
+Accuracy: 99.2188
+
+Epoch: 11
+Iteration: 16
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 414212.0
+Percent Pruned: 0.9622
+Accuracy: 99.2417
+
+Epoch: 11
+Iteration: 17
+Elapsed Time: 0.2625
+Total Params: 430500
+Total Pruned: 411073.0
+Percent Pruned: 0.9549
+Accuracy: 99.2188
+
+Epoch: 11
+Iteration: 18
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 413911.0
+Percent Pruned: 0.9615
+Accuracy: 99.2393
+
+Epoch: 11
+Iteration: 19
+Elapsed Time: 0.2598
+Total Params: 430500
+Total Pruned: 414672.0
+Percent Pruned: 0.9632
+Accuracy: 99.2578
+
+Epoch: 11
+Iteration: 20
+Elapsed Time: 0.2559
+Total Params: 430500
+Total Pruned: 409523.0
+Percent Pruned: 0.9513
+Accuracy: 99.2374
+
+Epoch: 11
+Iteration: 21
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 413139.0
+Percent Pruned: 0.9597
+Accuracy: 99.2720
+
+Epoch: 11
+Iteration: 22
+Elapsed Time: 0.2549
+Total Params: 430500
+Total Pruned: 416923.0
+Percent Pruned: 0.9685
+Accuracy: 99.2697
+
+Epoch: 11
+Iteration: 23
+Elapsed Time: 0.2652
+Total Params: 430500
+Total Pruned: 416799.0
+Percent Pruned: 0.9682
+Accuracy: 99.2676
+
+Epoch: 11
+Iteration: 24
+Elapsed Time: 0.2552
+Total Params: 430500
+Total Pruned: 419295.0
+Percent Pruned: 0.9740
+Accuracy: 99.2812
+
+Epoch: 11
+Iteration: 25
+Elapsed Time: 0.2579
+Total Params: 430500
+Total Pruned: 416746.0
+Percent Pruned: 0.9681
+Accuracy: 99.2939
+
+Epoch: 11
+Iteration: 26
+Elapsed Time: 0.2643
+Total Params: 430500
+Total Pruned: 412146.0
+Percent Pruned: 0.9574
+Accuracy: 99.2911
+
+Epoch: 11
+Iteration: 27
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 412706.0
+Percent Pruned: 0.9587
+Accuracy: 99.3025
+
+Epoch: 11
+Iteration: 28
+Elapsed Time: 0.2538
+Total Params: 430500
+Total Pruned: 414222.0
+Percent Pruned: 0.9622
+Accuracy: 99.3265
+
+Epoch: 11
+Iteration: 29
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 415670.0
+Percent Pruned: 0.9656
+Accuracy: 99.3359
+
+Epoch: 11
+Iteration: 30
+Elapsed Time: 0.2563
+Total Params: 430500
+Total Pruned: 411512.0
+Percent Pruned: 0.9559
+Accuracy: 99.3574
+
+Epoch: 11
+Iteration: 31
+Elapsed Time: 0.2560
+Total Params: 430500
+Total Pruned: 410120.0
+Percent Pruned: 0.9527
+Accuracy: 99.3774
+
+Epoch: 11
+Iteration: 32
+Elapsed Time: 0.2527
+Total Params: 430500
+Total Pruned: 412791.0
+Percent Pruned: 0.9589
+Accuracy: 99.3726
+
+Epoch: 11
+Iteration: 33
+Elapsed Time: 0.2593
+Total Params: 430500
+Total Pruned: 415902.0
+Percent Pruned: 0.9661
+Accuracy: 99.3796
+
+Epoch: 11
+Iteration: 34
+Elapsed Time: 0.2581
+Total Params: 430500
+Total Pruned: 412224.0
+Percent Pruned: 0.9575
+Accuracy: 99.3862
+
+Epoch: 11
+Iteration: 35
+Elapsed Time: 0.2631
+Total Params: 430500
+Total Pruned: 412984.0
+Percent Pruned: 0.9593
+Accuracy: 99.4032
+
+Epoch: 11
+Iteration: 36
+Elapsed Time: 0.2565
+Total Params: 430500
+Total Pruned: 410771.0
+Percent Pruned: 0.9542
+Accuracy: 99.4088
+
+Epoch: 11
+Iteration: 37
+Elapsed Time: 0.2611
+Total Params: 430500
+Total Pruned: 408242.0
+Percent Pruned: 0.9483
+Accuracy: 99.4243
+
+Epoch: 11
+Iteration: 38
+Elapsed Time: 0.2630
+Total Params: 430500
+Total Pruned: 419165.0
+Percent Pruned: 0.9737
+Accuracy: 99.4291
+
+Epoch: 11
+Iteration: 39
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 410782.0
+Percent Pruned: 0.9542
+Accuracy: 99.4141
+
+Epoch: 11
+Iteration: 40
+Elapsed Time: 0.2652
+Total Params: 430500
+Total Pruned: 412368.0
+Percent Pruned: 0.9579
+Accuracy: 99.4188
+
+Epoch: 11
+Iteration: 41
+Elapsed Time: 0.3006
+Total Params: 430500
+Total Pruned: 412229.0
+Percent Pruned: 0.9576
+Accuracy: 99.4141
+
+Epoch: 11
+Iteration: 42
+Elapsed Time: 0.2571
+Total Params: 430500
+Total Pruned: 415575.0
+Percent Pruned: 0.9653
+Accuracy: 99.4095
+
+Epoch: 11
+Iteration: 43
+Elapsed Time: 0.2616
+Total Params: 430500
+Total Pruned: 411036.0
+Percent Pruned: 0.9548
+Accuracy: 99.4229
+
+Epoch: 11
+Iteration: 44
+Elapsed Time: 0.2536
+Total Params: 430500
+Total Pruned: 411127.0
+Percent Pruned: 0.9550
+Accuracy: 99.4184
+
+Epoch: 11
+Iteration: 45
+Elapsed Time: 0.2568
+Total Params: 430500
+Total Pruned: 415571.0
+Percent Pruned: 0.9653
+Accuracy: 99.4141
+
+Epoch: 11
+Iteration: 46
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 416336.0
+Percent Pruned: 0.9671
+Accuracy: 99.4182
+
+Epoch: 11
+Iteration: 47
+Elapsed Time: 0.2574
+Total Params: 430500
+Total Pruned: 412391.0
+Percent Pruned: 0.9579
+Accuracy: 99.4141
+
+Epoch: 11
+Iteration: 48
+Elapsed Time: 0.2569
+Total Params: 430500
+Total Pruned: 414688.0
+Percent Pruned: 0.9633
+Accuracy: 99.4260
+
+Epoch: 11
+Iteration: 49
+Elapsed Time: 0.2631
+Total Params: 430500
+Total Pruned: 410042.0
+Percent Pruned: 0.9525
+Accuracy: 99.4375
+
+Epoch: 11
+Iteration: 50
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 419686.0
+Percent Pruned: 0.9749
+Accuracy: 99.4409
+
+Epoch: 11
+Iteration: 51
+Elapsed Time: 0.2625
+Total Params: 430500
+Total Pruned: 412278.0
+Percent Pruned: 0.9577
+Accuracy: 99.4516
+
+Epoch: 11
+Iteration: 52
+Elapsed Time: 0.2587
+Total Params: 430500
+Total Pruned: 416894.0
+Percent Pruned: 0.9684
+Accuracy: 99.4472
+
+Epoch: 11
+Iteration: 53
+Elapsed Time: 0.2673
+Total Params: 430500
+Total Pruned: 415396.0
+Percent Pruned: 0.9649
+Accuracy: 99.4430
+
+Epoch: 11
+Iteration: 54
+Elapsed Time: 0.2677
+Total Params: 430500
+Total Pruned: 412169.0
+Percent Pruned: 0.9574
+Accuracy: 99.4389
+
+Epoch: 11
+Iteration: 55
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 414453.0
+Percent Pruned: 0.9627
+Accuracy: 99.4489
+
+Epoch: 11
+Iteration: 56
+Elapsed Time: 0.2642
+Total Params: 430500
+Total Pruned: 412517.0
+Percent Pruned: 0.9582
+Accuracy: 99.4518
+
+Epoch: 11
+Iteration: 57
+Elapsed Time: 0.2559
+Total Params: 430500
+Total Pruned: 412235.0
+Percent Pruned: 0.9576
+Accuracy: 99.4612
+
+Epoch: 11
+Iteration: 58
+Elapsed Time: 0.2542
+Total Params: 430500
+Total Pruned: 413691.0
+Percent Pruned: 0.9610
+Accuracy: 99.4571
+
+Epoch: 11
+Iteration: 59
+Elapsed Time: 0.2545
+Total Params: 430500
+Total Pruned: 412508.0
+Percent Pruned: 0.9582
+Accuracy: 99.4661
+
+Epoch: 11
+Iteration: 60
+Elapsed Time: 0.2585
+Total Params: 430500
+Total Pruned: 411541.0
+Percent Pruned: 0.9560
+Accuracy: 99.4749
+
+Epoch: 11
+Iteration: 61
+Elapsed Time: 0.2614
+Total Params: 430500
+Total Pruned: 418260.0
+Percent Pruned: 0.9716
+Accuracy: 99.4771
+
+Epoch: 11
+Iteration: 62
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 413339.0
+Percent Pruned: 0.9601
+Accuracy: 99.4792
+
+Epoch: 11
+Iteration: 63
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 409641.0
+Percent Pruned: 0.9515
+Accuracy: 99.4812
+
+Epoch: 11
+Iteration: 64
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 411288.0
+Percent Pruned: 0.9554
+Accuracy: 99.4772
+
+Epoch: 11
+Iteration: 65
+Elapsed Time: 0.2640
+Total Params: 430500
+Total Pruned: 413028.0
+Percent Pruned: 0.9594
+Accuracy: 99.4851
+
+Epoch: 11
+Iteration: 66
+Elapsed Time: 0.2582
+Total Params: 430500
+Total Pruned: 410781.0
+Percent Pruned: 0.9542
+Accuracy: 99.4811
+
+Epoch: 11
+Iteration: 67
+Elapsed Time: 0.2583
+Total Params: 430500
+Total Pruned: 408833.0
+Percent Pruned: 0.9497
+Accuracy: 99.4887
+
+Epoch: 11
+Iteration: 68
+Elapsed Time: 0.2646
+Total Params: 430500
+Total Pruned: 409881.0
+Percent Pruned: 0.9521
+Accuracy: 99.4905
+
+Epoch: 11
+Iteration: 69
+Elapsed Time: 0.2563
+Total Params: 430500
+Total Pruned: 413458.0
+Percent Pruned: 0.9604
+Accuracy: 99.4866
+
+Epoch: 11
+Iteration: 70
+Elapsed Time: 0.2566
+Total Params: 430500
+Total Pruned: 413580.0
+Percent Pruned: 0.9607
+Accuracy: 99.4828
+
+Epoch: 11
+Iteration: 71
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 412487.0
+Percent Pruned: 0.9582
+Accuracy: 99.4900
+
+Epoch: 11
+Iteration: 72
+Elapsed Time: 0.2611
+Total Params: 430500
+Total Pruned: 409709.0
+Percent Pruned: 0.9517
+Accuracy: 99.4970
+
+Epoch: 11
+Iteration: 73
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 412531.0
+Percent Pruned: 0.9583
+Accuracy: 99.4932
+
+Epoch: 11
+Iteration: 74
+Elapsed Time: 0.2556
+Total Params: 430500
+Total Pruned: 412591.0
+Percent Pruned: 0.9584
+Accuracy: 99.5000
+
+Epoch: 11
+Iteration: 75
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 414392.0
+Percent Pruned: 0.9626
+Accuracy: 99.5066
+
+Epoch: 11
+Iteration: 76
+Elapsed Time: 0.2632
+Total Params: 430500
+Total Pruned: 415321.0
+Percent Pruned: 0.9647
+Accuracy: 99.5079
+
+Epoch: 11
+Iteration: 77
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 411883.0
+Percent Pruned: 0.9568
+Accuracy: 99.5042
+
+Epoch: 11
+Iteration: 78
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 414706.0
+Percent Pruned: 0.9633
+Accuracy: 99.5055
+
+Epoch: 11
+Iteration: 79
+Elapsed Time: 0.2547
+Total Params: 430500
+Total Pruned: 414029.0
+Percent Pruned: 0.9617
+Accuracy: 99.5117
+
+Epoch: 11
+Iteration: 80
+Elapsed Time: 0.2728
+Total Params: 430500
+Total Pruned: 416935.0
+Percent Pruned: 0.9685
+Accuracy: 99.5081
+
+Epoch: 11
+Iteration: 81
+Elapsed Time: 0.2576
+Total Params: 430500
+Total Pruned: 413391.0
+Percent Pruned: 0.9603
+Accuracy: 99.4998
+
+Epoch: 11
+Iteration: 82
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 417128.0
+Percent Pruned: 0.9689
+Accuracy: 99.5011
+
+Epoch: 11
+Iteration: 83
+Elapsed Time: 0.2832
+Total Params: 430500
+Total Pruned: 419895.0
+Percent Pruned: 0.9754
+Accuracy: 99.5024
+
+Epoch: 11
+Iteration: 84
+Elapsed Time: 0.2539
+Total Params: 430500
+Total Pruned: 412021.0
+Percent Pruned: 0.9571
+Accuracy: 99.5083
+
+Epoch: 11
+Iteration: 85
+Elapsed Time: 0.2624
+Total Params: 430500
+Total Pruned: 414746.0
+Percent Pruned: 0.9634
+Accuracy: 99.5094
+
+Epoch: 11
+Iteration: 86
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 418312.0
+Percent Pruned: 0.9717
+Accuracy: 99.5106
+
+Epoch: 11
+Iteration: 87
+Elapsed Time: 0.2555
+Total Params: 430500
+Total Pruned: 415789.0
+Percent Pruned: 0.9658
+Accuracy: 99.5162
+
+Epoch: 11
+Iteration: 88
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 413871.0
+Percent Pruned: 0.9614
+Accuracy: 99.5216
+
+Epoch: 11
+Iteration: 89
+Elapsed Time: 0.2539
+Total Params: 430500
+Total Pruned: 414081.0
+Percent Pruned: 0.9619
+Accuracy: 99.5269
+
+Epoch: 11
+Iteration: 90
+Elapsed Time: 0.2645
+Total Params: 430500
+Total Pruned: 414582.0
+Percent Pruned: 0.9630
+Accuracy: 99.5235
+
+Epoch: 11
+Iteration: 91
+Elapsed Time: 0.2645
+Total Params: 430500
+Total Pruned: 412098.0
+Percent Pruned: 0.9573
+Accuracy: 99.5287
+
+Epoch: 11
+Iteration: 92
+Elapsed Time: 0.2561
+Total Params: 430500
+Total Pruned: 411861.0
+Percent Pruned: 0.9567
+Accuracy: 99.5254
+
+Epoch: 11
+Iteration: 93
+Elapsed Time: 0.2625
+Total Params: 430500
+Total Pruned: 417071.0
+Percent Pruned: 0.9688
+Accuracy: 99.5304
+
+Epoch: 11
+Iteration: 94
+Elapsed Time: 0.2564
+Total Params: 430500
+Total Pruned: 411618.0
+Percent Pruned: 0.9561
+Accuracy: 99.5230
+
+Epoch: 11
+Iteration: 95
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 414795.0
+Percent Pruned: 0.9635
+Accuracy: 99.5280
+
+Epoch: 11
+Iteration: 96
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 412846.0
+Percent Pruned: 0.9590
+Accuracy: 99.5248
+
+Epoch: 11
+Iteration: 97
+Elapsed Time: 0.2596
+Total Params: 430500
+Total Pruned: 413630.0
+Percent Pruned: 0.9608
+Accuracy: 99.5257
+
+Epoch: 11
+Iteration: 98
+Elapsed Time: 0.2628
+Total Params: 430500
+Total Pruned: 412207.0
+Percent Pruned: 0.9575
+Accuracy: 99.5147
+
+Epoch: 11
+Iteration: 99
+Elapsed Time: 0.2614
+Total Params: 430500
+Total Pruned: 412312.0
+Percent Pruned: 0.9578
+Accuracy: 99.5195
+
+Epoch: 11
+Iteration: 100
+Elapsed Time: 0.2537
+Total Params: 430500
+Total Pruned: 411213.0
+Percent Pruned: 0.9552
+Accuracy: 99.5166
+
+Epoch: 11
+Iteration: 101
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 414006.0
+Percent Pruned: 0.9617
+Accuracy: 99.5136
+
+Epoch: 11
+Iteration: 102
+Elapsed Time: 0.2642
+Total Params: 430500
+Total Pruned: 414476.0
+Percent Pruned: 0.9628
+Accuracy: 99.5146
+
+Epoch: 11
+Iteration: 103
+Elapsed Time: 0.2672
+Total Params: 430500
+Total Pruned: 415414.0
+Percent Pruned: 0.9650
+Accuracy: 99.5155
+
+Epoch: 11
+Iteration: 104
+Elapsed Time: 0.2565
+Total Params: 430500
+Total Pruned: 411387.0
+Percent Pruned: 0.9556
+Accuracy: 99.5052
+
+Epoch: 11
+Iteration: 105
+Elapsed Time: 0.2525
+Total Params: 430500
+Total Pruned: 418516.0
+Percent Pruned: 0.9722
+Accuracy: 99.5062
+
+Epoch: 11
+Iteration: 106
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 413617.0
+Percent Pruned: 0.9608
+Accuracy: 99.4999
+
+Epoch: 11
+Iteration: 107
+Elapsed Time: 0.2603
+Total Params: 430500
+Total Pruned: 415781.0
+Percent Pruned: 0.9658
+Accuracy: 99.4973
+
+Epoch: 11
+Iteration: 108
+Elapsed Time: 0.2603
+Total Params: 430500
+Total Pruned: 413243.0
+Percent Pruned: 0.9599
+Accuracy: 99.5019
+
+Epoch: 11
+Iteration: 109
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 412077.0
+Percent Pruned: 0.9572
+Accuracy: 99.5064
+
+Epoch: 11
+Iteration: 110
+Elapsed Time: 0.2598
+Total Params: 430500
+Total Pruned: 417046.0
+Percent Pruned: 0.9687
+Accuracy: 99.5038
+
+Epoch: 11
+Iteration: 111
+Elapsed Time: 0.2646
+Total Params: 430500
+Total Pruned: 418525.0
+Percent Pruned: 0.9722
+Accuracy: 99.5082
+
+Epoch: 11
+Iteration: 112
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 409149.0
+Percent Pruned: 0.9504
+Accuracy: 99.5126
+
+Epoch: 11
+Iteration: 113
+Elapsed Time: 0.2629
+Total Params: 430500
+Total Pruned: 415741.0
+Percent Pruned: 0.9657
+Accuracy: 99.5169
+
+Epoch: 11
+Iteration: 114
+Elapsed Time: 0.2638
+Total Params: 430500
+Total Pruned: 416083.0
+Percent Pruned: 0.9665
+Accuracy: 99.5177
+
+Epoch: 11
+Iteration: 115
+Elapsed Time: 0.2544
+Total Params: 430500
+Total Pruned: 417993.0
+Percent Pruned: 0.9709
+Accuracy: 99.5218
+
+Epoch: 11
+Iteration: 116
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 415112.0
+Percent Pruned: 0.9643
+Accuracy: 99.5192
+
+Epoch: 11
+Iteration: 117
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 413088.0
+Percent Pruned: 0.9596
+Accuracy: 99.5167
+
+Epoch: 11
+Iteration: 118
+Elapsed Time: 0.2586
+Total Params: 430500
+Total Pruned: 415197.0
+Percent Pruned: 0.9645
+Accuracy: 99.5142
+
+Epoch: 11
+Iteration: 119
+Elapsed Time: 0.2533
+Total Params: 430500
+Total Pruned: 411675.0
+Percent Pruned: 0.9563
+Accuracy: 99.5052
+
+Epoch: 11
+Iteration: 120
+Elapsed Time: 0.2579
+Total Params: 430500
+Total Pruned: 414849.0
+Percent Pruned: 0.9636
+Accuracy: 99.5061
+
+Epoch: 11
+Iteration: 121
+Elapsed Time: 0.2570
+Total Params: 430500
+Total Pruned: 417153.0
+Percent Pruned: 0.9690
+Accuracy: 99.5069
+
+Epoch: 11
+Iteration: 122
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 414276.0
+Percent Pruned: 0.9623
+Accuracy: 99.5046
+
+Epoch: 11
+Iteration: 123
+Elapsed Time: 0.2580
+Total Params: 430500
+Total Pruned: 418854.0
+Percent Pruned: 0.9729
+Accuracy: 99.5054
+
+Epoch: 11
+Iteration: 124
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 409280.0
+Percent Pruned: 0.9507
+Accuracy: 99.5000
+
+Epoch: 11
+Iteration: 125
+Elapsed Time: 0.2525
+Total Params: 430500
+Total Pruned: 412765.0
+Percent Pruned: 0.9588
+Accuracy: 99.4947
+
+Epoch: 11
+Iteration: 126
+Elapsed Time: 0.2778
+Total Params: 430500
+Total Pruned: 415254.0
+Percent Pruned: 0.9646
+Accuracy: 99.4925
+
+Epoch: 11
+Iteration: 127
+Elapsed Time: 0.2581
+Total Params: 430500
+Total Pruned: 417024.0
+Percent Pruned: 0.9687
+Accuracy: 99.4904
+
+Epoch: 11
+Iteration: 128
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 419036.0
+Percent Pruned: 0.9734
+Accuracy: 99.4913
+
+Epoch: 11
+Iteration: 129
+Elapsed Time: 0.2581
+Total Params: 430500
+Total Pruned: 416579.0
+Percent Pruned: 0.9677
+Accuracy: 99.4952
+
+Epoch: 11
+Iteration: 130
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 415406.0
+Percent Pruned: 0.9649
+Accuracy: 99.4990
+
+Epoch: 11
+Iteration: 131
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 411964.0
+Percent Pruned: 0.9569
+Accuracy: 99.5028
+
+Epoch: 11
+Iteration: 132
+Elapsed Time: 0.2598
+Total Params: 430500
+Total Pruned: 418757.0
+Percent Pruned: 0.9727
+Accuracy: 99.5036
+
+Epoch: 11
+Iteration: 133
+Elapsed Time: 0.2716
+Total Params: 430500
+Total Pruned: 420726.0
+Percent Pruned: 0.9773
+Accuracy: 99.5044
+
+Epoch: 11
+Iteration: 134
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 417842.0
+Percent Pruned: 0.9706
+Accuracy: 99.5052
+
+Epoch: 11
+Iteration: 135
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 416598.0
+Percent Pruned: 0.9677
+Accuracy: 99.5060
+
+Epoch: 11
+Iteration: 136
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 415902.0
+Percent Pruned: 0.9661
+Accuracy: 99.5039
+
+Epoch: 11
+Iteration: 137
+Elapsed Time: 0.2520
+Total Params: 430500
+Total Pruned: 419248.0
+Percent Pruned: 0.9739
+Accuracy: 99.5046
+
+Epoch: 11
+Iteration: 138
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 412580.0
+Percent Pruned: 0.9584
+Accuracy: 99.5082
+
+Epoch: 11
+Iteration: 139
+Elapsed Time: 0.2651
+Total Params: 430500
+Total Pruned: 410549.0
+Percent Pruned: 0.9537
+Accuracy: 99.5117
+
+Epoch: 11
+Iteration: 140
+Elapsed Time: 0.2586
+Total Params: 430500
+Total Pruned: 409909.0
+Percent Pruned: 0.9522
+Accuracy: 99.5152
+
+Epoch: 11
+Iteration: 141
+Elapsed Time: 0.2685
+Total Params: 430500
+Total Pruned: 411788.0
+Percent Pruned: 0.9565
+Accuracy: 99.5186
+
+Epoch: 11
+Iteration: 142
+Elapsed Time: 0.2527
+Total Params: 430500
+Total Pruned: 412973.0
+Percent Pruned: 0.9593
+Accuracy: 99.5220
+
+Epoch: 11
+Iteration: 143
+Elapsed Time: 0.2594
+Total Params: 430500
+Total Pruned: 412698.0
+Percent Pruned: 0.9586
+Accuracy: 99.5171
+
+Epoch: 11
+Iteration: 144
+Elapsed Time: 0.2546
+Total Params: 430500
+Total Pruned: 414593.0
+Percent Pruned: 0.9630
+Accuracy: 99.5205
+
+Epoch: 11
+Iteration: 145
+Elapsed Time: 0.2538
+Total Params: 430500
+Total Pruned: 415767.0
+Percent Pruned: 0.9658
+Accuracy: 99.5184
+
+Epoch: 11
+Iteration: 146
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 415421.0
+Percent Pruned: 0.9650
+Accuracy: 99.5164
+
+Epoch: 11
+Iteration: 147
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 413267.0
+Percent Pruned: 0.9600
+Accuracy: 99.5144
+
+Epoch: 11
+Iteration: 148
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 415882.0
+Percent Pruned: 0.9660
+Accuracy: 99.5124
+
+Epoch: 11
+Iteration: 149
+Elapsed Time: 0.2559
+Total Params: 430500
+Total Pruned: 412680.0
+Percent Pruned: 0.9586
+Accuracy: 99.5156
+
+Epoch: 11
+Iteration: 150
+Elapsed Time: 0.2607
+Total Params: 430500
+Total Pruned: 412763.0
+Percent Pruned: 0.9588
+Accuracy: 99.5137
+
+Epoch: 11
+Iteration: 151
+Elapsed Time: 0.2646
+Total Params: 430500
+Total Pruned: 418617.0
+Percent Pruned: 0.9724
+Accuracy: 99.5143
+
+Epoch: 11
+Iteration: 152
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 416286.0
+Percent Pruned: 0.9670
+Accuracy: 99.5175
+
+Epoch: 11
+Iteration: 153
+Elapsed Time: 0.2656
+Total Params: 430500
+Total Pruned: 419166.0
+Percent Pruned: 0.9737
+Accuracy: 99.5181
+
+Epoch: 11
+Iteration: 154
+Elapsed Time: 0.2547
+Total Params: 430500
+Total Pruned: 416262.0
+Percent Pruned: 0.9669
+Accuracy: 99.5212
+
+Epoch: 11
+Iteration: 155
+Elapsed Time: 0.2593
+Total Params: 430500
+Total Pruned: 415889.0
+Percent Pruned: 0.9661
+Accuracy: 99.5192
+
+Epoch: 11
+Iteration: 156
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 408678.0
+Percent Pruned: 0.9493
+Accuracy: 99.5223
+
+Epoch: 11
+Iteration: 157
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 413121.0
+Percent Pruned: 0.9596
+Accuracy: 99.5204
+
+Epoch: 11
+Iteration: 158
+Elapsed Time: 0.2668
+Total Params: 430500
+Total Pruned: 412090.0
+Percent Pruned: 0.9572
+Accuracy: 99.5234
+
+Epoch: 11
+Iteration: 159
+Elapsed Time: 0.2604
+Total Params: 430500
+Total Pruned: 418057.0
+Percent Pruned: 0.9711
+Accuracy: 99.5239
+
+Epoch: 11
+Iteration: 160
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 413022.0
+Percent Pruned: 0.9594
+Accuracy: 99.5220
+
+Epoch: 11
+Iteration: 161
+Elapsed Time: 0.2586
+Total Params: 430500
+Total Pruned: 411878.0
+Percent Pruned: 0.9567
+Accuracy: 99.5177
+
+Epoch: 11
+Iteration: 162
+Elapsed Time: 0.2596
+Total Params: 430500
+Total Pruned: 414652.0
+Percent Pruned: 0.9632
+Accuracy: 99.5159
+
+Epoch: 11
+Iteration: 163
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 413810.0
+Percent Pruned: 0.9612
+Accuracy: 99.5165
+
+Epoch: 11
+Iteration: 164
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 412603.0
+Percent Pruned: 0.9584
+Accuracy: 99.5170
+
+Epoch: 11
+Iteration: 165
+Elapsed Time: 0.2628
+Total Params: 430500
+Total Pruned: 412752.0
+Percent Pruned: 0.9588
+Accuracy: 99.5176
+
+Epoch: 11
+Iteration: 166
+Elapsed Time: 0.2628
+Total Params: 430500
+Total Pruned: 413960.0
+Percent Pruned: 0.9616
+Accuracy: 99.5182
+
+Epoch: 11
+Iteration: 167
+Elapsed Time: 0.2537
+Total Params: 430500
+Total Pruned: 412936.0
+Percent Pruned: 0.9592
+Accuracy: 99.5187
+
+Epoch: 11
+Iteration: 168
+Elapsed Time: 0.2624
+Total Params: 430500
+Total Pruned: 415726.0
+Percent Pruned: 0.9657
+Accuracy: 99.5192
+
+Epoch: 11
+Iteration: 169
+Elapsed Time: 0.2561
+Total Params: 430500
+Total Pruned: 418203.0
+Percent Pruned: 0.9714
+Accuracy: 99.5175
+
+Epoch: 11
+Iteration: 170
+Elapsed Time: 0.2544
+Total Params: 430500
+Total Pruned: 416934.0
+Percent Pruned: 0.9685
+Accuracy: 99.5203
+
+Epoch: 11
+Iteration: 171
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 415120.0
+Percent Pruned: 0.9643
+Accuracy: 99.5231
+
+Epoch: 11
+Iteration: 172
+Elapsed Time: 0.2574
+Total Params: 430500
+Total Pruned: 409628.0
+Percent Pruned: 0.9515
+Accuracy: 99.5258
+
+Epoch: 11
+Iteration: 173
+Elapsed Time: 0.2574
+Total Params: 430500
+Total Pruned: 414426.0
+Percent Pruned: 0.9627
+Accuracy: 99.5286
+
+Epoch: 11
+Iteration: 174
+Elapsed Time: 0.2761
+Total Params: 430500
+Total Pruned: 412685.0
+Percent Pruned: 0.9586
+Accuracy: 99.5312
+
+Epoch: 11
+Iteration: 175
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 416962.0
+Percent Pruned: 0.9686
+Accuracy: 99.5339
+
+Epoch: 11
+Iteration: 176
+Elapsed Time: 0.2628
+Total Params: 430500
+Total Pruned: 415486.0
+Percent Pruned: 0.9651
+Accuracy: 99.5343
+
+Epoch: 11
+Iteration: 177
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 411993.0
+Percent Pruned: 0.9570
+Accuracy: 99.5370
+
+Epoch: 11
+Iteration: 178
+Elapsed Time: 0.2540
+Total Params: 430500
+Total Pruned: 414229.0
+Percent Pruned: 0.9622
+Accuracy: 99.5395
+
+Epoch: 11
+Iteration: 179
+Elapsed Time: 0.2538
+Total Params: 430500
+Total Pruned: 415258.0
+Percent Pruned: 0.9646
+Accuracy: 99.5378
+
+Epoch: 11
+Iteration: 180
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 412499.0
+Percent Pruned: 0.9582
+Accuracy: 99.5403
+
+Epoch: 11
+Iteration: 181
+Elapsed Time: 0.2629
+Total Params: 430500
+Total Pruned: 408153.0
+Percent Pruned: 0.9481
+Accuracy: 99.5428
+
+Epoch: 11
+Iteration: 182
+Elapsed Time: 0.2620
+Total Params: 430500
+Total Pruned: 414049.0
+Percent Pruned: 0.9618
+Accuracy: 99.5453
+
+Epoch: 11
+Iteration: 183
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 413017.0
+Percent Pruned: 0.9594
+Accuracy: 99.5436
+
+Epoch: 11
+Iteration: 184
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 415962.0
+Percent Pruned: 0.9662
+Accuracy: 99.5418
+
+Epoch: 11
+Iteration: 185
+Elapsed Time: 0.2588
+Total Params: 430500
+Total Pruned: 416610.0
+Percent Pruned: 0.9677
+Accuracy: 99.5422
+
+Epoch: 11
+Iteration: 186
+Elapsed Time: 0.2635
+Total Params: 430500
+Total Pruned: 414550.0
+Percent Pruned: 0.9630
+Accuracy: 99.5446
+
+Epoch: 11
+Iteration: 187
+Elapsed Time: 0.2573
+Total Params: 430500
+Total Pruned: 410658.0
+Percent Pruned: 0.9539
+Accuracy: 99.5450
+
+Epoch: 11
+Iteration: 188
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 413768.0
+Percent Pruned: 0.9611
+Accuracy: 99.5474
+
+Epoch: 11
+Iteration: 189
+Elapsed Time: 0.2635
+Total Params: 430500
+Total Pruned: 412349.0
+Percent Pruned: 0.9578
+Accuracy: 99.5477
+
+Epoch: 11
+Iteration: 190
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 413298.0
+Percent Pruned: 0.9600
+Accuracy: 99.5460
+
+Epoch: 11
+Iteration: 191
+Elapsed Time: 0.2644
+Total Params: 430500
+Total Pruned: 413248.0
+Percent Pruned: 0.9599
+Accuracy: 99.5483
+
+Epoch: 11
+Iteration: 192
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 412703.0
+Percent Pruned: 0.9587
+Accuracy: 99.5487
+
+Epoch: 11
+Iteration: 193
+Elapsed Time: 0.2618
+Total Params: 430500
+Total Pruned: 410356.0
+Percent Pruned: 0.9532
+Accuracy: 99.5470
+
+Epoch: 11
+Iteration: 194
+Elapsed Time: 0.2616
+Total Params: 430500
+Total Pruned: 418225.0
+Percent Pruned: 0.9715
+Accuracy: 99.5473
+
+Epoch: 11
+Iteration: 195
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 416952.0
+Percent Pruned: 0.9685
+Accuracy: 99.5476
+
+Epoch: 11
+Iteration: 196
+Elapsed Time: 0.2705
+Total Params: 430500
+Total Pruned: 413436.0
+Percent Pruned: 0.9604
+Accuracy: 99.5499
+
+Epoch: 11
+Iteration: 197
+Elapsed Time: 0.2787
+Total Params: 430500
+Total Pruned: 414982.0
+Percent Pruned: 0.9640
+Accuracy: 99.5522
+
+Epoch: 11
+Iteration: 198
+Elapsed Time: 0.2576
+Total Params: 430500
+Total Pruned: 417276.0
+Percent Pruned: 0.9693
+Accuracy: 99.5544
+
+Epoch: 11
+Iteration: 199
+Elapsed Time: 0.2603
+Total Params: 430500
+Total Pruned: 412510.0
+Percent Pruned: 0.9582
+Accuracy: 99.5547
+
+Epoch: 11
+Iteration: 200
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 411454.0
+Percent Pruned: 0.9558
+Accuracy: 99.5491
+
+Epoch: 11
+Iteration: 201
+Elapsed Time: 0.2695
+Total Params: 430500
+Total Pruned: 420513.0
+Percent Pruned: 0.9768
+Accuracy: 99.5475
+
+Epoch: 11
+Iteration: 202
+Elapsed Time: 0.2604
+Total Params: 430500
+Total Pruned: 410416.0
+Percent Pruned: 0.9533
+Accuracy: 99.5497
+
+Epoch: 11
+Iteration: 203
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 417159.0
+Percent Pruned: 0.9690
+Accuracy: 99.5500
+
+Epoch: 11
+Iteration: 204
+Elapsed Time: 0.2541
+Total Params: 430500
+Total Pruned: 415928.0
+Percent Pruned: 0.9662
+Accuracy: 99.5484
+
+Epoch: 11
+Iteration: 205
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 412715.0
+Percent Pruned: 0.9587
+Accuracy: 99.5487
+
+Epoch: 11
+Iteration: 206
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 417400.0
+Percent Pruned: 0.9696
+Accuracy: 99.5509
+
+Epoch: 11
+Iteration: 207
+Elapsed Time: 0.2647
+Total Params: 430500
+Total Pruned: 416210.0
+Percent Pruned: 0.9668
+Accuracy: 99.5530
+
+Epoch: 11
+Iteration: 208
+Elapsed Time: 0.2636
+Total Params: 430500
+Total Pruned: 413580.0
+Percent Pruned: 0.9607
+Accuracy: 99.5552
+
+Epoch: 11
+Iteration: 209
+Elapsed Time: 0.2921
+Total Params: 430500
+Total Pruned: 419414.0
+Percent Pruned: 0.9742
+Accuracy: 99.5554
+
+Epoch: 11
+Iteration: 210
+Elapsed Time: 0.2583
+Total Params: 430500
+Total Pruned: 419357.0
+Percent Pruned: 0.9741
+Accuracy: 99.5575
+
+Epoch: 11
+Iteration: 211
+Elapsed Time: 0.2605
+Total Params: 430500
+Total Pruned: 417951.0
+Percent Pruned: 0.9709
+Accuracy: 99.5596
+
+Epoch: 11
+Iteration: 212
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 414358.0
+Percent Pruned: 0.9625
+Accuracy: 99.5580
+
+Epoch: 11
+Iteration: 213
+Elapsed Time: 0.2599
+Total Params: 430500
+Total Pruned: 412491.0
+Percent Pruned: 0.9582
+Accuracy: 99.5601
+
+Epoch: 11
+Iteration: 214
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 412567.0
+Percent Pruned: 0.9583
+Accuracy: 99.5621
+
+Epoch: 11
+Iteration: 215
+Elapsed Time: 0.2636
+Total Params: 430500
+Total Pruned: 416496.0
+Percent Pruned: 0.9675
+Accuracy: 99.5624
+
+Epoch: 11
+Iteration: 216
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 411779.0
+Percent Pruned: 0.9565
+Accuracy: 99.5644
+
+Epoch: 11
+Iteration: 217
+Elapsed Time: 0.2635
+Total Params: 430500
+Total Pruned: 418568.0
+Percent Pruned: 0.9723
+Accuracy: 99.5646
+
+Epoch: 11
+Iteration: 218
+Elapsed Time: 0.2607
+Total Params: 430500
+Total Pruned: 410302.0
+Percent Pruned: 0.9531
+Accuracy: 99.5612
+
+Epoch: 11
+Iteration: 219
+Elapsed Time: 0.2582
+Total Params: 430500
+Total Pruned: 410728.0
+Percent Pruned: 0.9541
+Accuracy: 99.5632
+
+Epoch: 11
+Iteration: 220
+Elapsed Time: 0.2830
+Total Params: 430500
+Total Pruned: 414216.0
+Percent Pruned: 0.9622
+Accuracy: 99.5652
+
+Epoch: 11
+Iteration: 221
+Elapsed Time: 0.2525
+Total Params: 430500
+Total Pruned: 413510.0
+Percent Pruned: 0.9605
+Accuracy: 99.5671
+
+Epoch: 11
+Iteration: 222
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 413478.0
+Percent Pruned: 0.9605
+Accuracy: 99.5638
+
+Epoch: 11
+Iteration: 223
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 412475.0
+Percent Pruned: 0.9581
+Accuracy: 99.5605
+
+Epoch: 11
+Iteration: 224
+Elapsed Time: 0.2634
+Total Params: 430500
+Total Pruned: 417033.0
+Percent Pruned: 0.9687
+Accuracy: 99.5608
+
+Epoch: 11
+Iteration: 225
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 411855.0
+Percent Pruned: 0.9567
+Accuracy: 99.5575
+
+Epoch: 11
+Iteration: 226
+Elapsed Time: 0.2568
+Total Params: 430500
+Total Pruned: 418455.0
+Percent Pruned: 0.9720
+Accuracy: 99.5578
+
+Epoch: 11
+Iteration: 227
+Elapsed Time: 0.2888
+Total Params: 430500
+Total Pruned: 417243.0
+Percent Pruned: 0.9692
+Accuracy: 99.5580
+
+Epoch: 11
+Iteration: 228
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 413496.0
+Percent Pruned: 0.9605
+Accuracy: 99.5599
+
+Epoch: 11
+Iteration: 229
+Elapsed Time: 0.2556
+Total Params: 430500
+Total Pruned: 416421.0
+Percent Pruned: 0.9673
+Accuracy: 99.5584
+
+Epoch: 12
+Iteration: 0
+Elapsed Time: 0.2566
+Total Params: 430500
+Total Pruned: 413234.0
+Percent Pruned: 0.9599
+Accuracy: 100.0000
+
+Epoch: 12
+Iteration: 1
+Elapsed Time: 0.2564
+Total Params: 430500
+Total Pruned: 414781.0
+Percent Pruned: 0.9635
+Accuracy: 100.0000
+
+Epoch: 12
+Iteration: 2
+Elapsed Time: 0.2672
+Total Params: 430500
+Total Pruned: 418248.0
+Percent Pruned: 0.9715
+Accuracy: 99.8698
+
+Epoch: 12
+Iteration: 3
+Elapsed Time: 0.2568
+Total Params: 430500
+Total Pruned: 418114.0
+Percent Pruned: 0.9712
+Accuracy: 99.9023
+
+Epoch: 12
+Iteration: 4
+Elapsed Time: 0.2641
+Total Params: 430500
+Total Pruned: 413731.0
+Percent Pruned: 0.9610
+Accuracy: 99.8438
+
+Epoch: 12
+Iteration: 5
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 410160.0
+Percent Pruned: 0.9528
+Accuracy: 99.8698
+
+Epoch: 12
+Iteration: 6
+Elapsed Time: 0.2567
+Total Params: 430500
+Total Pruned: 407997.0
+Percent Pruned: 0.9477
+Accuracy: 99.8884
+
+Epoch: 12
+Iteration: 7
+Elapsed Time: 0.2647
+Total Params: 430500
+Total Pruned: 408645.0
+Percent Pruned: 0.9492
+Accuracy: 99.9023
+
+Epoch: 12
+Iteration: 8
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 413818.0
+Percent Pruned: 0.9612
+Accuracy: 99.8264
+
+Epoch: 12
+Iteration: 9
+Elapsed Time: 0.2899
+Total Params: 430500
+Total Pruned: 411543.0
+Percent Pruned: 0.9560
+Accuracy: 99.8047
+
+Epoch: 12
+Iteration: 10
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 413619.0
+Percent Pruned: 0.9608
+Accuracy: 99.8224
+
+Epoch: 12
+Iteration: 11
+Elapsed Time: 0.2793
+Total Params: 430500
+Total Pruned: 413836.0
+Percent Pruned: 0.9613
+Accuracy: 99.8047
+
+Epoch: 12
+Iteration: 12
+Elapsed Time: 0.2642
+Total Params: 430500
+Total Pruned: 414938.0
+Percent Pruned: 0.9639
+Accuracy: 99.7897
+
+Epoch: 12
+Iteration: 13
+Elapsed Time: 0.2605
+Total Params: 430500
+Total Pruned: 408299.0
+Percent Pruned: 0.9484
+Accuracy: 99.8047
+
+Epoch: 12
+Iteration: 14
+Elapsed Time: 0.2863
+Total Params: 430500
+Total Pruned: 415316.0
+Percent Pruned: 0.9647
+Accuracy: 99.7656
+
+Epoch: 12
+Iteration: 15
+Elapsed Time: 0.2629
+Total Params: 430500
+Total Pruned: 412361.0
+Percent Pruned: 0.9579
+Accuracy: 99.7559
+
+Epoch: 12
+Iteration: 16
+Elapsed Time: 0.2567
+Total Params: 430500
+Total Pruned: 419487.0
+Percent Pruned: 0.9744
+Accuracy: 99.7472
+
+Epoch: 12
+Iteration: 17
+Elapsed Time: 0.2574
+Total Params: 430500
+Total Pruned: 412991.0
+Percent Pruned: 0.9593
+Accuracy: 99.7179
+
+Epoch: 12
+Iteration: 18
+Elapsed Time: 0.2524
+Total Params: 430500
+Total Pruned: 418049.0
+Percent Pruned: 0.9711
+Accuracy: 99.7122
+
+Epoch: 12
+Iteration: 19
+Elapsed Time: 0.2641
+Total Params: 430500
+Total Pruned: 411624.0
+Percent Pruned: 0.9562
+Accuracy: 99.6875
+
+Epoch: 12
+Iteration: 20
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 410573.0
+Percent Pruned: 0.9537
+Accuracy: 99.7024
+
+Epoch: 12
+Iteration: 21
+Elapsed Time: 0.2528
+Total Params: 430500
+Total Pruned: 408383.0
+Percent Pruned: 0.9486
+Accuracy: 99.7159
+
+Epoch: 12
+Iteration: 22
+Elapsed Time: 0.2647
+Total Params: 430500
+Total Pruned: 411018.0
+Percent Pruned: 0.9547
+Accuracy: 99.7283
+
+Epoch: 12
+Iteration: 23
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 416970.0
+Percent Pruned: 0.9686
+Accuracy: 99.7233
+
+Epoch: 12
+Iteration: 24
+Elapsed Time: 0.2566
+Total Params: 430500
+Total Pruned: 416874.0
+Percent Pruned: 0.9683
+Accuracy: 99.7188
+
+Epoch: 12
+Iteration: 25
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 415875.0
+Percent Pruned: 0.9660
+Accuracy: 99.7145
+
+Epoch: 12
+Iteration: 26
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 415063.0
+Percent Pruned: 0.9641
+Accuracy: 99.6817
+
+Epoch: 12
+Iteration: 27
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 413623.0
+Percent Pruned: 0.9608
+Accuracy: 99.6931
+
+Epoch: 12
+Iteration: 28
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 415352.0
+Percent Pruned: 0.9648
+Accuracy: 99.7037
+
+Epoch: 12
+Iteration: 29
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 412126.0
+Percent Pruned: 0.9573
+Accuracy: 99.7135
+
+Epoch: 12
+Iteration: 30
+Elapsed Time: 0.2605
+Total Params: 430500
+Total Pruned: 412735.0
+Percent Pruned: 0.9587
+Accuracy: 99.7228
+
+Epoch: 12
+Iteration: 31
+Elapsed Time: 0.2662
+Total Params: 430500
+Total Pruned: 418648.0
+Percent Pruned: 0.9725
+Accuracy: 99.7314
+
+Epoch: 12
+Iteration: 32
+Elapsed Time: 0.2593
+Total Params: 430500
+Total Pruned: 415265.0
+Percent Pruned: 0.9646
+Accuracy: 99.7159
+
+Epoch: 12
+Iteration: 33
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 418825.0
+Percent Pruned: 0.9729
+Accuracy: 99.7128
+
+Epoch: 12
+Iteration: 34
+Elapsed Time: 0.2581
+Total Params: 430500
+Total Pruned: 411350.0
+Percent Pruned: 0.9555
+Accuracy: 99.7098
+
+Epoch: 12
+Iteration: 35
+Elapsed Time: 0.2573
+Total Params: 430500
+Total Pruned: 410316.0
+Percent Pruned: 0.9531
+Accuracy: 99.7179
+
+Epoch: 12
+Iteration: 36
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 413189.0
+Percent Pruned: 0.9598
+Accuracy: 99.7255
+
+Epoch: 12
+Iteration: 37
+Elapsed Time: 0.2567
+Total Params: 430500
+Total Pruned: 417389.0
+Percent Pruned: 0.9695
+Accuracy: 99.7225
+
+Epoch: 12
+Iteration: 38
+Elapsed Time: 0.2631
+Total Params: 430500
+Total Pruned: 408380.0
+Percent Pruned: 0.9486
+Accuracy: 99.7296
+
+Epoch: 12
+Iteration: 39
+Elapsed Time: 0.2655
+Total Params: 430500
+Total Pruned: 410779.0
+Percent Pruned: 0.9542
+Accuracy: 99.7266
+
+Epoch: 12
+Iteration: 40
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 413746.0
+Percent Pruned: 0.9611
+Accuracy: 99.7332
+
+Epoch: 12
+Iteration: 41
+Elapsed Time: 0.2636
+Total Params: 430500
+Total Pruned: 418282.0
+Percent Pruned: 0.9716
+Accuracy: 99.7303
+
+Epoch: 12
+Iteration: 42
+Elapsed Time: 0.2643
+Total Params: 430500
+Total Pruned: 418308.0
+Percent Pruned: 0.9717
+Accuracy: 99.7366
+
+Epoch: 12
+Iteration: 43
+Elapsed Time: 0.2603
+Total Params: 430500
+Total Pruned: 417229.0
+Percent Pruned: 0.9692
+Accuracy: 99.7337
+
+Epoch: 12
+Iteration: 44
+Elapsed Time: 0.2680
+Total Params: 430500
+Total Pruned: 415162.0
+Percent Pruned: 0.9644
+Accuracy: 99.7309
+
+Epoch: 12
+Iteration: 45
+Elapsed Time: 0.2535
+Total Params: 430500
+Total Pruned: 416588.0
+Percent Pruned: 0.9677
+Accuracy: 99.7283
+
+Epoch: 12
+Iteration: 46
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 419116.0
+Percent Pruned: 0.9736
+Accuracy: 99.7174
+
+Epoch: 12
+Iteration: 47
+Elapsed Time: 0.2580
+Total Params: 430500
+Total Pruned: 413850.0
+Percent Pruned: 0.9613
+Accuracy: 99.7233
+
+Epoch: 12
+Iteration: 48
+Elapsed Time: 0.2590
+Total Params: 430500
+Total Pruned: 417891.0
+Percent Pruned: 0.9707
+Accuracy: 99.7210
+
+Epoch: 12
+Iteration: 49
+Elapsed Time: 0.2649
+Total Params: 430500
+Total Pruned: 417341.0
+Percent Pruned: 0.9694
+Accuracy: 99.7266
+
+Epoch: 12
+Iteration: 50
+Elapsed Time: 0.2540
+Total Params: 430500
+Total Pruned: 411886.0
+Percent Pruned: 0.9568
+Accuracy: 99.7319
+
+Epoch: 12
+Iteration: 51
+Elapsed Time: 0.2567
+Total Params: 430500
+Total Pruned: 414774.0
+Percent Pruned: 0.9635
+Accuracy: 99.7371
+
+Epoch: 12
+Iteration: 52
+Elapsed Time: 0.2655
+Total Params: 430500
+Total Pruned: 415515.0
+Percent Pruned: 0.9652
+Accuracy: 99.7347
+
+Epoch: 12
+Iteration: 53
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 414088.0
+Percent Pruned: 0.9619
+Accuracy: 99.7323
+
+Epoch: 12
+Iteration: 54
+Elapsed Time: 0.2700
+Total Params: 430500
+Total Pruned: 417112.0
+Percent Pruned: 0.9689
+Accuracy: 99.7230
+
+Epoch: 12
+Iteration: 55
+Elapsed Time: 0.2698
+Total Params: 430500
+Total Pruned: 418684.0
+Percent Pruned: 0.9726
+Accuracy: 99.7210
+
+Epoch: 12
+Iteration: 56
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 416598.0
+Percent Pruned: 0.9677
+Accuracy: 99.7259
+
+Epoch: 12
+Iteration: 57
+Elapsed Time: 0.2560
+Total Params: 430500
+Total Pruned: 413682.0
+Percent Pruned: 0.9609
+Accuracy: 99.7104
+
+Epoch: 12
+Iteration: 58
+Elapsed Time: 0.2524
+Total Params: 430500
+Total Pruned: 409189.0
+Percent Pruned: 0.9505
+Accuracy: 99.7153
+
+Epoch: 12
+Iteration: 59
+Elapsed Time: 0.2688
+Total Params: 430500
+Total Pruned: 412637.0
+Percent Pruned: 0.9585
+Accuracy: 99.7201
+
+Epoch: 12
+Iteration: 60
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 411878.0
+Percent Pruned: 0.9567
+Accuracy: 99.7246
+
+Epoch: 12
+Iteration: 61
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 417187.0
+Percent Pruned: 0.9691
+Accuracy: 99.7228
+
+Epoch: 12
+Iteration: 62
+Elapsed Time: 0.2588
+Total Params: 430500
+Total Pruned: 413537.0
+Percent Pruned: 0.9606
+Accuracy: 99.7272
+
+Epoch: 12
+Iteration: 63
+Elapsed Time: 0.2618
+Total Params: 430500
+Total Pruned: 410289.0
+Percent Pruned: 0.9531
+Accuracy: 99.7314
+
+Epoch: 12
+Iteration: 64
+Elapsed Time: 0.2633
+Total Params: 430500
+Total Pruned: 410094.0
+Percent Pruned: 0.9526
+Accuracy: 99.7356
+
+Epoch: 12
+Iteration: 65
+Elapsed Time: 0.2526
+Total Params: 430500
+Total Pruned: 415217.0
+Percent Pruned: 0.9645
+Accuracy: 99.7396
+
+Epoch: 12
+Iteration: 66
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 410484.0
+Percent Pruned: 0.9535
+Accuracy: 99.7435
+
+Epoch: 12
+Iteration: 67
+Elapsed Time: 0.2645
+Total Params: 430500
+Total Pruned: 414433.0
+Percent Pruned: 0.9627
+Accuracy: 99.7472
+
+Epoch: 12
+Iteration: 68
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 413900.0
+Percent Pruned: 0.9614
+Accuracy: 99.7396
+
+Epoch: 12
+Iteration: 69
+Elapsed Time: 0.2572
+Total Params: 430500
+Total Pruned: 411991.0
+Percent Pruned: 0.9570
+Accuracy: 99.7377
+
+Epoch: 12
+Iteration: 70
+Elapsed Time: 0.2585
+Total Params: 430500
+Total Pruned: 417465.0
+Percent Pruned: 0.9697
+Accuracy: 99.7359
+
+Epoch: 12
+Iteration: 71
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 414662.0
+Percent Pruned: 0.9632
+Accuracy: 99.7396
+
+Epoch: 12
+Iteration: 72
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 415171.0
+Percent Pruned: 0.9644
+Accuracy: 99.7324
+
+Epoch: 12
+Iteration: 73
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 417160.0
+Percent Pruned: 0.9690
+Accuracy: 99.7255
+
+Epoch: 12
+Iteration: 74
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 418912.0
+Percent Pruned: 0.9731
+Accuracy: 99.7240
+
+Epoch: 12
+Iteration: 75
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 419962.0
+Percent Pruned: 0.9755
+Accuracy: 99.7225
+
+Epoch: 12
+Iteration: 76
+Elapsed Time: 0.2738
+Total Params: 430500
+Total Pruned: 411402.0
+Percent Pruned: 0.9556
+Accuracy: 99.7210
+
+Epoch: 12
+Iteration: 77
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 417285.0
+Percent Pruned: 0.9693
+Accuracy: 99.7196
+
+Epoch: 12
+Iteration: 78
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 408838.0
+Percent Pruned: 0.9497
+Accuracy: 99.7231
+
+Epoch: 12
+Iteration: 79
+Elapsed Time: 0.2642
+Total Params: 430500
+Total Pruned: 413783.0
+Percent Pruned: 0.9612
+Accuracy: 99.7266
+
+Epoch: 12
+Iteration: 80
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 414042.0
+Percent Pruned: 0.9618
+Accuracy: 99.7299
+
+Epoch: 12
+Iteration: 81
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 414658.0
+Percent Pruned: 0.9632
+Accuracy: 99.7285
+
+Epoch: 12
+Iteration: 82
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 410942.0
+Percent Pruned: 0.9546
+Accuracy: 99.7317
+
+Epoch: 12
+Iteration: 83
+Elapsed Time: 0.2581
+Total Params: 430500
+Total Pruned: 415398.0
+Percent Pruned: 0.9649
+Accuracy: 99.7256
+
+Epoch: 12
+Iteration: 84
+Elapsed Time: 0.2596
+Total Params: 430500
+Total Pruned: 412656.0
+Percent Pruned: 0.9586
+Accuracy: 99.7151
+
+Epoch: 12
+Iteration: 85
+Elapsed Time: 0.2582
+Total Params: 430500
+Total Pruned: 414738.0
+Percent Pruned: 0.9634
+Accuracy: 99.7184
+
+Epoch: 12
+Iteration: 86
+Elapsed Time: 0.2676
+Total Params: 430500
+Total Pruned: 417174.0
+Percent Pruned: 0.9690
+Accuracy: 99.7082
+
+Epoch: 12
+Iteration: 87
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 418198.0
+Percent Pruned: 0.9714
+Accuracy: 99.7070
+
+Epoch: 12
+Iteration: 88
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 418724.0
+Percent Pruned: 0.9726
+Accuracy: 99.7059
+
+Epoch: 12
+Iteration: 89
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 416769.0
+Percent Pruned: 0.9681
+Accuracy: 99.7049
+
+Epoch: 12
+Iteration: 90
+Elapsed Time: 0.3080
+Total Params: 430500
+Total Pruned: 412253.0
+Percent Pruned: 0.9576
+Accuracy: 99.7081
+
+Epoch: 12
+Iteration: 91
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 414057.0
+Percent Pruned: 0.9618
+Accuracy: 99.7070
+
+Epoch: 12
+Iteration: 92
+Elapsed Time: 0.2575
+Total Params: 430500
+Total Pruned: 413920.0
+Percent Pruned: 0.9615
+Accuracy: 99.7060
+
+Epoch: 12
+Iteration: 93
+Elapsed Time: 0.2626
+Total Params: 430500
+Total Pruned: 414021.0
+Percent Pruned: 0.9617
+Accuracy: 99.7050
+
+Epoch: 12
+Iteration: 94
+Elapsed Time: 0.2616
+Total Params: 430500
+Total Pruned: 418152.0
+Percent Pruned: 0.9713
+Accuracy: 99.7039
+
+Epoch: 12
+Iteration: 95
+Elapsed Time: 0.2631
+Total Params: 430500
+Total Pruned: 420407.0
+Percent Pruned: 0.9766
+Accuracy: 99.7030
+
+Epoch: 12
+Iteration: 96
+Elapsed Time: 0.2621
+Total Params: 430500
+Total Pruned: 413542.0
+Percent Pruned: 0.9606
+Accuracy: 99.6980
+
+Epoch: 12
+Iteration: 97
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 415535.0
+Percent Pruned: 0.9652
+Accuracy: 99.6971
+
+Epoch: 12
+Iteration: 98
+Elapsed Time: 0.2588
+Total Params: 430500
+Total Pruned: 414563.0
+Percent Pruned: 0.9630
+Accuracy: 99.7001
+
+Epoch: 12
+Iteration: 99
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 415297.0
+Percent Pruned: 0.9647
+Accuracy: 99.6992
+
+Epoch: 12
+Iteration: 100
+Elapsed Time: 0.2569
+Total Params: 430500
+Total Pruned: 413358.0
+Percent Pruned: 0.9602
+Accuracy: 99.7022
+
+Epoch: 12
+Iteration: 101
+Elapsed Time: 0.2676
+Total Params: 430500
+Total Pruned: 419189.0
+Percent Pruned: 0.9737
+Accuracy: 99.7013
+
+Epoch: 12
+Iteration: 102
+Elapsed Time: 0.2588
+Total Params: 430500
+Total Pruned: 415091.0
+Percent Pruned: 0.9642
+Accuracy: 99.7042
+
+Epoch: 12
+Iteration: 103
+Elapsed Time: 0.2604
+Total Params: 430500
+Total Pruned: 415313.0
+Percent Pruned: 0.9647
+Accuracy: 99.7033
+
+Epoch: 12
+Iteration: 104
+Elapsed Time: 0.2556
+Total Params: 430500
+Total Pruned: 410892.0
+Percent Pruned: 0.9545
+Accuracy: 99.7061
+
+Epoch: 12
+Iteration: 105
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 415818.0
+Percent Pruned: 0.9659
+Accuracy: 99.7052
+
+Epoch: 12
+Iteration: 106
+Elapsed Time: 0.2666
+Total Params: 430500
+Total Pruned: 413355.0
+Percent Pruned: 0.9602
+Accuracy: 99.7006
+
+Epoch: 12
+Iteration: 107
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 412242.0
+Percent Pruned: 0.9576
+Accuracy: 99.6926
+
+Epoch: 12
+Iteration: 108
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 413878.0
+Percent Pruned: 0.9614
+Accuracy: 99.6918
+
+Epoch: 12
+Iteration: 109
+Elapsed Time: 0.2569
+Total Params: 430500
+Total Pruned: 417200.0
+Percent Pruned: 0.9691
+Accuracy: 99.6946
+
+Epoch: 12
+Iteration: 110
+Elapsed Time: 0.2578
+Total Params: 430500
+Total Pruned: 414364.0
+Percent Pruned: 0.9625
+Accuracy: 99.6938
+
+Epoch: 12
+Iteration: 111
+Elapsed Time: 0.2652
+Total Params: 430500
+Total Pruned: 415345.0
+Percent Pruned: 0.9648
+Accuracy: 99.6966
+
+Epoch: 12
+Iteration: 112
+Elapsed Time: 0.2596
+Total Params: 430500
+Total Pruned: 417136.0
+Percent Pruned: 0.9690
+Accuracy: 99.6958
+
+Epoch: 12
+Iteration: 113
+Elapsed Time: 0.2556
+Total Params: 430500
+Total Pruned: 417154.0
+Percent Pruned: 0.9690
+Accuracy: 99.6950
+
+Epoch: 12
+Iteration: 114
+Elapsed Time: 0.2564
+Total Params: 430500
+Total Pruned: 414372.0
+Percent Pruned: 0.9625
+Accuracy: 99.6977
+
+Epoch: 12
+Iteration: 115
+Elapsed Time: 0.2599
+Total Params: 430500
+Total Pruned: 417490.0
+Percent Pruned: 0.9698
+Accuracy: 99.6969
+
+Epoch: 12
+Iteration: 116
+Elapsed Time: 0.2602
+Total Params: 430500
+Total Pruned: 411522.0
+Percent Pruned: 0.9559
+Accuracy: 99.6995
+
+Epoch: 12
+Iteration: 117
+Elapsed Time: 0.2566
+Total Params: 430500
+Total Pruned: 418697.0
+Percent Pruned: 0.9726
+Accuracy: 99.6988
+
+Epoch: 12
+Iteration: 118
+Elapsed Time: 0.2950
+Total Params: 430500
+Total Pruned: 414740.0
+Percent Pruned: 0.9634
+Accuracy: 99.6980
+
+Epoch: 12
+Iteration: 119
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 413684.0
+Percent Pruned: 0.9609
+Accuracy: 99.7005
+
+Epoch: 12
+Iteration: 120
+Elapsed Time: 0.2554
+Total Params: 430500
+Total Pruned: 414308.0
+Percent Pruned: 0.9624
+Accuracy: 99.6998
+
+Epoch: 12
+Iteration: 121
+Elapsed Time: 0.2644
+Total Params: 430500
+Total Pruned: 411862.0
+Percent Pruned: 0.9567
+Accuracy: 99.7022
+
+Epoch: 12
+Iteration: 122
+Elapsed Time: 0.2640
+Total Params: 430500
+Total Pruned: 415780.0
+Percent Pruned: 0.9658
+Accuracy: 99.7015
+
+Epoch: 12
+Iteration: 123
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 417681.0
+Percent Pruned: 0.9702
+Accuracy: 99.7007
+
+Epoch: 12
+Iteration: 124
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 411245.0
+Percent Pruned: 0.9553
+Accuracy: 99.6969
+
+Epoch: 12
+Iteration: 125
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 418708.0
+Percent Pruned: 0.9726
+Accuracy: 99.6993
+
+Epoch: 12
+Iteration: 126
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 415987.0
+Percent Pruned: 0.9663
+Accuracy: 99.7016
+
+Epoch: 12
+Iteration: 127
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 415490.0
+Percent Pruned: 0.9651
+Accuracy: 99.7040
+
+Epoch: 12
+Iteration: 128
+Elapsed Time: 0.2640
+Total Params: 430500
+Total Pruned: 412952.0
+Percent Pruned: 0.9592
+Accuracy: 99.7063
+
+Epoch: 12
+Iteration: 129
+Elapsed Time: 0.2607
+Total Params: 430500
+Total Pruned: 416792.0
+Percent Pruned: 0.9682
+Accuracy: 99.7025
+
+Epoch: 12
+Iteration: 130
+Elapsed Time: 0.2597
+Total Params: 430500
+Total Pruned: 421312.0
+Percent Pruned: 0.9787
+Accuracy: 99.7048
+
+Epoch: 12
+Iteration: 131
+Elapsed Time: 0.2711
+Total Params: 430500
+Total Pruned: 420705.0
+Percent Pruned: 0.9772
+Accuracy: 99.7011
+
+Epoch: 12
+Iteration: 132
+Elapsed Time: 0.2615
+Total Params: 430500
+Total Pruned: 412072.0
+Percent Pruned: 0.9572
+Accuracy: 99.7034
+
+Epoch: 12
+Iteration: 133
+Elapsed Time: 0.2611
+Total Params: 430500
+Total Pruned: 416727.0
+Percent Pruned: 0.9680
+Accuracy: 99.7056
+
+Epoch: 12
+Iteration: 134
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 419684.0
+Percent Pruned: 0.9749
+Accuracy: 99.7049
+
+Epoch: 12
+Iteration: 135
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 412038.0
+Percent Pruned: 0.9571
+Accuracy: 99.7013
+
+Epoch: 12
+Iteration: 136
+Elapsed Time: 0.2981
+Total Params: 430500
+Total Pruned: 411984.0
+Percent Pruned: 0.9570
+Accuracy: 99.7035
+
+Epoch: 12
+Iteration: 137
+Elapsed Time: 0.2619
+Total Params: 430500
+Total Pruned: 414267.0
+Percent Pruned: 0.9623
+Accuracy: 99.6971
+
+Epoch: 12
+Iteration: 138
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 413652.0
+Percent Pruned: 0.9609
+Accuracy: 99.6993
+
+Epoch: 12
+Iteration: 139
+Elapsed Time: 0.2567
+Total Params: 430500
+Total Pruned: 418665.0
+Percent Pruned: 0.9725
+Accuracy: 99.6987
+
+Epoch: 12
+Iteration: 140
+Elapsed Time: 0.2566
+Total Params: 430500
+Total Pruned: 413685.0
+Percent Pruned: 0.9609
+Accuracy: 99.6897
+
+Epoch: 12
+Iteration: 141
+Elapsed Time: 0.2616
+Total Params: 430500
+Total Pruned: 415486.0
+Percent Pruned: 0.9651
+Accuracy: 99.6919
+
+Epoch: 12
+Iteration: 142
+Elapsed Time: 0.2614
+Total Params: 430500
+Total Pruned: 418546.0
+Percent Pruned: 0.9722
+Accuracy: 99.6913
+
+Epoch: 12
+Iteration: 143
+Elapsed Time: 0.2638
+Total Params: 430500
+Total Pruned: 412191.0
+Percent Pruned: 0.9575
+Accuracy: 99.6935
+
+Epoch: 12
+Iteration: 144
+Elapsed Time: 0.2615
+Total Params: 430500
+Total Pruned: 415421.0
+Percent Pruned: 0.9650
+Accuracy: 99.6929
+
+Epoch: 12
+Iteration: 145
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 415079.0
+Percent Pruned: 0.9642
+Accuracy: 99.6923
+
+Epoch: 12
+Iteration: 146
+Elapsed Time: 0.2575
+Total Params: 430500
+Total Pruned: 413566.0
+Percent Pruned: 0.9607
+Accuracy: 99.6918
+
+Epoch: 12
+Iteration: 147
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 416784.0
+Percent Pruned: 0.9681
+Accuracy: 99.6938
+
+Epoch: 12
+Iteration: 148
+Elapsed Time: 0.2599
+Total Params: 430500
+Total Pruned: 419373.0
+Percent Pruned: 0.9742
+Accuracy: 99.6933
+
+Epoch: 12
+Iteration: 149
+Elapsed Time: 0.2742
+Total Params: 430500
+Total Pruned: 418215.0
+Percent Pruned: 0.9715
+Accuracy: 99.6927
+
+Epoch: 12
+Iteration: 150
+Elapsed Time: 0.2599
+Total Params: 430500
+Total Pruned: 417545.0
+Percent Pruned: 0.9699
+Accuracy: 99.6922
+
+Epoch: 12
+Iteration: 151
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 413439.0
+Percent Pruned: 0.9604
+Accuracy: 99.6942
+
+Epoch: 12
+Iteration: 152
+Elapsed Time: 0.2585
+Total Params: 430500
+Total Pruned: 414558.0
+Percent Pruned: 0.9630
+Accuracy: 99.6962
+
+Epoch: 12
+Iteration: 153
+Elapsed Time: 0.2579
+Total Params: 430500
+Total Pruned: 414673.0
+Percent Pruned: 0.9632
+Accuracy: 99.6956
+
+Epoch: 12
+Iteration: 154
+Elapsed Time: 0.2643
+Total Params: 430500
+Total Pruned: 412848.0
+Percent Pruned: 0.9590
+Accuracy: 99.6976
+
+Epoch: 12
+Iteration: 155
+Elapsed Time: 0.2656
+Total Params: 430500
+Total Pruned: 415625.0
+Percent Pruned: 0.9654
+Accuracy: 99.6995
+
+Epoch: 12
+Iteration: 156
+Elapsed Time: 0.2577
+Total Params: 430500
+Total Pruned: 413584.0
+Percent Pruned: 0.9607
+Accuracy: 99.7014
+
+Epoch: 12
+Iteration: 157
+Elapsed Time: 0.2969
+Total Params: 430500
+Total Pruned: 410198.0
+Percent Pruned: 0.9528
+Accuracy: 99.7033
+
+Epoch: 12
+Iteration: 158
+Elapsed Time: 0.2641
+Total Params: 430500
+Total Pruned: 412729.0
+Percent Pruned: 0.9587
+Accuracy: 99.6978
+
+Epoch: 12
+Iteration: 159
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 414322.0
+Percent Pruned: 0.9624
+Accuracy: 99.6997
+
+Epoch: 12
+Iteration: 160
+Elapsed Time: 0.2583
+Total Params: 430500
+Total Pruned: 414695.0
+Percent Pruned: 0.9633
+Accuracy: 99.6991
+
+Epoch: 12
+Iteration: 161
+Elapsed Time: 0.2557
+Total Params: 430500
+Total Pruned: 414452.0
+Percent Pruned: 0.9627
+Accuracy: 99.6962
+
+Epoch: 12
+Iteration: 162
+Elapsed Time: 0.3147
+Total Params: 430500
+Total Pruned: 413712.0
+Percent Pruned: 0.9610
+Accuracy: 99.6933
+
+Epoch: 12
+Iteration: 163
+Elapsed Time: 0.2648
+Total Params: 430500
+Total Pruned: 417151.0
+Percent Pruned: 0.9690
+Accuracy: 99.6927
+
+Epoch: 12
+Iteration: 164
+Elapsed Time: 0.2594
+Total Params: 430500
+Total Pruned: 413781.0
+Percent Pruned: 0.9612
+Accuracy: 99.6946
+
+Epoch: 12
+Iteration: 165
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 410180.0
+Percent Pruned: 0.9528
+Accuracy: 99.6964
+
+Epoch: 12
+Iteration: 166
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 413667.0
+Percent Pruned: 0.9609
+Accuracy: 99.6959
+
+Epoch: 12
+Iteration: 167
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 415452.0
+Percent Pruned: 0.9650
+Accuracy: 99.6931
+
+Epoch: 12
+Iteration: 168
+Elapsed Time: 0.2570
+Total Params: 430500
+Total Pruned: 410064.0
+Percent Pruned: 0.9525
+Accuracy: 99.6949
+
+Epoch: 12
+Iteration: 169
+Elapsed Time: 0.2541
+Total Params: 430500
+Total Pruned: 412600.0
+Percent Pruned: 0.9584
+Accuracy: 99.6967
+
+Epoch: 12
+Iteration: 170
+Elapsed Time: 0.2531
+Total Params: 430500
+Total Pruned: 414672.0
+Percent Pruned: 0.9632
+Accuracy: 99.6916
+
+Epoch: 12
+Iteration: 171
+Elapsed Time: 0.2547
+Total Params: 430500
+Total Pruned: 412985.0
+Percent Pruned: 0.9593
+Accuracy: 99.6843
+
+Epoch: 12
+Iteration: 172
+Elapsed Time: 0.2590
+Total Params: 430500
+Total Pruned: 416357.0
+Percent Pruned: 0.9671
+Accuracy: 99.6839
+
+Epoch: 12
+Iteration: 173
+Elapsed Time: 0.2632
+Total Params: 430500
+Total Pruned: 414082.0
+Percent Pruned: 0.9619
+Accuracy: 99.6857
+
+Epoch: 12
+Iteration: 174
+Elapsed Time: 0.2660
+Total Params: 430500
+Total Pruned: 416657.0
+Percent Pruned: 0.9678
+Accuracy: 99.6853
+
+Epoch: 12
+Iteration: 175
+Elapsed Time: 0.2666
+Total Params: 430500
+Total Pruned: 412967.0
+Percent Pruned: 0.9593
+Accuracy: 99.6871
+
+Epoch: 12
+Iteration: 176
+Elapsed Time: 0.2652
+Total Params: 430500
+Total Pruned: 414315.0
+Percent Pruned: 0.9624
+Accuracy: 99.6866
+
+Epoch: 12
+Iteration: 177
+Elapsed Time: 0.2624
+Total Params: 430500
+Total Pruned: 418381.0
+Percent Pruned: 0.9718
+Accuracy: 99.6862
+
+Epoch: 12
+Iteration: 178
+Elapsed Time: 0.2662
+Total Params: 430500
+Total Pruned: 417605.0
+Percent Pruned: 0.9700
+Accuracy: 99.6858
+
+Epoch: 12
+Iteration: 179
+Elapsed Time: 0.2628
+Total Params: 430500
+Total Pruned: 415571.0
+Percent Pruned: 0.9653
+Accuracy: 99.6832
+
+Epoch: 12
+Iteration: 180
+Elapsed Time: 0.2593
+Total Params: 430500
+Total Pruned: 417696.0
+Percent Pruned: 0.9703
+Accuracy: 99.6849
+
+Epoch: 12
+Iteration: 181
+Elapsed Time: 0.2707
+Total Params: 430500
+Total Pruned: 419327.0
+Percent Pruned: 0.9740
+Accuracy: 99.6845
+
+Epoch: 12
+Iteration: 182
+Elapsed Time: 0.2861
+Total Params: 430500
+Total Pruned: 417309.0
+Percent Pruned: 0.9694
+Accuracy: 99.6862
+
+Epoch: 12
+Iteration: 183
+Elapsed Time: 0.2739
+Total Params: 430500
+Total Pruned: 415847.0
+Percent Pruned: 0.9660
+Accuracy: 99.6837
+
+Epoch: 12
+Iteration: 184
+Elapsed Time: 0.2799
+Total Params: 430500
+Total Pruned: 415416.0
+Percent Pruned: 0.9650
+Accuracy: 99.6833
+
+Epoch: 12
+Iteration: 185
+Elapsed Time: 0.2702
+Total Params: 430500
+Total Pruned: 420874.0
+Percent Pruned: 0.9776
+Accuracy: 99.6808
+
+Epoch: 12
+Iteration: 186
+Elapsed Time: 0.2635
+Total Params: 430500
+Total Pruned: 415412.0
+Percent Pruned: 0.9650
+Accuracy: 99.6783
+
+Epoch: 12
+Iteration: 187
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 416454.0
+Percent Pruned: 0.9674
+Accuracy: 99.6759
+
+Epoch: 12
+Iteration: 188
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 415604.0
+Percent Pruned: 0.9654
+Accuracy: 99.6714
+
+Epoch: 12
+Iteration: 189
+Elapsed Time: 0.2739
+Total Params: 430500
+Total Pruned: 420436.0
+Percent Pruned: 0.9766
+Accuracy: 99.6711
+
+Epoch: 12
+Iteration: 190
+Elapsed Time: 0.2629
+Total Params: 430500
+Total Pruned: 418159.0
+Percent Pruned: 0.9713
+Accuracy: 99.6687
+
+Epoch: 12
+Iteration: 191
+Elapsed Time: 0.2558
+Total Params: 430500
+Total Pruned: 421861.0
+Percent Pruned: 0.9799
+Accuracy: 99.6684
+
+Epoch: 12
+Iteration: 192
+Elapsed Time: 0.2663
+Total Params: 430500
+Total Pruned: 422053.0
+Percent Pruned: 0.9804
+Accuracy: 99.6701
+
+Epoch: 12
+Iteration: 193
+Elapsed Time: 0.2674
+Total Params: 430500
+Total Pruned: 416502.0
+Percent Pruned: 0.9675
+Accuracy: 99.6718
+
+Epoch: 12
+Iteration: 194
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 414964.0
+Percent Pruned: 0.9639
+Accuracy: 99.6715
+
+Epoch: 12
+Iteration: 195
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 412876.0
+Percent Pruned: 0.9591
+Accuracy: 99.6712
+
+Epoch: 12
+Iteration: 196
+Elapsed Time: 0.2839
+Total Params: 430500
+Total Pruned: 415769.0
+Percent Pruned: 0.9658
+Accuracy: 99.6689
+
+Epoch: 12
+Iteration: 197
+Elapsed Time: 0.2745
+Total Params: 430500
+Total Pruned: 414023.0
+Percent Pruned: 0.9617
+Accuracy: 99.6705
+
+Epoch: 12
+Iteration: 198
+Elapsed Time: 0.2676
+Total Params: 430500
+Total Pruned: 412774.0
+Percent Pruned: 0.9588
+Accuracy: 99.6702
+
+Epoch: 12
+Iteration: 199
+Elapsed Time: 0.2601
+Total Params: 430500
+Total Pruned: 415962.0
+Percent Pruned: 0.9662
+Accuracy: 99.6660
+
+Epoch: 12
+Iteration: 200
+Elapsed Time: 0.2845
+Total Params: 430500
+Total Pruned: 412643.0
+Percent Pruned: 0.9585
+Accuracy: 99.6657
+
+Epoch: 12
+Iteration: 201
+Elapsed Time: 0.2675
+Total Params: 430500
+Total Pruned: 419127.0
+Percent Pruned: 0.9736
+Accuracy: 99.6655
+
+Epoch: 12
+Iteration: 202
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 415067.0
+Percent Pruned: 0.9642
+Accuracy: 99.6594
+
+Epoch: 12
+Iteration: 203
+Elapsed Time: 0.2549
+Total Params: 430500
+Total Pruned: 413580.0
+Percent Pruned: 0.9607
+Accuracy: 99.6592
+
+Epoch: 12
+Iteration: 204
+Elapsed Time: 0.2838
+Total Params: 430500
+Total Pruned: 418053.0
+Percent Pruned: 0.9711
+Accuracy: 99.6570
+
+Epoch: 12
+Iteration: 205
+Elapsed Time: 0.2733
+Total Params: 430500
+Total Pruned: 417694.0
+Percent Pruned: 0.9703
+Accuracy: 99.6549
+
+Epoch: 12
+Iteration: 206
+Elapsed Time: 0.2775
+Total Params: 430500
+Total Pruned: 415276.0
+Percent Pruned: 0.9646
+Accuracy: 99.6547
+
+Epoch: 12
+Iteration: 207
+Elapsed Time: 0.2727
+Total Params: 430500
+Total Pruned: 418389.0
+Percent Pruned: 0.9719
+Accuracy: 99.6526
+
+Epoch: 12
+Iteration: 208
+Elapsed Time: 0.2674
+Total Params: 430500
+Total Pruned: 410449.0
+Percent Pruned: 0.9534
+Accuracy: 99.6542
+
+Epoch: 12
+Iteration: 209
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 416389.0
+Percent Pruned: 0.9672
+Accuracy: 99.6559
+
+Epoch: 12
+Iteration: 210
+Elapsed Time: 0.2656
+Total Params: 430500
+Total Pruned: 412905.0
+Percent Pruned: 0.9591
+Accuracy: 99.6575
+
+Epoch: 12
+Iteration: 211
+Elapsed Time: 0.2551
+Total Params: 430500
+Total Pruned: 418052.0
+Percent Pruned: 0.9711
+Accuracy: 99.6554
+
+Epoch: 12
+Iteration: 212
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 417052.0
+Percent Pruned: 0.9688
+Accuracy: 99.6552
+
+Epoch: 12
+Iteration: 213
+Elapsed Time: 0.2538
+Total Params: 430500
+Total Pruned: 414410.0
+Percent Pruned: 0.9626
+Accuracy: 99.6532
+
+Epoch: 12
+Iteration: 214
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 416361.0
+Percent Pruned: 0.9672
+Accuracy: 99.6512
+
+Epoch: 12
+Iteration: 215
+Elapsed Time: 0.2584
+Total Params: 430500
+Total Pruned: 417676.0
+Percent Pruned: 0.9702
+Accuracy: 99.6528
+
+Epoch: 12
+Iteration: 216
+Elapsed Time: 0.2636
+Total Params: 430500
+Total Pruned: 416747.0
+Percent Pruned: 0.9681
+Accuracy: 99.6472
+
+Epoch: 12
+Iteration: 217
+Elapsed Time: 0.2615
+Total Params: 430500
+Total Pruned: 412045.0
+Percent Pruned: 0.9571
+Accuracy: 99.6488
+
+Epoch: 12
+Iteration: 218
+Elapsed Time: 0.2649
+Total Params: 430500
+Total Pruned: 414518.0
+Percent Pruned: 0.9629
+Accuracy: 99.6504
+
+Epoch: 12
+Iteration: 219
+Elapsed Time: 0.2645
+Total Params: 430500
+Total Pruned: 415873.0
+Percent Pruned: 0.9660
+Accuracy: 99.6520
+
+Epoch: 12
+Iteration: 220
+Elapsed Time: 0.2661
+Total Params: 430500
+Total Pruned: 415583.0
+Percent Pruned: 0.9653
+Accuracy: 99.6536
+
+Epoch: 12
+Iteration: 221
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 419671.0
+Percent Pruned: 0.9748
+Accuracy: 99.6534
+
+Epoch: 12
+Iteration: 222
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 417501.0
+Percent Pruned: 0.9698
+Accuracy: 99.6479
+
+Epoch: 12
+Iteration: 223
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 416582.0
+Percent Pruned: 0.9677
+Accuracy: 99.6495
+
+Epoch: 12
+Iteration: 224
+Elapsed Time: 0.2596
+Total Params: 430500
+Total Pruned: 413319.0
+Percent Pruned: 0.9601
+Accuracy: 99.6510
+
+Epoch: 12
+Iteration: 225
+Elapsed Time: 0.2622
+Total Params: 430500
+Total Pruned: 411884.0
+Percent Pruned: 0.9568
+Accuracy: 99.6526
+
+Epoch: 12
+Iteration: 226
+Elapsed Time: 0.2660
+Total Params: 430500
+Total Pruned: 413224.0
+Percent Pruned: 0.9599
+Accuracy: 99.6541
+
+Epoch: 12
+Iteration: 227
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 415350.0
+Percent Pruned: 0.9648
+Accuracy: 99.6505
+
+Epoch: 12
+Iteration: 228
+Elapsed Time: 0.2560
+Total Params: 430500
+Total Pruned: 416321.0
+Percent Pruned: 0.9671
+Accuracy: 99.6503
+
+Epoch: 12
+Iteration: 229
+Elapsed Time: 0.2607
+Total Params: 430500
+Total Pruned: 416369.0
+Percent Pruned: 0.9672
+Accuracy: 99.6484
+
+Epoch: 13
+Iteration: 0
+Elapsed Time: 0.2838
+Total Params: 430500
+Total Pruned: 418145.0
+Percent Pruned: 0.9713
+Accuracy: 100.0000
+
+Epoch: 13
+Iteration: 1
+Elapsed Time: 0.2663
+Total Params: 430500
+Total Pruned: 417239.0
+Percent Pruned: 0.9692
+Accuracy: 100.0000
+
+Epoch: 13
+Iteration: 2
+Elapsed Time: 0.2653
+Total Params: 430500
+Total Pruned: 413152.0
+Percent Pruned: 0.9597
+Accuracy: 100.0000
+
+Epoch: 13
+Iteration: 3
+Elapsed Time: 0.2651
+Total Params: 430500
+Total Pruned: 415384.0
+Percent Pruned: 0.9649
+Accuracy: 100.0000
+
+Epoch: 13
+Iteration: 4
+Elapsed Time: 0.2648
+Total Params: 430500
+Total Pruned: 414938.0
+Percent Pruned: 0.9639
+Accuracy: 99.6875
+
+Epoch: 13
+Iteration: 5
+Elapsed Time: 0.2553
+Total Params: 430500
+Total Pruned: 413769.0
+Percent Pruned: 0.9611
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 6
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 417379.0
+Percent Pruned: 0.9695
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 7
+Elapsed Time: 0.2702
+Total Params: 430500
+Total Pruned: 414551.0
+Percent Pruned: 0.9630
+Accuracy: 99.6582
+
+Epoch: 13
+Iteration: 8
+Elapsed Time: 0.2725
+Total Params: 430500
+Total Pruned: 417310.0
+Percent Pruned: 0.9694
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 9
+Elapsed Time: 0.2834
+Total Params: 430500
+Total Pruned: 412215.0
+Percent Pruned: 0.9575
+Accuracy: 99.5703
+
+Epoch: 13
+Iteration: 10
+Elapsed Time: 0.2729
+Total Params: 430500
+Total Pruned: 411344.0
+Percent Pruned: 0.9555
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 11
+Elapsed Time: 0.2772
+Total Params: 430500
+Total Pruned: 418658.0
+Percent Pruned: 0.9725
+Accuracy: 99.5768
+
+Epoch: 13
+Iteration: 12
+Elapsed Time: 0.2877
+Total Params: 430500
+Total Pruned: 414619.0
+Percent Pruned: 0.9631
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 13
+Elapsed Time: 0.2770
+Total Params: 430500
+Total Pruned: 414124.0
+Percent Pruned: 0.9620
+Accuracy: 99.6373
+
+Epoch: 13
+Iteration: 14
+Elapsed Time: 0.2711
+Total Params: 430500
+Total Pruned: 416403.0
+Percent Pruned: 0.9673
+Accuracy: 99.6354
+
+Epoch: 13
+Iteration: 15
+Elapsed Time: 0.2612
+Total Params: 430500
+Total Pruned: 419783.0
+Percent Pruned: 0.9751
+Accuracy: 99.6338
+
+Epoch: 13
+Iteration: 16
+Elapsed Time: 0.2731
+Total Params: 430500
+Total Pruned: 414009.0
+Percent Pruned: 0.9617
+Accuracy: 99.6553
+
+Epoch: 13
+Iteration: 17
+Elapsed Time: 0.2835
+Total Params: 430500
+Total Pruned: 420942.0
+Percent Pruned: 0.9778
+Accuracy: 99.6528
+
+Epoch: 13
+Iteration: 18
+Elapsed Time: 0.2738
+Total Params: 430500
+Total Pruned: 413740.0
+Percent Pruned: 0.9611
+Accuracy: 99.6299
+
+Epoch: 13
+Iteration: 19
+Elapsed Time: 0.2724
+Total Params: 430500
+Total Pruned: 418311.0
+Percent Pruned: 0.9717
+Accuracy: 99.6484
+
+Epoch: 13
+Iteration: 20
+Elapsed Time: 0.2676
+Total Params: 430500
+Total Pruned: 411514.0
+Percent Pruned: 0.9559
+Accuracy: 99.6652
+
+Epoch: 13
+Iteration: 21
+Elapsed Time: 0.2604
+Total Params: 430500
+Total Pruned: 416555.0
+Percent Pruned: 0.9676
+Accuracy: 99.6626
+
+Epoch: 13
+Iteration: 22
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 417328.0
+Percent Pruned: 0.9694
+Accuracy: 99.6433
+
+Epoch: 13
+Iteration: 23
+Elapsed Time: 0.2632
+Total Params: 430500
+Total Pruned: 410527.0
+Percent Pruned: 0.9536
+Accuracy: 99.5931
+
+Epoch: 13
+Iteration: 24
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 418469.0
+Percent Pruned: 0.9721
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 25
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 418875.0
+Percent Pruned: 0.9730
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 26
+Elapsed Time: 0.2580
+Total Params: 430500
+Total Pruned: 418757.0
+Percent Pruned: 0.9727
+Accuracy: 99.6094
+
+Epoch: 13
+Iteration: 27
+Elapsed Time: 0.2706
+Total Params: 430500
+Total Pruned: 413801.0
+Percent Pruned: 0.9612
+Accuracy: 99.6233
+
+Epoch: 13
+Iteration: 28
+Elapsed Time: 0.2675
+Total Params: 430500
+Total Pruned: 417839.0
+Percent Pruned: 0.9706
+Accuracy: 99.6228
+
+Epoch: 13
+Iteration: 29
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 415078.0
+Percent Pruned: 0.9642
+Accuracy: 99.6354
+
+Epoch: 13
+Iteration: 30
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 413980.0
+Percent Pruned: 0.9616
+Accuracy: 99.6346
+
+Epoch: 13
+Iteration: 31
+Elapsed Time: 0.2684
+Total Params: 430500
+Total Pruned: 414866.0
+Percent Pruned: 0.9637
+Accuracy: 99.6460
+
+Epoch: 13
+Iteration: 32
+Elapsed Time: 0.2873
+Total Params: 430500
+Total Pruned: 415713.0
+Percent Pruned: 0.9657
+Accuracy: 99.6449
+
+Epoch: 13
+Iteration: 33
+Elapsed Time: 0.2577
+Total Params: 430500
+Total Pruned: 412048.0
+Percent Pruned: 0.9571
+Accuracy: 99.6553
+
+Epoch: 13
+Iteration: 34
+Elapsed Time: 0.2555
+Total Params: 430500
+Total Pruned: 416061.0
+Percent Pruned: 0.9665
+Accuracy: 99.6540
+
+Epoch: 13
+Iteration: 35
+Elapsed Time: 0.2635
+Total Params: 430500
+Total Pruned: 419386.0
+Percent Pruned: 0.9742
+Accuracy: 99.6528
+
+Epoch: 13
+Iteration: 36
+Elapsed Time: 0.2560
+Total Params: 430500
+Total Pruned: 416026.0
+Percent Pruned: 0.9664
+Accuracy: 99.6410
+
+Epoch: 13
+Iteration: 37
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 414431.0
+Percent Pruned: 0.9627
+Accuracy: 99.6402
+
+Epoch: 13
+Iteration: 38
+Elapsed Time: 0.2769
+Total Params: 430500
+Total Pruned: 416018.0
+Percent Pruned: 0.9664
+Accuracy: 99.6294
+
+Epoch: 13
+Iteration: 39
+Elapsed Time: 0.2851
+Total Params: 430500
+Total Pruned: 415735.0
+Percent Pruned: 0.9657
+Accuracy: 99.6387
+
+Epoch: 13
+Iteration: 40
+Elapsed Time: 0.2854
+Total Params: 430500
+Total Pruned: 411062.0
+Percent Pruned: 0.9548
+Accuracy: 99.6475
+
+Epoch: 13
+Iteration: 41
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 411676.0
+Percent Pruned: 0.9563
+Accuracy: 99.6559
+
+Epoch: 13
+Iteration: 42
+Elapsed Time: 0.2622
+Total Params: 430500
+Total Pruned: 412593.0
+Percent Pruned: 0.9584
+Accuracy: 99.6457
+
+Epoch: 13
+Iteration: 43
+Elapsed Time: 0.2767
+Total Params: 430500
+Total Pruned: 413896.0
+Percent Pruned: 0.9614
+Accuracy: 99.6538
+
+Epoch: 13
+Iteration: 44
+Elapsed Time: 0.2764
+Total Params: 430500
+Total Pruned: 416538.0
+Percent Pruned: 0.9676
+Accuracy: 99.6441
+
+Epoch: 13
+Iteration: 45
+Elapsed Time: 0.2610
+Total Params: 430500
+Total Pruned: 412626.0
+Percent Pruned: 0.9585
+Accuracy: 99.6433
+
+Epoch: 13
+Iteration: 46
+Elapsed Time: 0.2548
+Total Params: 430500
+Total Pruned: 415887.0
+Percent Pruned: 0.9661
+Accuracy: 99.6343
+
+Epoch: 13
+Iteration: 47
+Elapsed Time: 0.2691
+Total Params: 430500
+Total Pruned: 412531.0
+Percent Pruned: 0.9583
+Accuracy: 99.6419
+
+Epoch: 13
+Iteration: 48
+Elapsed Time: 0.2765
+Total Params: 430500
+Total Pruned: 415528.0
+Percent Pruned: 0.9652
+Accuracy: 99.6492
+
+Epoch: 13
+Iteration: 49
+Elapsed Time: 0.2774
+Total Params: 430500
+Total Pruned: 413767.0
+Percent Pruned: 0.9611
+Accuracy: 99.6562
+
+Epoch: 13
+Iteration: 50
+Elapsed Time: 0.2729
+Total Params: 430500
+Total Pruned: 418700.0
+Percent Pruned: 0.9726
+Accuracy: 99.6553
+
+Epoch: 13
+Iteration: 51
+Elapsed Time: 0.2644
+Total Params: 430500
+Total Pruned: 415862.0
+Percent Pruned: 0.9660
+Accuracy: 99.6469
+
+Epoch: 13
+Iteration: 52
+Elapsed Time: 0.2673
+Total Params: 430500
+Total Pruned: 418168.0
+Percent Pruned: 0.9714
+Accuracy: 99.6462
+
+Epoch: 13
+Iteration: 53
+Elapsed Time: 0.2707
+Total Params: 430500
+Total Pruned: 422604.0
+Percent Pruned: 0.9817
+Accuracy: 99.6455
+
+Epoch: 13
+Iteration: 54
+Elapsed Time: 0.2781
+Total Params: 430500
+Total Pruned: 413495.0
+Percent Pruned: 0.9605
+Accuracy: 99.6520
+
+Epoch: 13
+Iteration: 55
+Elapsed Time: 0.2725
+Total Params: 430500
+Total Pruned: 413940.0
+Percent Pruned: 0.9615
+Accuracy: 99.6582
+
+Epoch: 13
+Iteration: 56
+Elapsed Time: 0.2722
+Total Params: 430500
+Total Pruned: 416270.0
+Percent Pruned: 0.9669
+Accuracy: 99.6505
+
+Epoch: 13
+Iteration: 57
+Elapsed Time: 0.2624
+Total Params: 430500
+Total Pruned: 419547.0
+Percent Pruned: 0.9746
+Accuracy: 99.6565
+
+Epoch: 13
+Iteration: 58
+Elapsed Time: 0.2678
+Total Params: 430500
+Total Pruned: 417334.0
+Percent Pruned: 0.9694
+Accuracy: 99.6557
+
+Epoch: 13
+Iteration: 59
+Elapsed Time: 0.2798
+Total Params: 430500
+Total Pruned: 417910.0
+Percent Pruned: 0.9708
+Accuracy: 99.6549
+
+Epoch: 13
+Iteration: 60
+Elapsed Time: 0.2920
+Total Params: 430500
+Total Pruned: 417702.0
+Percent Pruned: 0.9703
+Accuracy: 99.6542
+
+Epoch: 13
+Iteration: 61
+Elapsed Time: 0.2592
+Total Params: 430500
+Total Pruned: 411697.0
+Percent Pruned: 0.9563
+Accuracy: 99.6598
+
+Epoch: 13
+Iteration: 62
+Elapsed Time: 0.2561
+Total Params: 430500
+Total Pruned: 414211.0
+Percent Pruned: 0.9622
+Accuracy: 99.6652
+
+Epoch: 13
+Iteration: 63
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 420188.0
+Percent Pruned: 0.9760
+Accuracy: 99.6643
+
+Epoch: 13
+Iteration: 64
+Elapsed Time: 0.2687
+Total Params: 430500
+Total Pruned: 417652.0
+Percent Pruned: 0.9702
+Accuracy: 99.6575
+
+Epoch: 13
+Iteration: 65
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 422169.0
+Percent Pruned: 0.9806
+Accuracy: 99.6567
+
+Epoch: 13
+Iteration: 66
+Elapsed Time: 0.2663
+Total Params: 430500
+Total Pruned: 417384.0
+Percent Pruned: 0.9695
+Accuracy: 99.6502
+
+Epoch: 13
+Iteration: 67
+Elapsed Time: 0.2779
+Total Params: 430500
+Total Pruned: 418169.0
+Percent Pruned: 0.9714
+Accuracy: 99.6496
+
+Epoch: 13
+Iteration: 68
+Elapsed Time: 0.2773
+Total Params: 430500
+Total Pruned: 414936.0
+Percent Pruned: 0.9638
+Accuracy: 99.6547
+
+Epoch: 13
+Iteration: 69
+Elapsed Time: 0.2679
+Total Params: 430500
+Total Pruned: 418235.0
+Percent Pruned: 0.9715
+Accuracy: 99.6540
+
+Epoch: 13
+Iteration: 70
+Elapsed Time: 0.2665
+Total Params: 430500
+Total Pruned: 421184.0
+Percent Pruned: 0.9784
+Accuracy: 99.6534
+
+Epoch: 13
+Iteration: 71
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 416832.0
+Percent Pruned: 0.9683
+Accuracy: 99.6528
+
+Epoch: 13
+Iteration: 72
+Elapsed Time: 0.2590
+Total Params: 430500
+Total Pruned: 413488.0
+Percent Pruned: 0.9605
+Accuracy: 99.6575
+
+Epoch: 13
+Iteration: 73
+Elapsed Time: 0.2952
+Total Params: 430500
+Total Pruned: 419498.0
+Percent Pruned: 0.9744
+Accuracy: 99.6569
+
+Epoch: 13
+Iteration: 74
+Elapsed Time: 0.2704
+Total Params: 430500
+Total Pruned: 419474.0
+Percent Pruned: 0.9744
+Accuracy: 99.6615
+
+Epoch: 13
+Iteration: 75
+Elapsed Time: 0.2659
+Total Params: 430500
+Total Pruned: 419367.0
+Percent Pruned: 0.9741
+Accuracy: 99.6608
+
+Epoch: 13
+Iteration: 76
+Elapsed Time: 0.2593
+Total Params: 430500
+Total Pruned: 414712.0
+Percent Pruned: 0.9633
+Accuracy: 99.6652
+
+Epoch: 13
+Iteration: 77
+Elapsed Time: 0.2731
+Total Params: 430500
+Total Pruned: 417873.0
+Percent Pruned: 0.9707
+Accuracy: 99.6695
+
+Epoch: 13
+Iteration: 78
+Elapsed Time: 0.2783
+Total Params: 430500
+Total Pruned: 416342.0
+Percent Pruned: 0.9671
+Accuracy: 99.6737
+
+Epoch: 13
+Iteration: 79
+Elapsed Time: 0.2820
+Total Params: 430500
+Total Pruned: 416655.0
+Percent Pruned: 0.9678
+Accuracy: 99.6777
+
+Epoch: 13
+Iteration: 80
+Elapsed Time: 0.2717
+Total Params: 430500
+Total Pruned: 418652.0
+Percent Pruned: 0.9725
+Accuracy: 99.6817
+
+Epoch: 13
+Iteration: 81
+Elapsed Time: 0.2606
+Total Params: 430500
+Total Pruned: 414030.0
+Percent Pruned: 0.9617
+Accuracy: 99.6856
+
+Epoch: 13
+Iteration: 82
+Elapsed Time: 0.2668
+Total Params: 430500
+Total Pruned: 414508.0
+Percent Pruned: 0.9629
+Accuracy: 99.6894
+
+Epoch: 13
+Iteration: 83
+Elapsed Time: 0.2550
+Total Params: 430500
+Total Pruned: 416085.0
+Percent Pruned: 0.9665
+Accuracy: 99.6931
+
+Epoch: 13
+Iteration: 84
+Elapsed Time: 0.2819
+Total Params: 430500
+Total Pruned: 418158.0
+Percent Pruned: 0.9713
+Accuracy: 99.6921
+
+Epoch: 13
+Iteration: 85
+Elapsed Time: 0.2747
+Total Params: 430500
+Total Pruned: 418926.0
+Percent Pruned: 0.9731
+Accuracy: 99.6911
+
+Epoch: 13
+Iteration: 86
+Elapsed Time: 0.2722
+Total Params: 430500
+Total Pruned: 418637.0
+Percent Pruned: 0.9724
+Accuracy: 99.6902
+
+Epoch: 13
+Iteration: 87
+Elapsed Time: 0.2632
+Total Params: 430500
+Total Pruned: 417039.0
+Percent Pruned: 0.9687
+Accuracy: 99.6937
+
+Epoch: 13
+Iteration: 88
+Elapsed Time: 0.2541
+Total Params: 430500
+Total Pruned: 415188.0
+Percent Pruned: 0.9644
+Accuracy: 99.6972
+
+Epoch: 13
+Iteration: 89
+Elapsed Time: 0.2754
+Total Params: 430500
+Total Pruned: 415832.0
+Percent Pruned: 0.9659
+Accuracy: 99.7005
+
+Epoch: 13
+Iteration: 90
+Elapsed Time: 0.2758
+Total Params: 430500
+Total Pruned: 415422.0
+Percent Pruned: 0.9650
+Accuracy: 99.7038
+
+Epoch: 13
+Iteration: 91
+Elapsed Time: 0.2728
+Total Params: 430500
+Total Pruned: 415184.0
+Percent Pruned: 0.9644
+Accuracy: 99.7028
+
+Epoch: 13
+Iteration: 92
+Elapsed Time: 0.2613
+Total Params: 430500
+Total Pruned: 414555.0
+Percent Pruned: 0.9630
+Accuracy: 99.6934
+
+Epoch: 13
+Iteration: 93
+Elapsed Time: 0.3032
+Total Params: 430500
+Total Pruned: 417911.0
+Percent Pruned: 0.9708
+Accuracy: 99.6966
+
+Epoch: 13
+Iteration: 94
+Elapsed Time: 0.2665
+Total Params: 430500
+Total Pruned: 419486.0
+Percent Pruned: 0.9744
+Accuracy: 99.6957
+
+Epoch: 13
+Iteration: 95
+Elapsed Time: 0.2609
+Total Params: 430500
+Total Pruned: 419689.0
+Percent Pruned: 0.9749
+Accuracy: 99.6989
+
+Epoch: 13
+Iteration: 96
+Elapsed Time: 0.2623
+Total Params: 430500
+Total Pruned: 417259.0
+Percent Pruned: 0.9692
+Accuracy: 99.6939
+
+Epoch: 13
+Iteration: 97
+Elapsed Time: 0.2662
+Total Params: 430500
+Total Pruned: 416787.0
+Percent Pruned: 0.9681
+Accuracy: 99.6931
+
+Epoch: 13
+Iteration: 98
+Elapsed Time: 0.2681
+Total Params: 430500
+Total Pruned: 418058.0
+Percent Pruned: 0.9711
+Accuracy: 99.6962
+
+Epoch: 13
+Iteration: 99
+Elapsed Time: 0.2740
+Total Params: 430500
+Total Pruned: 419068.0
+Percent Pruned: 0.9734
+Accuracy: 99.6914
+
+Epoch: 13
+Iteration: 100
+Elapsed Time: 0.2594
+Total Params: 430500
+Total Pruned: 414801.0
+Percent Pruned: 0.9635
+Accuracy: 99.6945
+
+Epoch: 13
+Iteration: 101
+Elapsed Time: 0.2631
+Total Params: 430500
+Total Pruned: 421089.0
+Percent Pruned: 0.9781
+Accuracy: 99.6936
+
+Epoch: 13
+Iteration: 102
+Elapsed Time: 0.2751
+Total Params: 430500
+Total Pruned: 415849.0
+Percent Pruned: 0.9660
+Accuracy: 99.6852
+
+Epoch: 13
+Iteration: 103
+Elapsed Time: 0.2791
+Total Params: 430500
+Total Pruned: 416322.0
+Percent Pruned: 0.9671
+Accuracy: 99.6807
+
+Epoch: 13
+Iteration: 104
+Elapsed Time: 0.2729
+Total Params: 430500
+Total Pruned: 418849.0
+Percent Pruned: 0.9729
+Accuracy: 99.6801
+
+Epoch: 13
+Iteration: 105
+Elapsed Time: 0.3103
+Total Params: 430500
+Total Pruned: 422181.0
+Percent Pruned: 0.9807
+Accuracy: 99.6794
+
+Epoch: 13
+Iteration: 106
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 419791.0
+Percent Pruned: 0.9751
+Accuracy: 99.6824
+
+Epoch: 13
+Iteration: 107
+Elapsed Time: 0.2548
+Total Params: 430500
+Total Pruned: 419284.0
+Percent Pruned: 0.9739
+Accuracy: 99.6853
+
+Epoch: 13
+Iteration: 108
+Elapsed Time: 0.2576
+Total Params: 430500
+Total Pruned: 415736.0
+Percent Pruned: 0.9657
+Accuracy: 99.6846
+
+Epoch: 13
+Iteration: 109
+Elapsed Time: 0.2643
+Total Params: 430500
+Total Pruned: 414850.0
+Percent Pruned: 0.9636
+Accuracy: 99.6875
+
+Epoch: 13
+Iteration: 110
+Elapsed Time: 0.2585
+Total Params: 430500
+Total Pruned: 418529.0
+Percent Pruned: 0.9722
+Accuracy: 99.6868
+
+Epoch: 13
+Iteration: 111
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 419655.0
+Percent Pruned: 0.9748
+Accuracy: 99.6896
+
+Epoch: 13
+Iteration: 112
+Elapsed Time: 0.2595
+Total Params: 430500
+Total Pruned: 415006.0
+Percent Pruned: 0.9640
+Accuracy: 99.6820
+
+Epoch: 13
+Iteration: 113
+Elapsed Time: 0.2614
+Total Params: 430500
+Total Pruned: 417353.0
+Percent Pruned: 0.9695
+Accuracy: 99.6813
+
+Epoch: 13
+Iteration: 114
+Elapsed Time: 0.2710
+Total Params: 430500
+Total Pruned: 418250.0
+Percent Pruned: 0.9715
+Accuracy: 99.6773
+
+Epoch: 13
+Iteration: 115
+Elapsed Time: 0.2560
+Total Params: 430500
+Total Pruned: 419288.0
+Percent Pruned: 0.9740
+Accuracy: 99.6767
+
+Epoch: 13
+Iteration: 116
+Elapsed Time: 0.2735
+Total Params: 430500
+Total Pruned: 419581.0
+Percent Pruned: 0.9746
+Accuracy: 99.6795
+
+Epoch: 13
+Iteration: 117
+Elapsed Time: 0.2562
+Total Params: 430500
+Total Pruned: 419538.0
+Percent Pruned: 0.9745
+Accuracy: 99.6789
+
+Epoch: 13
+Iteration: 118
+Elapsed Time: 0.2669
+Total Params: 430500
+Total Pruned: 415315.0
+Percent Pruned: 0.9647
+Accuracy: 99.6816
+
+Epoch: 13
+Iteration: 119
+Elapsed Time: 0.2664
+Total Params: 430500
+Total Pruned: 420032.0
+Percent Pruned: 0.9757
+Accuracy: 99.6842
+
+Epoch: 13
+Iteration: 120
+Elapsed Time: 0.2856
+Total Params: 430500
+Total Pruned: 421010.0
+Percent Pruned: 0.9780
+Accuracy: 99.6836
+
+Epoch: 13
+Iteration: 121
+Elapsed Time: 0.2585
+Total Params: 430500
+Total Pruned: 415343.0
+Percent Pruned: 0.9648
+Accuracy: 99.6862
+
+Epoch: 13
+Iteration: 122
+Elapsed Time: 0.2607
+Total Params: 430500
+Total Pruned: 415861.0
+Percent Pruned: 0.9660
+Accuracy: 99.6888
+
+Epoch: 13
+Iteration: 123
+Elapsed Time: 0.2703
+Total Params: 430500
+Total Pruned: 415998.0
+Percent Pruned: 0.9663
+Accuracy: 99.6881
+
+Epoch: 13
+Iteration: 124
+Elapsed Time: 0.2759
+Total Params: 430500
+Total Pruned: 415367.0
+Percent Pruned: 0.9648
+Accuracy: 99.6906
+
+Epoch: 13
+Iteration: 125
+Elapsed Time: 0.2759
+Total Params: 430500
+Total Pruned: 420186.0
+Percent Pruned: 0.9760
+Accuracy: 99.6900
+
+Epoch: 13
+Iteration: 126
+Elapsed Time: 0.2639
+Total Params: 430500
+Total Pruned: 421799.0
+Percent Pruned: 0.9798
+Accuracy: 99.6924
+
+Epoch: 13
+Iteration: 127
+Elapsed Time: 0.3077
+Total Params: 430500
+Total Pruned: 421957.0
+Percent Pruned: 0.9802
+Accuracy: 99.6918
+
+Epoch: 13
+Iteration: 128
+Elapsed Time: 0.2754
+Total Params: 430500
+Total Pruned: 419555.0
+Percent Pruned: 0.9746
+Accuracy: 99.6911
+
+Epoch: 13
+Iteration: 129
+Elapsed Time: 0.2630
+Total Params: 430500
+Total Pruned: 419029.0
+Percent Pruned: 0.9734
+Accuracy: 99.6905
+
+Epoch: 13
+Iteration: 130
+Elapsed Time: 0.2617
+Total Params: 430500
+Total Pruned: 417794.0
+Percent Pruned: 0.9705
+Accuracy: 99.6869
+
+Epoch: 13
+Iteration: 131
+Elapsed Time: 0.2682
+Total Params: 430500
+Total Pruned: 417136.0
+Percent Pruned: 0.9690
+Accuracy: 99.6863
+
+Epoch: 13
+Iteration: 132
+Elapsed Time: 0.2582
+Total Params: 430500
+Total Pruned: 421589.0
+Percent Pruned: 0.9793
+Accuracy: 99.6857
+
+Epoch: 13
+Iteration: 133
+Elapsed Time: 0.2670
+Total Params: 430500
+Total Pruned: 420795.0
+Percent Pruned: 0.9775
+Accuracy: 99.6881
+
+Epoch: 13
+Iteration: 134
+Elapsed Time: 0.2548
+Total Params: 430500
+Total Pruned: 414363.0
+Percent Pruned: 0.9625
+Accuracy: 99.6817
+
+Epoch: 13
+Iteration: 135
+Elapsed Time: 0.2559
+Total Params: 430500
+Total Pruned: 419251.0
+Percent Pruned: 0.9739
+Accuracy: 99.6783
+
+Epoch: 13
+Iteration: 136
+Elapsed Time: 0.2657
+Total Params: 430500
+Total Pruned: 415309.0
+Percent Pruned: 0.9647
+Accuracy: 99.6778
+
+Epoch: 13
+Iteration: 137
+Elapsed Time: 0.2660
+Total Params: 430500
+Total Pruned: 415964.0
+Percent Pruned: 0.9662
+Accuracy: 99.6801
+
+Epoch: 13
+Iteration: 138
+Elapsed Time: 0.2742
+Total Params: 430500
+Total Pruned: 418525.0
+Percent Pruned: 0.9722
+Accuracy: 99.6796
+
+Epoch: 13
+Iteration: 139
+Elapsed Time: 0.2765
+Total Params: 430500
+Total Pruned: 414658.0
+Percent Pruned: 0.9632
+Accuracy: 99.6819
+
+Epoch: 13
+Iteration: 140
+Elapsed Time: 0.2955
+Total Params: 430500
+Total Pruned: 416571.0
+Percent Pruned: 0.9676
+Accuracy: 99.6814
+
+Epoch: 13
+Iteration: 141
+Elapsed Time: 0.2804
+Total Params: 430500
+Total Pruned: 422109.0
+Percent Pruned: 0.9805
+Accuracy: 99.6809
+
+Epoch: 13
+Iteration: 142
+Elapsed Time: 0.2832
+Total Params: 430500
+Total Pruned: 419603.0
+Percent Pruned: 0.9747
+Accuracy: 99.6831
+
+Epoch: 13
+Iteration: 143
+Elapsed Time: 0.2755
+Total Params: 430500
+Total Pruned: 412825.0
+Percent Pruned: 0.9589
+Accuracy: 99.6853
+
+Epoch: 13
+Iteration: 144
+Elapsed Time: 0.2637
+Total Params: 430500
+Total Pruned: 415487.0
+Percent Pruned: 0.9651
+Accuracy: 99.6875
+
+Epoch: 13
+Iteration: 145
+Elapsed Time: 0.2603
+Total Params: 430500
+Total Pruned: 419961.0
+Percent Pruned: 0.9755
+Accuracy: 99.6896
+
+Epoch: 13
+Iteration: 146
+Elapsed Time: 0.2586
+Total Params: 430500
+Total Pruned: 419251.0
+Percent Pruned: 0.9739
+Accuracy: 99.6891
+
+Epoch: 13
+Iteration: 147
+Elapsed Time: 0.2589
+Total Params: 430500
+Total Pruned: 419213.0
+Percent Pruned: 0.9738
+Accuracy: 99.6859
+
+Epoch: 13
+Iteration: 148
+Elapsed Time: 0.2916
+Total Params: 430500
+Total Pruned: 420075.0
+Percent Pruned: 0.9758
+Accuracy: 99.6880
+
+Epoch: 13
+Iteration: 149
+Elapsed Time: 0.2591
+Total Params: 430500
+Total Pruned: 420952.0
+Percent Pruned: 0.9778
+Accuracy: 99.6875
+
+Epoch: 13
+Iteration: 150
+Elapsed Time: 0.2713
+Total Params: 430500
+Total Pruned: 419624.0
+Percent Pruned: 0.9747
+Accuracy: 99.6870
+
+Epoch: 13
+Iteration: 151
+Elapsed Time: 0.2588
+Total Params: 430500
+Total Pruned: 415773.0
+Percent Pruned: 0.9658
+Accuracy: 99.6839
+
+Epoch: 13
+Iteration: 152
+Elapsed Time: 0.2583
+Total Params: 430500
+Total Pruned: 417241.0
+Percent Pruned: 0.9692
+Accuracy: 99.6809
+
+Epoch: 13
+Iteration: 153
+Elapsed Time: 0.2909
+Total Params: 430500
+Total Pruned: 417241.0
+Percent Pruned: 0.9692
+Accuracy: 99.6829
+
+Epoch: 13
+Iteration: 154
+Elapsed Time: 0.2776
+Total Params: 430500
+Total Pruned: 416391.0
+Percent Pruned: 0.9672
+Accuracy: 99.6850
+
+Epoch: 13
+Iteration: 155
+Elapsed Time: 0.2807
+Total Params: 430500
+Total Pruned: 418258.0
+Percent Pruned: 0.9716
+Accuracy: 99.6845
+
+Epoch: 13
+Iteration: 156
+Elapsed Time: 0.2750
+Total Params: 430500
+Total Pruned: 417587.0
+Percent Pruned: 0.9700
+Accuracy: 99.6790
+
+Epoch: 13
+Iteration: 157
+Elapsed Time: 0.2707
+Total Params: 430500
+Total Pruned: 419088.0
+Percent Pruned: 0.9735
+Accuracy: 99.6786
+
+Epoch: 13
+Iteration: 158
+Elapsed Time: 0.2670
+Total Params: 430500
+Total Pruned: 417629.0
+Percent Pruned: 0.9701
+Accuracy: 99.6757
+
+Epoch: 13
+Iteration: 159
+Elapsed Time: 0.2577
+Total Params: 430500
+Total Pruned: 419531.0
+Percent Pruned: 0.9745
+Accuracy: 99.6729
+
+Epoch: 13
+Iteration: 160
+Elapsed Time: 0.2658
+Total Params: 430500
+Total Pruned: 417352.0
+Percent Pruned: 0.9695
+Accuracy: 99.6749
+
+Epoch: 13
+Iteration: 161
+Elapsed Time: 0.2795
+Total Params: 430500
+Total Pruned: 413247.0
+Percent Pruned: 0.9599
+Accuracy: 99.6769
+
+Epoch: 13
+Iteration: 162
+Elapsed Time: 0.2608
+Total Params: 430500
+Total Pruned: 417169.0
+Percent Pruned: 0.9690
+Accuracy: 99.6789
+
+Epoch: 13
+Iteration: 163
+Elapsed Time: 0.2853
+Total Params: 430500
+Total Pruned: 415608.0
+Percent Pruned: 0.9654
+Accuracy: 99.6808
+
+Epoch: 13
+Iteration: 164
+Elapsed Time: 0.2542
+Total Params: 430500
+Total Pruned: 420648.0
+Percent Pruned: 0.9771
+Accuracy: 99.6828
+
+Epoch: 13
+Iteration: 165
+Elapsed Time: 0.2533
+Total Params: 430500
+Total Pruned: 419121.0
+Percent Pruned: 0.9736
+Accuracy: 99.6800
+
+Epoch: 13
+Iteration: 166
+Elapsed Time: 0.2600
+Total Params: 430500
+Total Pruned: 417062.0
+Percent Pruned: 0.9688
+Accuracy: 99.6819
+
+Epoch: 13
+Iteration: 167
+Elapsed Time: 0.2811
+Total Params: 430500
+Total Pruned: 417872.0
+Percent Pruned: 0.9707
+Accuracy: 99.6815
+
+Epoch: 13
+Iteration: 168
+Elapsed Time: 0.2835
+Total Params: 430500
+Total Pruned: 418332.0
+Percent Pruned: 0.9717
+Accuracy: 99.6787
+
+Epoch: 13
+Iteration: 169
+Elapsed Time: 0.2707
+Total Params: 430500
+Total Pruned: 417931.0
+Percent Pruned: 0.9708
+Accuracy: 99.6806
+
+Epoch: 13
+Iteration: 170
+Elapsed Time: 0.2708
+Total Params: 430500
+Total Pruned: 419131.0
+Percent Pruned: 0.9736
+Accuracy: 99.6802
+
+Epoch: 13
+Iteration: 171
+Elapsed Time: 0.2709
+Total Params: 430500
+Total Pruned: 418307.0
+Percent Pruned: 0.9717
+Accuracy: 99.6798
+
+Epoch: 13
+Iteration: 172
+Elapsed Time: 0.2872
+Total Params: 430500
+Total Pruned: 420886.0
+Percent Pruned: 0.9777
+Accuracy: 99.6816
+
+Epoch: 13
+Iteration: 173
+Elapsed Time: 0.2785
+Total Params: 430500
+Total Pruned: 421271.0
+Percent Pruned: 0.9786
+Accuracy: 99.6812
+
+Epoch: 13
+Iteration: 174
+Elapsed Time: 0.2802
+Total Params: 430500
+Total Pruned: 418327.0
+Percent Pruned: 0.9717
+Accuracy: 99.6830
+
+Epoch: 13
+Iteration: 175
+Elapsed Time: 0.2797
+Total Params: 430500
+Total Pruned: 415072.0
+Percent Pruned: 0.9642
+Accuracy: 99.6826
+
+Epoch: 13
+Iteration: 176
+Elapsed Time: 0.2740
+Total Params: 430500
+Total Pruned: 420658.0
+Percent Pruned: 0.9771
+Accuracy: 99.6844
+
+Epoch: 13
+Iteration: 177
+Elapsed Time: 0.2767
+Total Params: 430500
+Total Pruned: 415935.0
+Percent Pruned: 0.9662
+Accuracy: 99.6818
+
+Epoch: 13
+Iteration: 178
+Elapsed Time: 0.2690
+Total Params: 430500
+Total Pruned: 419579.0
+Percent Pruned: 0.9746
+Accuracy: 99.6814
+
+Epoch: 13
+Iteration: 179
+Elapsed Time: 0.2662
+Total Params: 430500
+Total Pruned: 417739.0
+Percent Pruned: 0.9704
+Accuracy: 99.6810
+
+Epoch: 13
+Iteration: 180
+Elapsed Time: 0.2665
+Total Params: 430500
+Total Pruned: 418669.0
+Percent Pruned: 0.9725
+Accuracy: 99.6828
+
+Epoch: 13
+Iteration: 181
+Elapsed Time: 0.2673
+Total Params: 430500
+Total Pruned: 414724.0
+Percent Pruned: 0.9634
+Accuracy: 99.6781
+
+Epoch: 13
+Iteration: 182
+Elapsed Time: 0.2655
+Total Params: 430500
+Total Pruned: 419686.0
+Percent Pruned: 0.9749
+Accuracy: 99.6777
+
+Epoch: 13
+Iteration: 183
+Elapsed Time: 0.2598
+Total Params: 430500
+Total Pruned: 413523.0
+Percent Pruned: 0.9606
+Accuracy: 99.6752
+
+Epoch: 13
+Iteration: 184
+Elapsed Time: 0.2698
+Total Params: 430500
+Total Pruned: 421259.0
+Percent Pruned: 0.9785
+Accuracy: 99.6727
+
+Epoch: 13
+Iteration: 185
+Elapsed Time: 0.2611
+Total Params: 430500
+Total Pruned: 420444.0
+Percent Pruned: 0.9766
+Accuracy: 99.6724
+
+Epoch: 13
+Iteration: 186
+Elapsed Time: 0.2872
+Total Params: 430500
+Total Pruned: 418316.0
+Percent Pruned: 0.9717
+Accuracy: 99.6720
+
+Epoch: 13
+Iteration: 187
+Elapsed Time: 0.3218
+Total Params: 430500
+Total Pruned: 420078.0
+Percent Pruned: 0.9758
+Accuracy: 99.6738
+
+Epoch: 13
+Iteration: 188
+Elapsed Time: 0.2905
+Total Params: 430500
+Total Pruned: 420923.0
+Percent Pruned: 0.9778
+Accuracy: 99.6755
+
+Epoch: 13
+Iteration: 189
+Elapsed Time: 0.2878
+Total Params: 430500
+Total Pruned: 414652.0
+Percent Pruned: 0.9632
+Accuracy: 99.6772
+

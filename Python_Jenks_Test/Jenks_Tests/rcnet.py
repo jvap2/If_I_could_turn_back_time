@@ -388,3 +388,55 @@ class ResNet(nn.Module):
 
 def create_ResNet18():
     return ResNet(builder=ConvBuilder(gsm_config), block=BasicBlock, num_blocks=[2,2,2,2], num_classes=1000)
+
+
+
+LENET5_DEPS = [20, 50, 500]
+
+gsm_lr_base_value = 1e-2
+gsm_lr_boundaries = [160, 200, 240]
+gsm_momentum = 0.99
+gsm_max_epochs = 280
+weight_decay_strength = 5e-4
+batch_size = 256
+train_lr_decay_factor = 0.1
+warmup_epochs = 5
+
+gsm_config = get_baseconfig_by_epoch(network_type=network_type, dataset_name=dataset_name, dataset_subset='train',
+                                     global_batch_size=batch_size, num_node=1,
+                                     weight_decay=weight_decay_strength, optimizer_type='sgd', momentum=gsm_momentum,
+                                     max_epochs=gsm_max_epochs, base_lr=gsm_lr_base_value, lr_epoch_boundaries=gsm_lr_boundaries,
+                                     lr_decay_factor=train_lr_decay_factor, linear_final_lr=None,
+                                     warmup_epochs=warmup_epochs, warmup_method='linear', warmup_factor=0,
+                                     ckpt_iter_period=40000, tb_iter_period=100, output_dir=gsm_log_dir,
+                                     tb_dir=gsm_log_dir, save_weights=None, val_epoch_period=2)
+
+class LeNet5(nn.Module):
+
+    def __init__(self, builder:ConvBuilder):
+        super(LeNet5, self).__init__()
+        self.bd = builder
+        stem = builder.Sequential()
+        stem.add_module('conv1', builder.Conv2d(in_channels=1, out_channels=LENET5_DEPS[0], kernel_size=5, bias=True))
+        stem.add_module('relu1', builder.ReLU())
+        stem.add_module('maxpool1', builder.Maxpool2d(kernel_size=2))
+        stem.add_module('conv2', builder.Conv2d(in_channels=LENET5_DEPS[0], out_channels=LENET5_DEPS[1], kernel_size=5, bias=True))
+        stem.add_module('relu2', builder.ReLU())
+        stem.add_module('maxpool2', builder.Maxpool2d(kernel_size=2))
+        self.stem = stem
+        self.flatten = builder.Flatten()
+        self.linear1 = builder.Linear(in_features=LENET5_DEPS[1] * 16, out_features=LENET5_DEPS[2])
+        self.relu1 = builder.ReLU()
+        self.linear2 = builder.Linear(in_features=LENET5_DEPS[2], out_features=10)
+
+    def forward(self, x):
+        out = self.stem(x)
+        # print(out.size())
+        out = self.flatten(out)
+        out = self.linear1(out)
+        out = self.relu1(out)
+        out = self.linear2(out)
+        return out
+    
+def create_lenet5():
+    return LeNet5(builder=ConvBuilder(gsm_config))
