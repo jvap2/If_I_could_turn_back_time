@@ -9,6 +9,9 @@ def train_val_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, 
                    prune_count=0, one_update=False, EPOCHS=100, sparsity=0.0,
                    prune_epoch_list=None, prune_epoch=0, prune_between=1, prune_ratio=0.5, one_shot=False, mask=True,
                    mag_prune=False, bias_prune=False, kill_velocity=False, l2=0.0, lambda_=0.0, warmup_epochs=0, min_epochs=1):
+    no_jenks =False
+    l2 = True
+    mag_prune = True
     epoch = 0
     names = [name for name, layer in model.named_modules() if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)]
     name_first = names[0]

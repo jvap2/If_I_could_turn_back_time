@@ -76,7 +76,7 @@ print(f"Number of parameters in the model: {sum(p.numel() for p in model.paramet
 
 kill_velocity = False
 train_lr_decay_factor = 0.25
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 gsm_lr_base_value = 1e-2
 gsm_lr_boundaries = [160, 200, 240]
 gsm_momentum = 0.99
