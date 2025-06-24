@@ -63,6 +63,7 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         alpha=0.5,     # Custom scaling factor for pruning-based adjustment
         beta=0.0,      # Optionally add saliency std as another factor
         last_epoch=-1,
+        adjustable=True,
     ):
         if not list(milestones) == sorted(milestones):
             raise ValueError(
@@ -80,7 +81,7 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         self.warmup_method = warmup_method
         self.alpha = alpha
         self.beta = beta
-        self.count = 0  # Counter for Jenks iterations
+        self.adjustable = adjustable
 
         super(WarmupMultiStepJenks, self).__init__(optimizer, last_epoch)
 
@@ -99,12 +100,6 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
                 for base_lr in self.base_lrs
             ]
         else:
-            if self.count >=0 and self.count < len(self.milestones):
-                if self.last_epoch == self.milestones[self.count]:
-                    self.count += 1
-                    for group in self.optimizer.param_groups:
-                        #Decay the learning rate by gamma
-                        group['lr'] *= self.gamma
             scaled_lrs = []
             for group in self.optimizer.param_groups:
                 base_lr = group['initial_lr'] if 'initial_lr' in group else group['lr']
@@ -112,15 +107,16 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
 
                 # Fetch param group name
                 name = group.get("name", None)
-                if name and hasattr(self.optimizer, "layerwise_lr_stats"):
-                    stats = self.optimizer.layerwise_lr_stats.get(name, {})
-                    percent_pruned = stats.get('percent_pruned', 0.0)
-                    saliency_std = stats.get('saliency_std', 0.0)
+                if self.adjustable:
+                    if name and hasattr(self.optimizer, "layerwise_lr_stats"):
+                        stats = self.optimizer.layerwise_lr_stats.get(name, {})
+                        percent_pruned = stats.get('percent_pruned', 0.0)
+                        saliency_std = stats.get('saliency_std', 0.0)
 
-                    # Custom scaling logic
-                    dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
-                    if "weight_decay" in group:
-                        group["weight_decay"] *= (1-percent_pruned)**self.alpha
+                        # Custom scaling logic
+                        dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
+                        if "weight_decay" in group:
+                            group["weight_decay"] *= (1-percent_pruned)**self.alpha
                 else:
                     dynamic_scale = 1.0  # fallback
 
@@ -235,6 +231,10 @@ def init_lr_weight_decay(model, learning_rate, weight_decay, momentum=0.9, nestr
         # Set learning rate and weight decay
         lr = 2 * learning_rate if (bias_lr and 'bias' in name) else learning_rate
         wd = weight_decay
+        if "bias" in name or "bn" in name or "BN" in name:
+            # lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.BIAS_LR_FACTOR
+            wd = 0
+            print('set weight_decay_bias={} for {}'.format(wd, name))
 
         # Store base LR and initialize stats
         base_lrs[name] = lr

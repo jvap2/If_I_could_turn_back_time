@@ -78,7 +78,7 @@ kill_velocity = False
 train_lr_decay_factor = 0.25
 BATCH_SIZE = 256
 gsm_lr_base_value = 1e-2
-gsm_lr_boundaries = [160, 200, 240]
+gsm_lr_boundaries = [180, 210, 240]
 gsm_momentum = 0.99
 gsm_max_epochs = 280
 mask = True
@@ -101,17 +101,17 @@ val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=
 
 # model_lenet5v1 = LeNet5V1()
 
-min_epochs = 200
+min_epochs = 320
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
 learning_rate = 1e-2
-weight_decay = 5e-4
-warmup_epochs = 10
+weight_decay = 4e-4
+warmup_epochs = 5
 nestrov = False
 params = []
-bias_lr = True
+bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
 init_network(optimizer)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
@@ -142,7 +142,7 @@ lambda_ = 1e-4
 train_dir = "LeNet5_MNIST_output_new/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 280
+EPOCHS = 320
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -155,7 +155,7 @@ debug_filename = os.path.join(train_dir,f"debug_log_{timestamp}_{momentum}_{name
 prune_filename = os.path.join(train_dir,f"prune_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 160
+prune_epoch = 260
 prune_epoch_list = [prune_epoch, prune_epoch + 20]
 no_jenks =False
 l2 = True
