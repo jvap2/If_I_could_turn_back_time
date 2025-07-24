@@ -1,0 +1,319 @@
+Epoch: 1| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  1.42308| Acc:  62.66567 | Top 5 Acc:  91.06549 |L_2:  155.23291
+Epoch: 2| Learning Rate: [0.0014000000000000002, 0.0028000000000000004, 0.0014000000000000002, 0.0028000000000000004, 0.0014000000000000002, 0.0028000000000000004]
+Iteration: 1| Loss:  0.44190| Acc:  89.18328 | Top 5 Acc:  99.32181 |L_2:  173.05244
+Epoch: 3| Learning Rate: [0.0023, 0.0046, 0.0023, 0.0046, 0.0023, 0.0046]
+Iteration: 1| Loss:  0.22612| Acc:  93.83643 | Top 5 Acc:  99.74900 |L_2:  180.81546
+Epoch: 4| Learning Rate: [0.0032, 0.0064, 0.0032, 0.0064, 0.0032, 0.0064]
+Iteration: 1| Loss:  0.14760| Acc:  96.09431 | Top 5 Acc:  99.89306 |L_2:  186.98888
+Epoch: 5| Learning Rate: [0.0041, 0.0082, 0.0041, 0.0082, 0.0041, 0.0082]
+Iteration: 1| Loss:  0.10316| Acc:  97.43849 | Top 5 Acc:  99.95179 |L_2:  188.03828
+Epoch: 6| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.21234| Acc:  93.98215 | Top 5 Acc:  99.80219 |L_2:  212.49385
+Epoch: 7| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.19637| Acc:  94.76286 | Top 5 Acc:  99.86203 |L_2:  216.15291
+Epoch: 8| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.16129| Acc:  96.22340 | Top 5 Acc:  99.91356 |L_2:  212.82091
+Epoch: 9| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.15362| Acc:  96.65060 | Top 5 Acc:  99.92686 |L_2:  201.85635
+Epoch: 10| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.15624| Acc:  96.81516 | Top 5 Acc:  99.93407 |L_2:  191.52631
+Epoch: 11| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.16413| Acc:  96.83621 | Top 5 Acc:  99.92353 |L_2:  183.23283
+Epoch: 12| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.17782| Acc:  96.72650 | Top 5 Acc:  99.90026 |L_2:  177.32811
+Epoch: 13| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.19713| Acc:  96.60516 | Top 5 Acc:  99.88696 |L_2:  174.67995
+Epoch: 14| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.22228| Acc:  96.34252 | Top 5 Acc:  99.85705 |L_2:  174.56761
+Epoch: 15| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.25260| Acc:  96.03889 | Top 5 Acc:  99.83211 |L_2:  176.48193
+Epoch: 16| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.28782| Acc:  95.61446 | Top 5 Acc:  99.77393 |L_2:  179.78143
+Epoch: 17| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.32480| Acc:  95.06648 | Top 5 Acc:  99.74734 |L_2:  184.13684
+Epoch: 18| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.36573| Acc:  94.51407 | Top 5 Acc:  99.67420 |L_2:  189.04453
+Epoch: 19| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.41247| Acc:  93.81372 | Top 5 Acc:  99.57723 |L_2:  193.21017
+Epoch: 20| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.46470| Acc:  93.15104 | Top 5 Acc:  99.50964 |L_2:  197.94339
+Epoch: 21| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.51947| Acc:  92.19248 | Top 5 Acc:  99.40714 |L_2:  202.42291
+Epoch: 22| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.57642| Acc:  91.37244 | Top 5 Acc:  99.32181 |L_2:  205.85358
+Epoch: 23| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.64128| Acc:  90.21332 | Top 5 Acc:  99.19547 |L_2:  208.20949
+Epoch: 24| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.71078| Acc:  88.96276 | Top 5 Acc:  99.06970 |L_2:  211.05739
+Epoch: 25| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.78216| Acc:  87.20467 | Top 5 Acc:  98.90846 |L_2:  211.36014
+Epoch: 26| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.84847| Acc:  85.38674 | Top 5 Acc:  98.77438 |L_2:  213.38884
+Epoch: 27| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.91280| Acc:  83.48182 | Top 5 Acc:  98.56106 |L_2:  214.93817
+Epoch: 28| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  0.97913| Acc:  81.16245 | Top 5 Acc:  98.42420 |L_2:  217.72333
+Epoch: 29| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.04452| Acc:  78.40813 | Top 5 Acc:  98.17764 |L_2:  221.87415
+Epoch: 30| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.10302| Acc:  75.57790 | Top 5 Acc:  97.90448 |L_2:  227.67003
+Epoch: 31| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.16710| Acc:  73.06184 | Top 5 Acc:  97.52216 |L_2:  234.04247
+Epoch: 32| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.23543| Acc:  69.89639 | Top 5 Acc:  96.65004 |L_2:  239.32903
+Epoch: 33| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.27654| Acc:  67.51163 | Top 5 Acc:  96.07935 |L_2:  243.23238
+Epoch: 34| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.32630| Acc:  66.53424 | Top 5 Acc:  95.78623 |L_2:  245.10335
+Epoch: 35| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.38052| Acc:  62.43074 | Top 5 Acc:  95.12799 |L_2:  245.20645
+Epoch: 36| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.43110| Acc:  59.05530 | Top 5 Acc:  94.30408 |L_2:  244.65997
+Epoch: 37| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.48605| Acc:  56.25111 | Top 5 Acc:  93.81039 |L_2:  241.67004
+Epoch: 38| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.52425| Acc:  56.14860 | Top 5 Acc:  93.40314 |L_2:  239.17921
+Epoch: 39| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.57337| Acc:  53.92675 | Top 5 Acc:  92.70002 |L_2:  237.08997
+Epoch: 40| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.61759| Acc:  50.41667 | Top 5 Acc:  92.47894 |L_2:  231.67989
+Epoch: 41| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.64760| Acc:  48.06848 | Top 5 Acc:  92.18307 |L_2:  222.68819
+Epoch: 42| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.67596| Acc:  47.16478 | Top 5 Acc:  92.20634 |L_2:  217.19409
+Epoch: 43| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.70824| Acc:  45.21443 | Top 5 Acc:  91.91711 |L_2:  216.87180
+Epoch: 44| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.73779| Acc:  43.49124 | Top 5 Acc:  91.44891 |L_2:  215.43159
+Epoch: 45| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.77284| Acc:  42.68395 | Top 5 Acc:  91.20235 |L_2:  217.51445
+Epoch: 46| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.81732| Acc:  41.30485 | Top 5 Acc:  89.95345 |L_2:  214.15349
+Epoch: 47| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.81757| Acc:  40.40614 | Top 5 Acc:  90.49977 |L_2:  210.39812
+Epoch: 48| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.84445| Acc:  38.15825 | Top 5 Acc:  89.28247 |L_2:  208.26459
+Epoch: 49| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.86270| Acc:  37.77372 | Top 5 Acc:  89.21542 |L_2:  206.56212
+Epoch: 50| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.87663| Acc:  36.31427 | Top 5 Acc:  88.74058 |L_2:  203.87332
+Epoch: 51| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.88982| Acc:  36.45334 | Top 5 Acc:  88.13885 |L_2:  204.07068
+Epoch: 52| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.92452| Acc:  34.88918 | Top 5 Acc:  87.02183 |L_2:  199.24124
+Epoch: 53| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.93045| Acc:  36.36691 | Top 5 Acc:  87.01740 |L_2:  195.97305
+Epoch: 54| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.95903| Acc:  34.30352 | Top 5 Acc:  84.99058 |L_2:  193.40419
+Epoch: 55| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  1.97270| Acc:  35.99124 | Top 5 Acc:  87.29166 |L_2:  191.34636
+Epoch: 56| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.00651| Acc:  32.03125 | Top 5 Acc:  84.65425 |L_2:  188.00670
+Epoch: 57| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.02369| Acc:  31.03834 | Top 5 Acc:  84.32790 |L_2:  180.89183
+Epoch: 58| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.03247| Acc:  31.81738 | Top 5 Acc:  85.47263 |L_2:  177.77350
+Epoch: 59| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.04768| Acc:  31.83455 | Top 5 Acc:  83.49567 |L_2:  175.88687
+Epoch: 60| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.08161| Acc:  28.67077 | Top 5 Acc:  80.23161 |L_2:  170.52081
+Epoch: 61| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.09964| Acc:  28.62533 | Top 5 Acc:  79.52293 |L_2:  162.03038
+Epoch: 62| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.10110| Acc:  30.05208 | Top 5 Acc:  80.17896 |L_2:  158.39047
+Epoch: 63| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.12120| Acc:  25.69315 | Top 5 Acc:  78.85416 |L_2:  153.72394
+Epoch: 64| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.13852| Acc:  26.22894 | Top 5 Acc:  76.64339 |L_2:  147.64772
+Epoch: 65| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.15446| Acc:  25.10029 | Top 5 Acc:  76.37078 |L_2:  141.01517
+Epoch: 66| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.17239| Acc:  23.47795 | Top 5 Acc:  72.79311 |L_2:  134.08594
+Epoch: 67| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.18116| Acc:  22.42575 | Top 5 Acc:  74.56726 |L_2:  126.78951
+Epoch: 68| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.19512| Acc:  22.47728 | Top 5 Acc:  70.85661 |L_2:  119.01741
+Epoch: 69| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.20558| Acc:  22.39528 | Top 5 Acc:  71.09873 |L_2:  111.03418
+Epoch: 70| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.22357| Acc:  19.93739 | Top 5 Acc:  68.53059 |L_2:  102.85069
+Epoch: 71| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.23005| Acc:  19.74235 | Top 5 Acc:  67.17475 |L_2:  95.47845
+Epoch: 72| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.24164| Acc:  18.16323 | Top 5 Acc:  65.63552 |L_2:  87.83529
+Epoch: 73| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.25024| Acc:  17.78757 | Top 5 Acc:  66.68107 |L_2:  79.99606
+Epoch: 74| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.25241| Acc:  16.72983 | Top 5 Acc:  65.10085 |L_2:  73.86990
+Epoch: 75| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.25887| Acc:  15.08699 | Top 5 Acc:  63.27848 |L_2:  68.50750
+Epoch: 76| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.26367| Acc:  15.69980 | Top 5 Acc:  61.44836 |L_2:  63.26662
+Epoch: 77| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.26792| Acc:  15.46875 | Top 5 Acc:  62.46177 |L_2:  58.55607
+Epoch: 78| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.27171| Acc:  15.27593 | Top 5 Acc:  61.37522 |L_2:  54.27076
+Epoch: 79| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.27553| Acc:  15.02660 | Top 5 Acc:  60.98570 |L_2:  50.35934
+Epoch: 80| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.27800| Acc:  14.10239 | Top 5 Acc:  60.40115 |L_2:  46.88259
+Epoch: 81| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28022| Acc:  14.59663 | Top 5 Acc:  59.39938 |L_2:  43.55047
+Epoch: 82| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28176| Acc:  13.20866 | Top 5 Acc:  59.89473 |L_2:  40.40224
+Epoch: 83| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28382| Acc:  14.43650 | Top 5 Acc:  57.25122 |L_2:  37.53635
+Epoch: 84| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28583| Acc:  13.51673 | Top 5 Acc:  57.64461 |L_2:  34.92691
+Epoch: 85| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28600| Acc:  11.42453 | Top 5 Acc:  57.09053 |L_2:  32.64265
+Epoch: 86| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28713| Acc:  12.79754 | Top 5 Acc:  56.30485 |L_2:  30.45779
+Epoch: 87| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28878| Acc:  12.46675 | Top 5 Acc:  55.69869 |L_2:  28.49111
+Epoch: 88| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28885| Acc:  12.70556 | Top 5 Acc:  55.19614 |L_2:  26.67336
+Epoch: 89| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28946| Acc:  11.06161 | Top 5 Acc:  52.84629 |L_2:  24.81787
+Epoch: 90| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28914| Acc:  11.37467 | Top 5 Acc:  54.51629 |L_2:  23.04093
+Epoch: 91| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.28964| Acc:  10.84995 | Top 5 Acc:  53.80264 |L_2:  21.38405
+Epoch: 92| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29161| Acc:  10.72917 | Top 5 Acc:  55.36292 |L_2:  19.87860
+Epoch: 93| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29117| Acc:  9.98338 | Top 5 Acc:  55.20279 |L_2:  18.52063
+Epoch: 94| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29178| Acc:  10.90148 | Top 5 Acc:  53.64473 |L_2:  17.25187
+Epoch: 95| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29196| Acc:  9.61658 | Top 5 Acc:  56.07048 |L_2:  15.98408
+Epoch: 96| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29279| Acc:  10.13298 | Top 5 Acc:  54.25532 |L_2:  14.72337
+Epoch: 97| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29292| Acc:  10.69260 | Top 5 Acc:  53.35106 |L_2:  13.93523
+Epoch: 98| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29425| Acc:  9.52183 | Top 5 Acc:  55.31804 |L_2:  13.19389
+Epoch: 99| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29410| Acc:  9.94958 | Top 5 Acc:  55.15292 |L_2:  12.35791
+Epoch: 100| Learning Rate: [0.005, 0.01, 0.005, 0.01, 0.005, 0.01]
+Iteration: 1| Loss:  2.29388| Acc:  9.22152 | Top 5 Acc:  55.22994 |L_2:  11.77033
+Epoch: 101| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29373| Acc:  8.67354 | Top 5 Acc:  51.12754 |L_2:  11.69713
+Epoch: 102| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29332| Acc:  8.66800 | Top 5 Acc:  52.44958 |L_2:  11.65516
+Epoch: 103| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29343| Acc:  8.68573 | Top 5 Acc:  52.36425 |L_2:  11.59852
+Epoch: 104| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29343| Acc:  8.68074 | Top 5 Acc:  52.10383 |L_2:  11.55072
+Epoch: 105| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29338| Acc:  8.66523 | Top 5 Acc:  54.73459 |L_2:  11.49859
+Epoch: 106| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29313| Acc:  8.68462 | Top 5 Acc:  52.85849 |L_2:  11.45598
+Epoch: 107| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29307| Acc:  8.67520 | Top 5 Acc:  54.31793 |L_2:  11.42185
+Epoch: 108| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29292| Acc:  8.62589 | Top 5 Acc:  52.94880 |L_2:  11.39505
+Epoch: 109| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29294| Acc:  8.68129 | Top 5 Acc:  52.52327 |L_2:  11.36428
+Epoch: 110| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29291| Acc:  8.70789 | Top 5 Acc:  52.53269 |L_2:  11.33683
+Epoch: 111| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29257| Acc:  8.67575 | Top 5 Acc:  52.36203 |L_2:  11.32943
+Epoch: 112| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29259| Acc:  8.72119 | Top 5 Acc:  52.49612 |L_2:  11.31810
+Epoch: 113| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29269| Acc:  8.61979 | Top 5 Acc:  52.16256 |L_2:  11.30324
+Epoch: 114| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29269| Acc:  8.70567 | Top 5 Acc:  52.39362 |L_2:  11.28256
+Epoch: 115| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29273| Acc:  8.66855 | Top 5 Acc:  52.35095 |L_2:  11.26458
+Epoch: 116| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29276| Acc:  8.65691 | Top 5 Acc:  54.13065 |L_2:  11.25609
+Epoch: 117| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29258| Acc:  8.72673 | Top 5 Acc:  53.01917 |L_2:  11.24912
+Epoch: 118| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29232| Acc:  8.61480 | Top 5 Acc:  52.70058 |L_2:  11.25010
+Epoch: 119| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29222| Acc:  8.68517 | Top 5 Acc:  52.23848 |L_2:  11.25502
+Epoch: 120| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29175| Acc:  8.66744 | Top 5 Acc:  52.85849 |L_2:  11.26924
+Epoch: 121| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29131| Acc:  8.62589 | Top 5 Acc:  52.29277 |L_2:  11.28620
+Epoch: 122| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29131| Acc:  8.67963 | Top 5 Acc:  53.02139 |L_2:  11.32080
+Epoch: 123| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29114| Acc:  8.69127 | Top 5 Acc:  55.98681 |L_2:  11.34635
+Epoch: 124| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29106| Acc:  8.65581 | Top 5 Acc:  52.52659 |L_2:  11.37690
+Epoch: 125| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.29060| Acc:  8.67298 | Top 5 Acc:  53.19204 |L_2:  11.41423
+Epoch: 126| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28959| Acc:  8.61536 | Top 5 Acc:  57.51717 |L_2:  11.47223
+Epoch: 127| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28894| Acc:  8.74058 | Top 5 Acc:  58.52947 |L_2:  11.54519
+Epoch: 128| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28890| Acc:  8.63752 | Top 5 Acc:  56.80796 |L_2:  11.62905
+Epoch: 129| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28888| Acc:  8.69182 | Top 5 Acc:  58.79266 |L_2:  11.70523
+Epoch: 130| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28871| Acc:  8.63863 | Top 5 Acc:  57.76983 |L_2:  11.78996
+Epoch: 131| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28842| Acc:  8.64472 | Top 5 Acc:  57.67730 |L_2:  11.87192
+Epoch: 132| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28798| Acc:  8.70124 | Top 5 Acc:  57.08389 |L_2:  11.96815
+Epoch: 133| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28772| Acc:  8.59652 | Top 5 Acc:  58.03579 |L_2:  12.06760
+Epoch: 134| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28777| Acc:  8.64860 | Top 5 Acc:  58.72562 |L_2:  12.15322
+Epoch: 135| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28768| Acc:  8.67464 | Top 5 Acc:  58.02970 |L_2:  12.24237
+Epoch: 136| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28763| Acc:  8.64916 | Top 5 Acc:  58.77992 |L_2:  12.33324
+Epoch: 137| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28762| Acc:  8.64362 | Top 5 Acc:  57.74767 |L_2:  12.42162
+Epoch: 138| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28759| Acc:  8.69238 | Top 5 Acc:  57.11436 |L_2:  12.51163
+Epoch: 139| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28756| Acc:  8.63032 | Top 5 Acc:  57.57867 |L_2:  12.59909
+Epoch: 140| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28732| Acc:  8.68185 | Top 5 Acc:  58.77826 |L_2:  12.68549
+Epoch: 141| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28715| Acc:  8.66744 | Top 5 Acc:  55.02826 |L_2:  12.77190
+Epoch: 142| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28674| Acc:  8.69016 | Top 5 Acc:  56.61680 |L_2:  12.86530
+Epoch: 143| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28669| Acc:  8.59486 | Top 5 Acc:  58.72894 |L_2:  12.95789
+Epoch: 144| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28618| Acc:  8.80596 | Top 5 Acc:  58.04909 |L_2:  13.05451
+Epoch: 145| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28553| Acc:  11.17132 | Top 5 Acc:  57.76097 |L_2:  13.15985
+Epoch: 146| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28524| Acc:  11.96476 | Top 5 Acc:  56.64284 |L_2:  13.27986
+Epoch: 147| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28516| Acc:  11.63841 | Top 5 Acc:  57.19692 |L_2:  13.37352
+Epoch: 148| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28504| Acc:  11.70822 | Top 5 Acc:  57.36536 |L_2:  13.48966
+Epoch: 149| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28497| Acc:  11.92431 | Top 5 Acc:  54.62600 |L_2:  13.58893
+Epoch: 150| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28490| Acc:  12.00465 | Top 5 Acc:  58.01695 |L_2:  13.69371
+Epoch: 151| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28467| Acc:  12.24900 | Top 5 Acc:  55.08145 |L_2:  13.79397
+Epoch: 152| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28466| Acc:  12.36591 | Top 5 Acc:  57.12600 |L_2:  13.89502
+Epoch: 153| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28453| Acc:  12.15093 | Top 5 Acc:  58.41977 |L_2:  14.00409
+Epoch: 154| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28424| Acc:  12.17254 | Top 5 Acc:  55.20723 |L_2:  14.11026
+Epoch: 155| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28464| Acc:  12.02515 | Top 5 Acc:  58.33001 |L_2:  14.18799
+Epoch: 156| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28469| Acc:  11.96421 | Top 5 Acc:  56.91489 |L_2:  14.29594
+Epoch: 157| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28447| Acc:  12.28557 | Top 5 Acc:  54.61713 |L_2:  14.38030
+Epoch: 158| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28424| Acc:  12.32269 | Top 5 Acc:  58.85361 |L_2:  14.47046
+Epoch: 159| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]
+Iteration: 1| Loss:  2.28400| Acc:  12.40082 | Top 5 Acc:  57.75764 |L_2:  14.57907
+Epoch: 160| Learning Rate: [0.0005, 0.001, 0.0005, 0.001, 0.0005, 0.001]

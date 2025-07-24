@@ -1,0 +1,1 @@
+Epoch: 10| Sparsity:  0.75176

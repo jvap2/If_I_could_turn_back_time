@@ -119,4 +119,4 @@ class DenseNet3(nn.Module):
         return self.fc(out)
     
 def create_densenet40():
-    return DenseNet3(depth=40, num_classes=10, growth_rate=12, reduction=1.0, bottleneck=True, dropRate=0.0)
+    return DenseNet3(depth=40, num_classes=10, growth_rate=12, reduction=1.0, bottleneck=False, dropRate=0.0)

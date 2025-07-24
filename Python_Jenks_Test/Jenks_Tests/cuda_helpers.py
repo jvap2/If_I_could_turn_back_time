@@ -352,12 +352,15 @@ def Conv_Mask(weights_cuda):
     # Combine weights_sorted into a single 4D tensor
     weights_sorted = weights_sorted.cuda()  # Move weights_sorted to the GPU
     weights_sorted = weights_sorted.contiguous()
+    mean = weights_sorted.mean(dim=(2, 3), keepdim=True)
     var = module_conv.jenks_optimization_cuda_conv(weights_sorted)
     ## Reshape the var
     var = var.reshape(B, C, H, W)
     ## Find the minimums for each filter
     # Find the minimums for each filter
     min_values, min_indices = var.view(var.shape[0], var.shape[1], -1).min(dim=2)
+    SSD_total = ((weights_sorted - mean) ** 2).sum(dim=(2, 3))
+    GVF = (SSD_total - min_values) / (SSD_total + 1e-8)  # Avoid division by zero
     # Split weights_sorted based on var_min
     # Now indices holds the original indices of the sorted weights sorted on a filter basis
     # min_indices holds the minimum indices for each filter
@@ -370,11 +373,13 @@ def Conv_Mask(weights_cuda):
     arr = vectorized_filter_mask(indices_flatten, min_indices)
     arr = arr.view(B, C, H, W)
     del weights_sorted, indices, min_indices, min_values
-    return arr
+    return arr, GVF.cpu().detach().numpy().tolist()
 
 def Linear_Mask(weights_cuda):
     weights_cuda_flatten = weights_cuda.view(-1)
+    mean = weights_cuda_flatten.mean()
     weights_cuda_sorted, weights_cuda_indices = weights_cuda_flatten.sort()
+    SSD_total = ((weights_cuda_sorted - mean) ** 2).sum()
     # Call the custom CUDA function
     weights_cuda_sorted = weights_cuda_sorted.view(weights_cuda.shape)
     weights_cuda_sorted = weights_cuda_sorted.contiguous()
@@ -385,11 +390,14 @@ def Linear_Mask(weights_cuda):
     arr = torch.zeros(weights_cuda_flatten.shape)
     arr[ones] = 1
     arr = arr.reshape(weights_cuda.shape)
+    GVF = (SSD_total - var.min()) / (SSD_total + 1e-8)  # Avoid division by zero
     del weights_cuda_sorted, weights_cuda_indices, var, ones
-    return arr
+    return arr, GVF.item()
 
 def Bias_Mask(weights_cuda):
     weights_cuda_sorted, weights_cuda_indices = weights_cuda.sort()
+    mean = weights_cuda_sorted.mean()
+    SSD_total = ((weights_cuda_sorted - mean) ** 2).sum()
     weights_cuda_sorted = weights_cuda_sorted.contiguous()
     var = module_bias.jenks_optimization_biases_cuda(weights_cuda_sorted)
     var_min = var.argmin().item()
@@ -398,8 +406,9 @@ def Bias_Mask(weights_cuda):
     ones = weights_cuda_indices[var_min:]
     arr = torch.zeros(weights_cuda.shape)
     arr[ones] = 1
+    GVF = (SSD_total - var.min()) / (SSD_total + 1e-8)  # Avoid division by zero
     del weights_cuda_sorted, weights_cuda_indices, var, ones
-    return arr
+    return arr, GVF.item()
 
 
 # WB = torch.rand(4, 5)
@@ -459,36 +468,39 @@ def Bias_Mask(weights_cuda):
 
 ## Test how this works on convolutional layers
 
-layer = torch.nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-layer_cpu = layer.cpu()
-# Get the weights
-layer_cuda = layer.cuda()
-# Get the weights
-weights = layer_cuda.weight
-weights_cuda = weights.cuda()
-arr = Conv_Mask(weights_cuda)
-# Test
+# layer = torch.nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
+# layer_cpu = layer.cpu()
+# # Get the weights
+# layer_cuda = layer.cuda()
+# # Get the weights
+# weights = layer_cuda.weight
+# weights_cuda = weights.cuda()
+# arr, GVF = Conv_Mask(weights_cuda)
+# print("GVF:", GVF)
+# print("Shape of the mask:", arr.shape)
+# print("Shape of the GVF:", GVF.shape)
+# # Test
 
 
-for i in range(weights_cuda.shape[0]):
-    for j in range(weights_cuda.shape[1]):
-        arr_score = layer.weight[i,j].cpu().detach().numpy()
-        arr_score_flat = arr_score.flatten()
-        jnb = JenksNaturalBreaks(2)
-        jnb.fit(arr_score_flat)
-        # print(jnb.labels_)
-        labels = jnb.labels_
-        indices = np.where(labels == 1)[0]
-        indices_ = np.where(labels == 0)[0]
-        test_arr = np.zeros(arr_score_flat.shape)
-        test_arr[indices] = 1
-        test_arr[indices_] = 0
-        test_arr = test_arr.reshape(arr_score.shape)
-        print(test_arr)
-        print(arr[i,j].cpu().detach().numpy())
+# for i in range(weights_cuda.shape[0]):
+#     for j in range(weights_cuda.shape[1]):
+#         arr_score = layer.weight[i,j].cpu().detach().numpy()
+#         arr_score_flat = arr_score.flatten()
+#         jnb = JenksNaturalBreaks(2)
+#         jnb.fit(arr_score_flat)
+#         # print(jnb.labels_)
+#         labels = jnb.labels_
+#         indices = np.where(labels == 1)[0]
+#         indices_ = np.where(labels == 0)[0]
+#         test_arr = np.zeros(arr_score_flat.shape)
+#         test_arr[indices] = 1
+#         test_arr[indices_] = 0
+#         test_arr = test_arr.reshape(arr_score.shape)
+#         print(test_arr)
+#         print(arr[i,j].cpu().detach().numpy())
 
-        ''' Test they are equal'''
-        print(np.allclose(arr[i,j].cpu().numpy(), test_arr, atol=1e-4))
+#         ''' Test they are equal'''
+#         print(np.allclose(arr[i,j].cpu().numpy(), test_arr, atol=1e-4))
 
 
 
