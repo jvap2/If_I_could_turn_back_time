@@ -60,8 +60,8 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         warmup_factor=1.0 / 3,
         warmup_iters=500,
         warmup_method="linear",
-        alpha=0.5,     # Custom scaling factor for pruning-based adjustment
-        beta=0.0,      # Optionally add saliency std as another factor
+        alpha=0.25,     # Custom scaling factor for pruning-based adjustment
+        beta=0.1,      # Optionally add saliency std as another factor
         last_epoch=-1,
         adjustable = True,
         cosine = False
@@ -85,8 +85,10 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         self.adjustable = adjustable  # Whether to adjust learning rate based on pruning/saliency
         super(WarmupMultiStepJenks, self).__init__(optimizer, last_epoch)
 
-    def get_lr(self):
+    def get_lr(self, epoch=None, metric=None):
         warmup_factor = 1.0
+        if epoch is not None:
+            self.last_epoch = epoch
         if self.last_epoch < self.warmup_iters:
             if self.warmup_method == "constant":
                 warmup_factor = self.warmup_factor
@@ -126,6 +128,8 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
 
 
             return scaled_lrs
+    def step(self, epoch=None, metric=None):
+        super().step(epoch)
         
 
 class WarmupMultiStepJenksBias(torch.optim.lr_scheduler._LRScheduler):
@@ -193,13 +197,16 @@ class WarmupMultiStepJenksBias(torch.optim.lr_scheduler._LRScheduler):
                 milestone_scale = self.gamma ** bisect_right(self.milestones_weights, self.last_epoch)
 
             if self.adjustable:
-                if name and hasattr(self.optimizer, "layerwise_lr_stats"):
-                    stats = self.optimizer.layerwise_lr_stats.get(name, {})
-                    percent_pruned = stats.get('percent_pruned', 0.0)
-                    saliency_std = stats.get('saliency_std', 0.0)
-                    dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
-                    if "weight_decay" in group:
-                        group["weight_decay"] *= (1-percent_pruned)**self.alpha
+                if 'bias' in name or 'bn' in name:
+                    continue
+                else:
+                    if name and hasattr(self.optimizer, "layerwise_lr_stats"):
+                        stats = self.optimizer.layerwise_lr_stats.get(name, {})
+                        percent_pruned = stats.get('percent_pruned', 0.0)
+                        saliency_std = stats.get('saliency_std', 0.0)
+                        dynamic_scale = 1.0 + self.alpha * percent_pruned + self.beta * saliency_std
+                    # if "weight_decay" in group:
+                    #     group["weight_decay"] *= (1-percent_pruned)**self.alpha
             else:
                 dynamic_scale = 1.0  # fallback
 
