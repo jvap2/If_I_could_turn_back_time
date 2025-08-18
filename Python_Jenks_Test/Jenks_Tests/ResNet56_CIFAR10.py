@@ -37,12 +37,13 @@ from torch.autograd.functional import hessian
 # from functions import hutchinson_trace_hmp,rademacher
 from torch.autograd import profiler as prof
 from torch import compile
-from training_loop import train_val_loop, train_val_loop_scheduler, train_val_loop_ResNet, train_val_loop_ResNet_scheduler,train_val_loop_ResNet_scheduler_v2
+from training_loop import train_val_loop, train_val_loop_scheduler, train_val_loop_ResNet, train_val_loop_ResNet_scheduler,train_val_loop_ResNet_scheduler_v2,train_val_loop_ResNet_scheduler_ETF
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau, SequentialLR, ExponentialLR
 from resnet import resnet56
+from models import ResNet56ETF, Args
 print(torch.cuda.is_available())
 
-one_shot = True
+one_shot = False
 prune_ratio = .9
 torch.cuda.empty_cache()
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
@@ -60,9 +61,22 @@ gsm_bias_lr_boundaries = [240, 440]
 gsm_momentum = 0.99
 gsm_max_epochs = 280
 mask = True
+decl_ETF = True
 
 CIFAR10_PATH = "./datasets"
 aug= False
+normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+                                        std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+normalize_2 = transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010])
+normalize_3 = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+means = [0.4918687901200927, 0.49185976472299225, 0.4918583862227116]
+stds  = [0.24697121702736, 0.24696766978537033, 0.2469719877121087]
+
+normalize_4 = transforms.Normalize(
+    mean=means,
+    std=stds,
+)
+
 
 # train_val_dataset = datasets.CIFAR10(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
 if aug:
@@ -71,29 +85,31 @@ if aug:
                                     transforms.Pad(padding=(4, 4, 4, 4)),
                                     transforms.RandomCrop(32),
                                     transforms.RandomHorizontalFlip(),
-                                    transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
-                                    transforms.RandomEqualize(),
                                     transforms.ToTensor(),
                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
+    val_dataset = datasets.CIFAR10(CIFAR10_PATH, train=False,
+                                   transform=transforms.Compose([
+                                       transforms.ToTensor(),
+                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
 else:
-    normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                                         std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+    # normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+    #                                      std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
     train_dataset = datasets.CIFAR10(root = CIFAR10_PATH, train=True, download=True,
                                 transform=transforms.Compose([
                                 transforms.RandomCrop(32, padding=4),
                                 transforms.RandomHorizontalFlip(),
-                                transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
+                                # transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
                                 # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
                                 # transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-                                # transforms.RandomEqualize(),
+                                transforms.RandomEqualize(),
                                 transforms.ToTensor(),
-                                normalize,
+                                normalize_4,
                             ]))
-val_dataset = datasets.CIFAR10(CIFAR10_PATH, train=False,
-                                transform=transforms.Compose([
-                                    transforms.ToTensor(),
-                                    transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                                         std=[x / 255.0 for x in [63.0, 62.1, 66.7]])]))
+    val_dataset = datasets.CIFAR10(CIFAR10_PATH, train=False,
+                                    transform=transforms.Compose([
+                                        transforms.ToTensor(),
+                                        normalize_4
+                                    ]))
 
 ''' From AutoAugment:  the most commonly picked
 transformations on CIFAR-10 are Equalize, AutoContrast,
@@ -106,30 +122,33 @@ train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuf
 val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # model_lenet5v1 = LeNet5V1()
 # model = create_RC56()
-model = resnet56()
+if decl_ETF:
+    model = ResNet56ETF(num_classes = 10, num_features = 64, decl_ETF=True, args = Args(inference=False), device = device).to(device)
+else:
+    model = resnet56()
 gain = 1
 xavier = True
-for k, v in model.named_parameters():
-    if v.dim() in [2, 4]:
-        if xavier:
-            torch.nn.init.xavier_uniform_(v, gain=gain)
-            print('init {} as xavier_uniform'.format(k))
-        else:
-            continue
-    if 'bias' in k and 'bn' not in k.lower():
-        torch.nn.init.zeros_(v)
-        print('init {} as zero'.format(k))
+# for k, v in model.named_parameters():
+#     if v.dim() in [2, 4]:
+#         if xavier:
+#             torch.nn.init.xavier_uniform_(v, gain=gain)
+#             # print('init {} as xavier_uniform'.format(k))
+#         else:
+#             continue
+#     if 'bias' in k and 'bn' not in k.lower():
+#         torch.nn.init.zeros_(v)
+        # print('init {} as zero'.format(k))
 # model = torch.compile(model, mode="reduce-overhead", backend="inductor")
 model = model.to(device)
-print(model)  
+# print(model)  
 min_epochs = 600
 label_smoothing = 0.0
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-momentum = 0.98
-learning_rate = 7.5e-3
-weight_decay = 1e-4
+momentum = 0.99
+learning_rate = 1.5e-2
+weight_decay = 1.75e-4
 bias_weight_decay = 0
-warmup_epochs = 10
+warmup_epochs = 5
 nestrov = False
 params = []
 bias_lr = True
@@ -140,18 +159,18 @@ EPOCHS = 600
 adj = False
 schedule = True
 # scheduler = WarmupMultiStepJenksBias(optimizer, milestones_weights=gsm_lr_boundaries, milestones_bias=gsm_bias_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=False)
-gamma = .9375
-warmup_epochs_2 = 40
+gamma = .875
+warmup_epochs_2 = 10
 two_schedulers = False
-prune_epoch =  400
+prune_epoch =  100
 # scheduler = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=5, min_lr=learning_rate/100, verbose=True)
 scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=1/3, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=adj)
 if schedule:
     scheduler_2 = ExponentialLR(optimizer, gamma=0.99)
     # scheduler_2 = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=adj)
-    scheduler_3 = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=3, min_lr=learning_rate/100, verbose=True)
+    scheduler_3 = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=20, min_lr=learning_rate/100, verbose=True)
     
-    scheduler_ResNet = SequentialJenksScheduler(optimizer, schedulers=[scheduler, scheduler_2, scheduler_3,scheduler, scheduler_2, scheduler_3], milestones=[warmup_epochs, warmup_epochs_2, prune_epoch, prune_epoch + warmup_epochs, prune_epoch + warmup_epochs_2])
+    scheduler_ResNet = SequentialJenksScheduler(optimizer, schedulers=[scheduler, scheduler_2, scheduler_3], milestones=[warmup_epochs, warmup_epochs_2])
 scheduler_double = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=True)
 # scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS, eta_min=1e-6)
 accuracy = Accuracy(task='multiclass', num_classes=10)
@@ -239,31 +258,55 @@ print(f"Total trainable parameters in the model: {total_params}")
 total_pruned_params = sum(p.numel() for p in model.parameters() if p.dim() in [2, 4])
 print(f"Total prunebale parameters in the model: {total_pruned_params}")
 prune_epoch_list = [prune_epoch]
-prune_between = 0
+prune_between = 100
 # Run the training and validation loop
 if not schedule:
-    train_val_loop_ResNet(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
-                experiment_name, model_name, timestamp,
-                train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
-                sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
-                jenks_filename=jenks_filename,
-                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
-                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
-                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
-                mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
-                l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs, warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
+    if decl_ETF:
+        train_val_loop_ResNet_scheduler_ETF(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                    experiment_name, model_name, timestamp,
+                    train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                    sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                    jenks_filename=jenks_filename,
+                    prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                    prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                    prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                    mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                    l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
+    else:
+        train_val_loop_ResNet(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                    experiment_name, model_name, timestamp,
+                    train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                    sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                    jenks_filename=jenks_filename,
+                    prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                    prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                    prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                    mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                    l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs, warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
 if schedule:
     if not two_schedulers:
-        train_val_loop_ResNet_scheduler(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler_ResNet, accuracy, top5accuracy, writer, device,
-                experiment_name, model_name, timestamp,
-                train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
-                sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
-                jenks_filename=jenks_filename,
-                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
-                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
-                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
-                mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
-                l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
+        if decl_ETF:
+            train_val_loop_ResNet_scheduler_ETF(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler_ResNet, accuracy, top5accuracy, writer, device,
+                    experiment_name, model_name, timestamp,
+                    train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                    sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                    jenks_filename=jenks_filename,
+                    prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                    prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                    prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                    mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                    l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
+        else:
+            train_val_loop_ResNet_scheduler(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler_ResNet, accuracy, top5accuracy, writer, device,
+                    experiment_name, model_name, timestamp,
+                    train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                    sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                    jenks_filename=jenks_filename,
+                    prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                    prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                    prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                    mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                    l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,warmup_epochs_2=warmup_epochs_2, min_epochs=min_epochs)
     else:
         train_val_loop_ResNet_scheduler_v2(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler_ResNet, scheduler_double, accuracy, top5accuracy, writer, device,
                 experiment_name, model_name, timestamp,

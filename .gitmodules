@@ -13,3 +13,6 @@
 [submodule "Python_Jenks_Test/Guiding-Neural-Collapse"]
 	path = Python_Jenks_Test/Guiding-Neural-Collapse
 	url = https://github.com/evanmarkou/Guiding-Neural-Collapse.git
+[submodule "Python_Jenks_Test/Python_Jenks_Test/Hessian-Regularization"]
+	path = Python_Jenks_Test/Python_Jenks_Test/Hessian-Regularization
+	url = https://github.com/Dean-lyc/Hessian-Regularization.git

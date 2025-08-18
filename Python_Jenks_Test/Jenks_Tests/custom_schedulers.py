@@ -63,7 +63,7 @@ class WarmupMultiStepJenks(torch.optim.lr_scheduler._LRScheduler):
         alpha=0.25,     # Custom scaling factor for pruning-based adjustment
         beta=0.1,      # Optionally add saliency std as another factor
         last_epoch=-1,
-        adjustable = True,
+        adjustable = False,
         cosine = False
     ):
         if not list(milestones) == sorted(milestones):
@@ -403,7 +403,7 @@ def init_lr_weight_decay(model, learning_rate, weight_decay, bias_weight_decay=0
         if "bias" in name or "bn" in name or "BN" in name:
             # lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.BIAS_LR_FACTOR
             wd = bias_weight_decay
-            print('set weight_decay_bias={} for {}'.format(wd, name))
+            # print('set weight_decay_bias={} for {}'.format(wd, name))
 
         # Store base LR and initialize stats
         base_lrs[name] = lr

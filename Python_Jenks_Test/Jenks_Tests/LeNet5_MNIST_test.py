@@ -38,12 +38,18 @@ from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
 from rcnet import create_lenet5
 from rcnet import ConvBuilder
-from training_loop import train_val_loop
+from training_loop import train_val_loop, train_val_loopETF
+from models import LeNet5V1ETFModel, Args
 one_shot = False
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 prune_ratio = .95
-model  = create_lenet5().to(device)
+
+decl_ETF = True
+if decl_ETF:
+    model = LeNet5V1ETFModel(num_classes=10, num_features=84, decl_ETF=True, args=Args(inference=False), device=device).to(device)
+else:
+    model = create_lenet5().to(device)
 '''Go through the model and find the name of the first and last layer'''
 
 
@@ -78,9 +84,9 @@ kill_velocity = False
 train_lr_decay_factor = 0.25
 BATCH_SIZE = 256
 gsm_lr_base_value = 1e-2
-gsm_lr_boundaries = [100, 160, 260]
+gsm_lr_boundaries = [25, 50, 100, 150]
 gsm_momentum = 0.99
-gsm_max_epochs = 280
+gsm_max_epochs = 160
 mask = True
 torch.cuda.empty_cache()
 train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
@@ -101,21 +107,22 @@ val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=
 
 # model_lenet5v1 = LeNet5V1()
 
-min_epochs = 280
+min_epochs = 160
 model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
 loss_fn = extend(loss_fn)
 momentum = 0.99
-learning_rate = .75e-2
-weight_decay = 5e-4
+learning_rate = 2e-2
+weight_decay = 6e-4
 warmup_epochs = 5
 nestrov = False
 params = []
 bias_lr = True
+gamma = .4375
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
 init_network(optimizer)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
-scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
+scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
 
@@ -155,8 +162,8 @@ debug_filename = os.path.join(train_dir,f"debug_log_{timestamp}_{momentum}_{name
 prune_filename = os.path.join(train_dir,f"prune_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 160
-prune_epoch_list = [prune_epoch, prune_epoch + 20]
+prune_epoch = 100
+prune_epoch_list = [prune_epoch, prune_epoch + 200]
 no_jenks =False
 l2 = True
 mag_prune = True
@@ -198,11 +205,21 @@ sparsity = 0.0
 one_update = True
 bias_prune = False
 
-train_val_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
-               experiment_name, model_name, timestamp,
-               train_filename, val_filename, log_filename, sparsity_filename, prune_filename, debug_filename, jenks_filename,
-               prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
-               prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
-               prune_ratio=prune_ratio, one_shot=one_shot, mask=mask, mag_prune=mag_prune,
-               bias_prune=bias_prune, kill_velocity=kill_velocity, l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,
-               min_epochs=min_epochs)
+if not decl_ETF:
+    train_val_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                experiment_name, model_name, timestamp,
+                train_filename, val_filename, log_filename, sparsity_filename, prune_filename, debug_filename, jenks_filename,
+                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask, mag_prune=mag_prune,
+                bias_prune=bias_prune, kill_velocity=kill_velocity, l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,
+                min_epochs=min_epochs)
+else:
+    train_val_loopETF(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                experiment_name, model_name, timestamp,
+                train_filename, val_filename, log_filename, sparsity_filename, prune_filename, debug_filename, jenks_filename,
+                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=prune_between,
+                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask, mag_prune=mag_prune,
+                bias_prune=bias_prune, kill_velocity=kill_velocity, l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs,
+                min_epochs=min_epochs)
