@@ -141,12 +141,12 @@ xavier = True
 # model = torch.compile(model, mode="reduce-overhead", backend="inductor")
 model = model.to(device)
 # print(model)  
-min_epochs = 600
+min_epochs = 300
 label_smoothing = 0.0
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 momentum = 0.99
-learning_rate = 1.5e-2
-weight_decay = 1.75e-4
+learning_rate = 1.25e-2
+weight_decay = 1e-4
 bias_weight_decay = 0
 warmup_epochs = 5
 nestrov = False
@@ -162,7 +162,7 @@ schedule = True
 gamma = .875
 warmup_epochs_2 = 10
 two_schedulers = False
-prune_epoch =  100
+prune_epoch =  50
 # scheduler = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=5, min_lr=learning_rate/100, verbose=True)
 scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=1/3, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=adj)
 if schedule:
@@ -258,7 +258,7 @@ print(f"Total trainable parameters in the model: {total_params}")
 total_pruned_params = sum(p.numel() for p in model.parameters() if p.dim() in [2, 4])
 print(f"Total prunebale parameters in the model: {total_pruned_params}")
 prune_epoch_list = [prune_epoch]
-prune_between = 100
+prune_between = 25
 # Run the training and validation loop
 if not schedule:
     if decl_ETF:

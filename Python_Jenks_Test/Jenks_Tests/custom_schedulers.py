@@ -2,6 +2,7 @@
 from bisect import bisect_right
 # from dataset import num_iters_per_epoch
 import torch
+from math import sqrt
 
 
 # FIXME ideally this would be achieved with a CombinedLRScheduler,
@@ -214,6 +215,75 @@ class WarmupMultiStepJenksBias(torch.optim.lr_scheduler._LRScheduler):
             scaled_lrs.append(scaled_lr)
 
         return scaled_lrs
+    
+
+
+class WarmupAutoJenks(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(
+        self,
+        optimizer,
+        milestones,
+        gamma=0.1,
+        warmup_factor=1.0 / 3,
+        warmup_iters=500,
+        warmup_method="linear",
+        alpha=0.25,     # Custom scaling factor for pruning-based adjustment
+        beta=0.1,      # Optionally add saliency std as another factor
+        last_epoch=-1,
+        adjustable = False,
+        cosine = False
+    ):
+        if not list(milestones) == sorted(milestones):
+            raise ValueError(
+                f"Milestones should be a list of increasing integers. Got {milestones}"
+            )
+        if warmup_method not in ("constant", "linear"):
+            raise ValueError(
+                "Only 'constant' or 'linear' warmup_method accepted, got {}".format(warmup_method)
+            )
+
+        self.milestones = milestones
+        self.gamma = gamma
+        self.warmup_factor = warmup_factor
+        self.warmup_iters = warmup_iters
+        self.warmup_method = warmup_method
+        self.alpha = alpha
+        self.beta = beta
+        self.adjustable = adjustable  # Whether to adjust learning rate based on pruning/saliency
+        self.a = torch.ones(optimizer.param_groups[0]['lr']).to(optimizer.param_groups[0]['lr'].device)*1e-8
+        self.b = torch.ones(optimizer.param_groups[0]['lr']).to(optimizer.param_groups[0]['lr'].device)*1e-8
+        super(WarmupAutoJenks, self).__init__(optimizer, last_epoch)
+    def get_lr(self, epoch=None, metric=None):
+        warmup_factor = 1.0
+        if epoch is not None:
+            self.last_epoch = epoch
+        if self.last_epoch < self.warmup_iters:
+            ## get the current learning rate
+            if self.warmup_method == "constant":
+                warmup_factor = self.warmup_factor
+            elif self.warmup_method == "linear":
+                alpha = float(self.last_epoch) / self.warmup_iters
+                warmup_factor = self.warmup_factor * (1 - alpha) + alpha
+            lr = [
+                base_lr
+                * warmup_factor
+                * self.gamma ** bisect_right(self.milestones, self.last_epoch)
+                for base_lr in self.base_lrs
+            ]
+            for i,val in enumerate(lr):
+                self.a[i] += val**2
+                self.b[i] += val
+            return lr
+        else:
+            scaled_lrs = []
+            for i,group in enumerate(self.optimizer.param_groups):
+                lr = sqrt(self.b[i]**2 + self.a[i])-self.b[i]
+                self.a[i] += lr**2
+                self.b[i] += lr
+                scaled_lrs.append(lr)
+            return scaled_lrs
+    def step(self, epoch=None, metric=None):
+        super().step(epoch)
     
 class SequentialJenksScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, schedulers, milestones):

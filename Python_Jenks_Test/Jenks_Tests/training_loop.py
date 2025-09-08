@@ -67,7 +67,7 @@ def train_val_loop_ResNet_scheduler_ETF(model, train_dataloader, val_dataloader,
             with open(sparsity_filename,"a") as f:
                 print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
             for param_group in optimizer.param_groups:
-                param_group['lr'] *= 0.25
+                param_group['lr'] *= 0.75
         if one_update:
             count +=1
             torch.cuda.empty_cache()

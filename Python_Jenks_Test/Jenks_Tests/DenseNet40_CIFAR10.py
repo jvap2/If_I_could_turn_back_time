@@ -87,19 +87,19 @@ model = create_densenet40()
 model = model.to(device)
 print(model)  
 min_epochs = 800
-label_smoothing = 0.1
+label_smoothing = 0.0
 loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 momentum = 0.98
-learning_rate = 1e-3
+learning_rate = .75e-3
 weight_decay = 5e-4
 warmup_epochs = 10
-nestrov = False
+nestrov = True
 params = []
 bias_lr = False
 optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
 init_network(optimizer)
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
-scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
+scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=True)
 accuracy = Accuracy(task='multiclass', num_classes=10)
 top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
  ## Check the number of parameters in the model vs number of trainiable parameters
