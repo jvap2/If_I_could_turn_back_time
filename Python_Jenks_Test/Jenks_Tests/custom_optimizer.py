@@ -8,6 +8,17 @@ import time
 import gc
 from torchvision.transforms.v2 import CutMix, MixUp, RandomChoice
 
+
+def apply_gradient_centralization(model):
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data
+            if grad.ndim > 1:  # apply only to weight tensors, not biases
+                grad.sub_(grad.mean(dim=tuple(range(1, grad.ndim)), keepdim=True))
+
 class InfiniteDataLoader(torch.utils.data.DataLoader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -833,9 +844,10 @@ def compute_mask(param, WB, filter_based = True, bias_prune = True):
     else:
         raise ValueError("Unsupported parameter dimension")
 
-def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
+def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None, mag=False, elem_bias = False, accumulation_steps = 1):
     debug_logs = []
     jenks_logs = []
+    align_check = True
     accumulation_steps = 1
     print_steps = 10
     optimizer.zero_grad()
@@ -844,6 +856,17 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
     acc = 0
     acc5 = 0
     device = next(net.parameters()).device
+    '''We need to compute the gradient mask and apply it here, but for 
+            experimentation, we need to collect the gradients and the weights before and after update
+            We will then compute the dot product between them to see how much they align'''
+    weights_before = {}
+    weights_after = {}
+    gradients_before = {}
+    gradients_after = {}
+    velocity = {}
+    num_layers = len(list(net.parameters()))
+    if elem_bias:
+        optimizer.epoch = epoch
     for i, (data, label) in enumerate(dataloader):
         torch.cuda.empty_cache()
         count+=1
@@ -855,6 +878,7 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
             l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
             loss_iter = loss_iter + lambda_ * l2_reg
         loss_iter.backward()
+        apply_gradient_centralization(net)
         with torch.no_grad():
             if mask and epoch>prune_epochs:
                     ## Go through all the parameters and set the pruned ones to zero
@@ -866,14 +890,32 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
         acc5 += acc5_dummy
         num_layers = len(list(net.parameters()))
         GVF = {}
-        if (i+1)%accumulation_steps == 0:
-            total_params = 0
-            total_pruned = 0
-            if warmup_epochs < epoch <= prune_epochs or epoch > prune_epochs:
+        
+        total_params = 0
+        total_pruned = 0
+        gradient_norm = 0
+        gradient_norm_masked = 0
+        print(f"Starting Epoch: {epoch}, Iteration: {i+1}/{len(dataloader)}")
+        if warmup_epochs < epoch <= prune_epochs or epoch > prune_epochs:
+            print("Pruning Step")
+            if elem_bias:
                 for name, param in net.named_parameters():
                     layer_pruned = 0
                     layer_params = 0
-                    WB = torch.abs(param.data * param.grad)
+                    # Collect initial magnitude of gradient
+                    # if velocity is not None:
+                    #     # You can use velocity here, e.g. print or log it
+                    #     pass  # Replace with your logic
+                    if mag:
+                        sign_WB = param.data
+                    else:
+                        sign_WB = param.data * param.grad
+                    WB = torch.abs(sign_WB)
+                    # print(WB.shape)
+                    ## Generate a binary matrix, b_ij = 1 if sign_WB_ij<0 else 0
+                    ## This will help us identify which weights to prune
+                    decay_mask = torch.ones_like(WB, requires_grad=False)
+                    decay_mask[sign_WB > 0] = 0
                     if 'bn' not in name:
                         mask_tensor, GVF_val = compute_mask(param, WB, filter_based, bias_prune)
                     else:
@@ -886,17 +928,16 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
                     del decay_tensor
                     GVF[name] = GVF_val
                     with torch.no_grad():
-                        if epoch > prune_epochs and mask:
-                            param.data.mul_(optimizer.state[param]['mask'])
-
                         if epoch > warmup_epochs:
                             if not no_jenks:
                                 param.grad.mul_(mask_tensor)
+                                gradients_after[name] = param.grad.clone().detach()
+                                gradient_norm_masked += torch.norm(param.grad).item()
                                 WB_prime = WB * mask_tensor
+                                optimizer.state[param]['agg_score'] += WB_prime
                             else:
                                 WB_prime = WB
-
-                        optimizer.state[param]['agg_score'] += WB_prime
+                                optimizer.state[param]['agg_score'] += WB_prime
                         if param.dim() == 1:
                             if bias_prune:
                                 total_params += mask_tensor.numel()
@@ -915,40 +956,12 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
                             stats['saliency_std'] = torch.std(WB).item()
                             optimizer.layerwise_lr_stats[name] = stats
                             # print(f"Debug is on: {debug}")
-                            if debug:
-                                # debug_logs.append(
-                                #     f"Layer Name: {name}\nPercent Pruned: {stats['percent_pruned']:.4f}\nSaliency Std: {stats['saliency_std']:.4f}\n"
-                                # )
-                                if isinstance(GVF[name],list):
-                                    debug_logs.append(f"Layer Name: {name}\nGVF Values: {GVF[name]}\n")
-                                else:
-                                    debug_logs.append(f"Layer Name: {name}\nGVF Value: {GVF[name]:.4f}\n")
-
-            optimizer.step()
-            optimizer.zero_grad()
-
-            # Logging after pruning starts
-            if epoch > warmup_epochs:
-                elapsed = time.time() - start
-                log = (
-                    f"Epoch: {epoch}\nIteration: {i}\nElapsed Time: {elapsed:.4f}\n"
-                    f"Total Params: {total_params}\nTotal Pruned: {total_pruned}\n"
-                )
-                if total_params > 0:
-                    log += f"Percent Pruned: {total_pruned / total_params:.4f}\n"
-                    log += f"Accuracy: {acc.item() / count:.4f}\n"
-                jenks_logs.append(log + "\n")
-        if (i+1) % print_steps == 0:
-            # Write logs once per epoch
-            if debug and debugfile:
-                # print("Debug works")
-                with open(debugfile, 'a') as f:
-                    f.writelines(debug_logs)
-            if jenksfile and epoch > warmup_epochs:
-                with open(jenksfile, 'a') as f:
-                    f.writelines(jenks_logs)
-            debug_logs.clear()
-            jenks_logs.clear()
+        print(f"Starting Epoch: {epoch}, Iteration: {i+1}/{len(dataloader)}")
+        optimizer.step()
+        optimizer.zero_grad()
+        if epoch > prune_epochs and mask:
+            for name, param in net.named_parameters():
+                param.data.mul_(optimizer.state[param]['mask'])
 
     loss_avg = loss/ count
     acc_avg = acc / count
@@ -957,7 +970,8 @@ def train_one_step_prune_v2(net, dataloader, optimizer, criterion, epoch, warmup
 
 
 
-def train_one_step_prune_v2_ETF(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None):
+
+def train_one_step_prune_v2_ETF(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None, scheduler=None):
     debug_logs = []
     jenks_logs = []
     accumulation_steps = 1
@@ -979,6 +993,21 @@ def train_one_step_prune_v2_ETF(net, dataloader, optimizer, criterion, epoch, wa
             l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
             loss_iter = loss_iter + lambda_ * l2_reg
         loss_iter.backward()
+        if epoch <= warmup_epochs:
+            ## Calculate the fronebius gradient norms for the optimizer layerwise_lr_stats
+            for name, param in net.named_parameters():
+                if param.dim() in [2,4]:
+                    W_f = torch.norm(param.data, p='fro')
+                    # print(f"The Weight Frobenius Norm for layer {name} is {W_f.item()}")
+                    G_W_f = torch.norm(param.grad.data, p='fro')
+                    # print(f"The Gradient Frobenius Norm for layer {name} is {G_W_f.item()}")
+                    if name and hasattr(optimizer, "layerwise_lr_stats"):
+                        stats = optimizer.layerwise_lr_stats.get(name, {})
+                        stats['weight_frob_norm'] = W_f.item()
+                        stats['grad_frob_norm'] = G_W_f.item()
+                        optimizer.layerwise_lr_stats[name] = stats
+            # if scheduler is not None:
+            #     scheduler.step()
         with torch.no_grad():
             if mask and epoch>prune_epochs:
                     ## Go through all the parameters and set the pruned ones to zero
@@ -1659,7 +1688,8 @@ def Prune_Score_v3(net, optimizer, epoch, imp_layer_names = None, prune_epochs =
                     score = torch.abs(param.data)
                 else:
                     score = optimizer.state[param]['agg_score']
-                if module is not None and module.do_prune:
+                ## Turning off if module is not None and module.do_prune:
+                if module is not None:
                     prune_mask, GVF = compute_mask(param, score, filter_based, bias_prune)
                     print_prune_mask = prune_mask.cpu().tolist()
                 else:
@@ -1693,6 +1723,71 @@ def Prune_Score_v3(net, optimizer, epoch, imp_layer_names = None, prune_epochs =
                 del score, prune_mask
     torch.cuda.empty_cache()
 
+def Prune_Score_Reset(net, optimizer, epoch, imp_layer_names = None, prune_epochs = None, kill_velocity=False, mask=False, mag_prune = False, filter_based = True, bias_prune = True, prune_file = None):
+    '''This Pruning function will generate the pruning mask, but reinitialize the weights after pruning
+    This way it allows us to start training from scratch after pruning'''
+    gc.collect()
+    with torch.no_grad():
+        ''' Only prune the hidden layers
+        The name of the first layer and last layer are in imp_layer_names'''
+        prune_epoch = prune_epochs[0] if prune_epochs else 0
+        for name, param in net.named_parameters():
+            module = dict(net.named_modules()).get(name.rsplit('.', 1)[0], None)
+            if (name not in imp_layer_names and epoch <= prune_epochs[-1]) or (epoch > prune_epochs[-1]):
+                if mag_prune:
+                    score = torch.abs(param.data)
+                else:
+                    score = optimizer.state[param]['agg_score']
+                if module is not None and module.do_prune:
+                    prune_mask, GVF = compute_mask(param, score, filter_based, bias_prune)
+                    print_prune_mask = prune_mask.cpu().tolist()
+                else:
+                    prune_mask = torch.ones_like(param.data, requires_grad=False)
+                    GVF = 1
+                    print_prune_mask = [1] * param.numel()
+                if prune_file:
+                    with open(prune_file, 'a') as f:
+                        f.write(f"Layer: {name}\n")
+                        f.write(f"GVF: {GVF}\n")
+                        f.write(f"Decay Count: {str(optimizer.state[param]['update_count'].cpu().tolist())}\n")
+                        f.write(f"Prune Mask: {print_prune_mask}\n")
+                        del print_prune_mask
+                prune_mask = prune_mask.to(param.device)
+                if param.grad is not None:
+                    param.grad.mul_(prune_mask)
+                param.data.mul_(prune_mask)
+                if kill_velocity:
+                    if 'velocity' in optimizer.state[param]:
+                        optimizer.state[param]['velocity'].mul_(prune_mask)
+                if mask:
+                    if 'mask' in optimizer.state[param]:
+                        optimizer.state[param]['mask'] = prune_mask
+                    else:
+                        print("Mask not found in optimizer state")
+                if hasattr(optimizer, "layerwise_lr_stats"):
+                    stats = optimizer.layerwise_lr_stats.get(param, {})
+                    stats['percent_pruned'] = (prune_mask.numel() - prune_mask.sum().item()) / prune_mask.numel()
+                    stats['saliency_std'] = torch.std(score).item()
+                    optimizer.layerwise_lr_stats[param] = stats
+                del score, prune_mask
+    torch.cuda.empty_cache()
+    '''Now reinitialize the weights'''
+    for name, param in net.named_parameters():
+        '''Utilize xavier initialization for weights and zeros for biases'''
+        if param.requires_grad and param.dim() in [2, 4]:
+            if isinstance(param, torch.nn.Parameter):
+                torch.nn.init.xavier_uniform_(param.data) 
+            else:
+                torch.nn.init.xavier_uniform_(param)
+        elif param.requires_grad and param.dim() == 1:
+            if isinstance(param, torch.nn.Parameter):
+                torch.nn.init.zeros_(param.data)
+            else:
+                torch.nn.init.zeros_(param)
+    for name, param in net.named_parameters():
+        if mask:
+            if 'mask' in optimizer.state[param]:
+                param.data.mul_(optimizer.state[param]['mask'])
 
 def Prune_Score_Global(net,optimizer, kill_velocity=False, mask=False, prune_file = None):
     gc.collect()
@@ -2164,3 +2259,336 @@ def PruneWeights_Test(model, optimizer):
         param = param.to('cuda')
     return model
 
+def train_one_step_prune_HPO(net, dataloader, optimizer, criterion, epoch, warmup_epochs, prune_epochs, no_jenks = False, bias_prune = True, filter_based = True, mask = False, L2 = False,lambda_ = 0.01, debug = False, debugfile = None, jenksfile = None, mag=False, elem_bias = False, accumulation_steps = 1):
+    debug_logs = []
+    jenks_logs = []
+    align_check = True
+    accumulation_steps = 1
+    print_steps = 10
+    optimizer.zero_grad()
+    count = 0
+    loss = 0
+    acc = 0
+    acc5 = 0
+    device = next(net.parameters()).device
+    '''We need to compute the gradient mask and apply it here, but for 
+            experimentation, we need to collect the gradients and the weights before and after update
+            We will then compute the dot product between them to see how much they align'''
+    weights_before = {}
+    weights_after = {}
+    gradients_before = {}
+    gradients_after = {}
+    velocity = {}
+    num_layers = len(list(net.parameters()))
+    if elem_bias:
+        optimizer.epoch = epoch
+    for i, (data, label) in enumerate(dataloader):
+        torch.cuda.empty_cache()
+        count+=1
+        start = time.time()
+        data,label = data.to(device), label.to(device)
+        pred = net(data)
+        loss_iter = criterion(pred, label)
+        if L2:
+            l2_reg = sum(torch.norm(p) ** 2 for p in net.parameters())
+            loss_iter = loss_iter + lambda_ * l2_reg
+        loss_iter.backward()
+        apply_gradient_centralization(net)
+        with torch.no_grad():
+            if mask and epoch>prune_epochs:
+                    ## Go through all the parameters and set the pruned ones to zero
+                for name, param in net.named_parameters():
+                    param.data.mul_(optimizer.state[param]['mask'])
+        loss += loss_iter.item()
+        acc_dummy, acc5_dummy = torch_accuracy(pred, label, (1,5))
+        acc += acc_dummy
+        acc5 += acc5_dummy
+        num_layers = len(list(net.parameters()))
+        GVF = {}
+        
+        total_params = 0
+        total_pruned = 0
+        gradient_norm = 0
+        gradient_norm_masked = 0
+        if warmup_epochs < epoch <= prune_epochs or epoch > prune_epochs:
+            if elem_bias == False:
+                for name, param in net.named_parameters():
+                    layer_pruned = 0
+                    layer_params = 0
+                    # Collect initial magnitude of gradient
+                    weights_before[name] = param.data.clone().detach()
+                    gradient_norm += torch.norm(param.grad).item()
+                    # Access momentum buffer (velocity) if it exists
+                    velocity[name] = optimizer.state[param].get('momentum_buffer', None)
+                    gradients_before[name] = param.grad.clone().detach()
+                    # if velocity is not None:
+                    #     # You can use velocity here, e.g. print or log it
+                    #     pass  # Replace with your logic
+                    if mag:
+                        sign_WB = param.data
+                    else:
+                        sign_WB = param.data * param.grad
+                    WB = torch.abs(sign_WB)
+                    # print(WB.shape)
+                    ## Generate a binary matrix, b_ij = 1 if sign_WB_ij<0 else 0
+                    ## This will help us identify which weights to prune
+                    decay_mask = torch.ones_like(WB, requires_grad=False)
+                    decay_mask[sign_WB > 0] = 0
+                    if 'bn' not in name:
+                        mask_tensor, GVF_val = compute_mask(param, WB, filter_based, bias_prune)
+                    else:
+                        mask_tensor = torch.ones_like(param.data, requires_grad=False)
+                        GVF_val = 1
+                    mask_tensor = mask_tensor.to(device)
+                    decay_mask = decay_mask.to(device)
+                    decay_mask *= mask_tensor
+                    # Find the param group for this param and get its weight_decay
+                    weight_decay = 0
+                    for group in optimizer.param_groups:
+                        if 'weight_decay' in group:
+                            weight_decay = group['weight_decay']
+                            break
+                    # print(decay_mask.shape)
+                    # print(param.data.shape)
+                    # print(weight_decay)
+                    decay_mask *= weight_decay * param.data
+                    optimizer.state[param]['velocity']-=decay_mask
+                    decay_tensor = torch.ones_like(mask_tensor, requires_grad=False, device=device)
+                    decay_tensor.sub_(mask_tensor)
+                    optimizer.state[param]['update_count'].add_(decay_tensor)
+                    del decay_tensor
+                    GVF[name] = GVF_val
+                    with torch.no_grad():
+                        if epoch > warmup_epochs:
+                            if not no_jenks:
+                                param.grad.mul_(mask_tensor)
+                                gradients_after[name] = param.grad.clone().detach()
+                                gradient_norm_masked += torch.norm(param.grad).item()
+                                WB_prime = WB * mask_tensor
+                                optimizer.state[param]['agg_score'] += WB_prime
+                            else:
+                                WB_prime = WB
+                                optimizer.state[param]['agg_score'] += WB_prime
+                        if param.dim() == 1:
+                            if bias_prune:
+                                total_params += mask_tensor.numel()
+                                total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                            else:
+                                continue
+                        elif param.dim() in [2, 4]:
+                            total_params += mask_tensor.numel()
+                            total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        layer_params += mask_tensor.numel()
+                        layer_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        # Debug stats
+                        if name and hasattr(optimizer, "layerwise_lr_stats"):
+                            stats = optimizer.layerwise_lr_stats.get(name, {})
+                            stats['percent_pruned'] = layer_pruned / layer_params
+                            stats['saliency_std'] = torch.std(WB).item()
+                            optimizer.layerwise_lr_stats[name] = stats
+                            # print(f"Debug is on: {debug}")
+                            if debug:
+                                # debug_logs.append(
+                                #     f"Layer Name: {name}\nPercent Pruned: {stats['percent_pruned']:.4f}\nSaliency Std: {stats['saliency_std']:.4f}\n"
+                                # )
+                                if isinstance(GVF[name],list):
+                                    debug_logs.append(f"Layer Name: {name}\nGVF Values: {GVF[name]}\n")
+                                else:
+                                    debug_logs.append(f"Layer Name: {name}\nGVF Value: {GVF[name]:.4f}\n")
+
+        optimizer.step()
+        optimizer.zero_grad()
+        if epoch > prune_epochs and mask:
+            for name, param in net.named_parameters():
+                param.data.mul_(optimizer.state[param]['mask'])
+        ## Get the weights after the step
+        if epoch > warmup_epochs:
+            elapsed = time.time() - start
+            log = (
+                f"Epoch: {epoch}\nIteration: {i}\nElapsed Time: {elapsed:.4f}\n"
+                f"Total Params: {total_params}\nTotal Pruned: {total_pruned}\n"
+            )
+            if total_params > 0:
+                log += f"Percent Pruned: {total_pruned / total_params:.4f}\n"
+                log += f"Accuracy: {acc.item() / count:.4f}\n"
+                log += f"Initial Gradient Norm: {gradient_norm:.4f}\n"
+                log += f"Masked Gradient Norm: {gradient_norm_masked:.4f}\n"
+                jenks_logs.append(log + "\n")
+        if (i+1) % print_steps == 0:
+            # Write logs once per epoch
+            if debug and debugfile:
+                # print("Debug works")
+                with open(debugfile, 'a') as f:
+                    f.writelines(debug_logs)
+            if jenksfile and epoch > warmup_epochs:
+                with open(jenksfile, 'a') as f:
+                    f.writelines(jenks_logs)
+            debug_logs.clear()
+            jenks_logs.clear()
+
+    loss_avg = loss/ count
+    acc_avg = acc / count
+    acc5_avg = acc5 / count
+    return acc_avg, acc5_avg, loss_avg
+
+
+class ElementwiseMomentumSGD(Optimizer):
+    def __init__(self, params, name_map, do_prune_map, lr=0.01, weight_decay=0.0, momentum=0.9, warmup_epochs=10, pruning_epochs =150, mag = False, device = 'cuda', filter_based = True, bias_prune = True):
+        defaults = dict(lr=lr, weight_decay=weight_decay,momentum=momentum)
+        self.mag = mag
+        self.device = device
+        self.filter_based = filter_based
+        self.bias_prune = bias_prune
+        self.name_map = name_map
+        self.epoch = 0
+        self.warmup_epochs = warmup_epochs
+        self.do_prune_map = do_prune_map
+        self.pruning_epochs = pruning_epochs
+        super(ElementwiseMomentumSGD, self).__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            loss = closure()
+        if self.epoch < self.warmup_epochs:
+            for group in self.param_groups:
+                lr = group['lr']
+                momentum = group['momentum']
+                weight_decay = group['weight_decay']
+                lr_t = torch.tensor(lr, device=self.device)
+                for param in group['params']:
+                    if param.grad is None:
+                        continue
+                    # Initialize velocity if not already done
+                    if 'velocity' not in self.state[param]:
+                        self.state[param]['velocity'] = torch.zeros_like(param.data)
+                    eig_hess = torch.norm(param.grad)**2
+                    velocity = self.state[param]['velocity']
+                    sal_beta = (1 - torch.sqrt(lr_t * eig_hess))**2
+                    # Update velocity
+                    velocity.mul_(sal_beta).add_(weight_decay * param.data + param.grad)
+
+                    # Update parameters
+                    param.data -= lr * velocity
+            return loss
+        elif self.epoch >= self.warmup_epochs and self.epoch <= self.pruning_epochs:
+            total_params = 0
+            total_pruned = 0
+            for group in self.param_groups:
+                lr = group['lr']
+                momentum = group['momentum']
+                weight_decay = group['weight_decay']
+                lr_t = torch.tensor(lr, device=self.device)
+                wd_t = torch.tensor(weight_decay, device=self.device)
+                # print(f"Weight Decay in step: {weight_decay}")
+                # print(f"Learning Rate in step: {lr}")
+                layer_params = 0
+                layer_pruned = 0
+                for param in group['params']:
+                    name = self.name_map.get(param, None)
+                # Get the module name (if needed, adjust this logic to match your do_prune_map keys)
+                    module_name = name.rsplit('.', 1)[0] if name and '.' in name else name
+                    do_prune_layer = self.do_prune_map.get(module_name, True)
+                    if do_prune_layer:
+                        if param.grad is None:
+                            continue
+                        if self.mag:
+                            sign_WB = param.data
+                        else:
+                            with torch.no_grad():
+                                sign_WB = param.data * param.grad
+                        WB = torch.abs(sign_WB)
+                        # print(WB.shape)
+                        ## Generate a binary matrix, b_ij = 1 if sign_WB_ij<0 else 0
+                        ## This will help us identify which weights to prune
+                        decay_mask = torch.ones_like(WB, requires_grad=False)
+                        decay_mask[sign_WB > 0] = 0
+                        if 'bn' not in self.name_map[param]:
+                            mask_tensor, GVF_val = compute_mask(param, WB, self.filter_based, self.bias_prune)
+                        else:
+                            mask_tensor = torch.ones_like(param.data, requires_grad=False)
+                            GVF_val = 1
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+
+                        mask_tensor = mask_tensor.to(self.device)
+                        decay_mask = decay_mask.to(self.device)
+                        decay_mask *= mask_tensor
+                        ## If there is a zero in the mask tensor, then the beta is equal to (1-\sqrt{lr*weight_decay})^2
+                        ## OTherwise, beta = (1-\sqrt{lr*h})^2 where h is an approximation of the curvature
+                        ## h = ||param.grad||^2_2
+                        eig_hess = torch.norm(param.grad*mask_tensor)**2
+                        unsal_beta = (1 - torch.sqrt(lr_t * wd_t))**2
+                        sal_beta = (1 - torch.sqrt(lr_t * eig_hess))**2
+                        beta_tensor = torch.ones_like(mask_tensor, requires_grad=False)
+                        beta_tensor[mask_tensor==1] = sal_beta
+                        beta_tensor[mask_tensor==0] = unsal_beta
+                        param.grad.mul_(mask_tensor)
+                        update = weight_decay * param.data + param.grad
+                        if 'velocity' not in self.state[param]:
+                            self.state[param]['velocity'] = torch.zeros_like(param.data)
+
+                        velocity = self.state[param]['velocity']
+
+                        # Update velocity
+                        velocity.mul_(beta_tensor).add_(update)
+
+                    else:
+                        if param.grad is None:
+                            continue
+                        if 'velocity' not in self.state[param]:
+                            self.state[param]['velocity'] = torch.zeros_like(param.data)
+                        eig_hess = torch.norm(param.grad)**2
+                        velocity = self.state[param]['velocity']
+                        sal_beta = (1 - torch.sqrt(lr_t * eig_hess))**2
+                        # Update velocity
+                        velocity.mul_(sal_beta).add_(weight_decay * param.data + param.grad)
+
+                    # decay_mask *= weight_decay * param.data
+                    # self.state[param]['momentum_buffer']-=decay_mask
+                    # Initialize velocity if not already done
+                    # Update parameters
+                    param.data -= lr * velocity
+                    if do_prune_layer:
+                        if param.dim() == 1:
+                            if self.bias_prune:
+                                total_params += mask_tensor.numel()
+                                total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                            else:
+                                continue
+                        elif param.dim() in [2, 4]:
+                            total_params += mask_tensor.numel()
+                            total_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        layer_params += mask_tensor.numel()
+                        layer_pruned += (mask_tensor.numel() - mask_tensor.sum().item())
+                        # Debug stats
+                        if self.name_map[param] and hasattr(self, "layerwise_lr_stats"):
+                            stats = self.layerwise_lr_stats.get(self.name_map[param], {})
+                            stats['percent_pruned'] = total_pruned / total_params
+                            stats['saliency_std'] = torch.std(WB).item()
+                            self.layerwise_lr_stats[self.name_map[param]] = stats
+
+            return loss
+        else:
+            for group in self.param_groups:
+                lr = group['lr']
+                momentum = group['momentum']
+                weight_decay = group['weight_decay']
+                lr_t = torch.tensor(lr, device=self.device)
+                for param in group['params']:
+                    if param.grad is None:
+                        continue
+                    # Initialize velocity if not already done
+                    if 'velocity' not in self.state[param]:
+                        self.state[param]['velocity'] = torch.zeros_like(param.data)
+                    param.grad.mul_(self.state[param]['mask'])
+                    eig_hess = torch.norm(param.grad)**2
+                    velocity = self.state[param]['velocity']
+                    sal_beta = (1 - torch.sqrt(lr_t * eig_hess))**2
+                    # Update velocity
+                    velocity.mul_(sal_beta).add_(weight_decay * param.data + param.grad)
+
+                    # Update parameters
+                    param.data -= lr * velocity
+            return loss

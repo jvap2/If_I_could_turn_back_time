@@ -386,10 +386,11 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
-def create_ResNet18():
-    return ResNet(builder=ConvBuilder(gsm_config), block=BasicBlock, num_blocks=[2,2,2,2], num_classes=1000)
+def create_ResNet18(num_classes=1000):
+    return ResNet(builder=ConvBuilder(gsm_config), block=BasicBlock, num_blocks=[2,2,2,2], num_classes=num_classes)
 
-
+def create_ResNet32(num_classes=10):
+    return ResNet(builder=ConvBuilder(gsm_config), block=BasicBlock, num_blocks=[5,5,5], num_classes=num_classes)
 
 LENET5_DEPS = [20, 50, 500]
 
@@ -428,6 +429,11 @@ class LeNet5(nn.Module):
         self.linear1 = builder.Linear(in_features=LENET5_DEPS[1] * 16, out_features=LENET5_DEPS[2])
         self.relu1 = builder.ReLU()
         self.linear2 = builder.Linear(in_features=LENET5_DEPS[2], out_features=10)
+        for name, module in self.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)) and module.weight.dim() in [2, 4]:
+                module.do_prune = True
+            else:
+                module.do_prune = False
 
     def forward(self, x):
         out = self.stem(x)

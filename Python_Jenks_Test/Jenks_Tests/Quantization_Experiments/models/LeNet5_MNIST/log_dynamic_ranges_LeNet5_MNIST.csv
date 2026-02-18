@@ -1,0 +1,5 @@
+name,log_dynamic_range
+stem.conv1.weight,0.771351
+stem.conv2.weight,2.0792098
+linear1.weight,3.0964222
+linear2.weight,1.2727753

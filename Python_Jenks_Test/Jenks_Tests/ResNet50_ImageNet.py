@@ -1,6 +1,6 @@
 from models import ResNet56
 import torch
-from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test, PruneWeights_Test, train_one_step, Prune_Score_Mag
+from custom_optimizer import JenksSGD,PruneWeights, JenksSGD_Noise, SAM, JenksSGD_Test, PruneWeights_Test, train_one_step, Prune_Score_Mag, init_network
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.optim import SGD, Adam, AdamW
@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from time import time
 from cuda_helpers import get_memory_free_MiB
 from custom_optimizer import Prune_Score,train_one_step_prune,Prune_Score_Select
-from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks
+from custom_schedulers import WarmupMultiStepLR, init_lr_weight_decay,WarmupMultiStepJenks,WarmupAutoJenks
 from torchvision.models import resnet50
 
 import torch
@@ -33,14 +33,16 @@ from torchmetrics.classification import MulticlassAccuracy
 from datetime import datetime
 import os
 import torch.nn as nn
+from training_loop import train_val_loop, train_val_loop_scheduler, train_val_loop_ResNet, train_val_loop_ResNet_scheduler,train_val_loop_ResNet_scheduler_v2,train_val_loop_ResNet_scheduler_ETF, train_val_loop_HPO, train_val_loopETF
 # from networks import LeNet5V1,alexnet,lenet5v1
 from torch.autograd.functional import hessian
 # from functions import hutchinson_trace_hmp,rademacher
 from backpack import backpack, extend
 from backpack.extensions import HMP, DiagHessian
+from models import AGD_init_weights
 
 one_shot = True
-
+prune_ratio = .5
 torch.cuda.empty_cache()
 # train_val_dataset = datasets.MNIST(root="./datasets/", train=True, download=True)
 # test_dataset = datasets.MNIST(root="./datasets/", train=False, download=True)
@@ -55,62 +57,90 @@ gsm_momentum = 0.99
 gsm_max_epochs = 280
 mask = True
 
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
-train_val_dataset = datasets.ImageNet(root="./datasets/", train=True, download=True, transform=transforms.ToTensor())
+train_dataset = datasets.ImageNet(
+    root="./datasets",
+    split="train",
+    transform=transforms.Compose([
+        transforms.AutoAugment(transforms.AutoAugmentPolicy.IMAGENET),
+        transforms.ToTensor(),
+        normalize,
+    ])
+)
+val_dataset = datasets.ImageNet(
+    root="./datasets",
+    split="val",
+    transform=transforms.Compose([transforms.ToTensor(), normalize])
+)
 
-
-imgs = torch.stack([img for img, _ in train_val_dataset], dim=0)
-
-mean = imgs.view(1, -1).mean(dim=1)    
-std = imgs.view(1, -1).std(dim=1)     
-
-mnist_transforms = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Resize((256, 256)),
-                                       transforms.Normalize(mean=mean, std=std)])
-
-train_val_dataset = datasets.ImageNet(root="./datasets/", train=True, download=False, transform=mnist_transforms)
-
-
-train_size = int(0.8 * len(train_val_dataset))
-val_size = len(train_val_dataset) - train_size
-
-
-train_dataset, val_dataset = torch.utils.data.random_split(dataset=train_val_dataset, lengths=[train_size, val_size])
-fin_val_dataset, test_dataset = torch.utils.data.random_split(dataset=val_dataset, lengths=[int(0.5 * len(val_dataset)), int(0.5 * len(val_dataset))])
-
-train_dataset.dataset.transform = mnist_transforms
-fin_val_dataset.dataset.transform = mnist_transforms
-test_dataset.dataset.transform = mnist_transforms
-
-BATCH_SIZE = 16
-
-train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_dataloader = DataLoader(dataset=fin_val_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_dataloader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+BATCH_SIZE = 64
 # model_lenet5v1 = LeNet5V1()
+train_dataloader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
 model = resnet50(weights=None,progress=True).to(device)
-model = extend(model)
 loss_fn = nn.CrossEntropyLoss()
-loss_fn = extend(loss_fn)
-momentum = 0.9
-learning_rate = .1e-2
-weight_decay = 1e-3
-warmup_epochs = 20
-nestrov = True
+AGD = True
+if AGD:
+    AGD_init_weights(model)
+# for k, v in model.named_parameters():
+#     if v.dim() in [2, 4]:
+#         if xavier:
+#             torch.nn.init.xavier_uniform_(v, gain=gain)
+#             # print('init {} as xavier_uniform'.format(k))
+#         else:
+#             continue
+#     if 'bias' in k and 'bn' not in k.lower():
+#         torch.nn.init.zeros_(v)
+        # print('init {} as zero'.format(k))
+# model = torch.compile(model, mode="reduce-overhead", backend="inductor")
+model = model.to(device)
+# print(model)  
+min_epochs = 300
+label_smoothing = 0.0
+loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+momentum = 0.99
+learning_rate = 1e-2
+weight_decay = 1e-4
+bias_weight_decay = 0
+warmup_epochs = 10
+nestrov = False
 params = []
-bias_lr = False
-optimizer = init_lr_weight_decay(model, learning_rate, weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr)
+bias_lr = True
+prune_epoch =  350
+optimizer = init_lr_weight_decay(model, learning_rate, weight_decay,bias_weight_decay=bias_weight_decay, momentum=momentum, nestrov=nestrov, bias_lr=bias_lr, elem_bias = True, warmup_epochs=warmup_epochs, prune_epoch=prune_epoch)
+init_network(optimizer)
+EPOCHS = 400
 # scheduler = WarmupMultiStepLR(optimizer, milestones=[80, 120, 140], warmup_factor=0.1, warmup_iters=10, warmup_method="linear")
-scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear")
-accuracy = Accuracy(task='multiclass', num_classes=1000)
-top5accuracy = MulticlassAccuracy(num_classes=1000, top_k=5)
+adj = False
+schedule = True
+# scheduler = WarmupMultiStepJenksBias(optimizer, milestones_weights=gsm_lr_boundaries, milestones_bias=gsm_bias_lr_boundaries, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=False)
+gamma = .875
+warmup_epochs_2 = 10
+two_schedulers = False
+# scheduler = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=5, min_lr=learning_rate/100, verbose=True)
 
+# scheduler = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=1/3, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=adj)
+# if schedule:
+#     scheduler_2 = ExponentialLR(optimizer, gamma=0.99)
+#     # scheduler_2 = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=adj)
+#     scheduler_3 = ReduceLROnPlateau(optimizer, mode = 'max', factor=gamma, patience=20, min_lr=learning_rate/100, verbose=True)
+    
+#     scheduler_ResNet = SequentialJenksScheduler(optimizer, schedulers=[scheduler, scheduler_2, scheduler_3], milestones=[warmup_epochs, warmup_epochs_2])
+# scheduler_double = WarmupMultiStepJenks(optimizer, milestones=gsm_lr_boundaries,gamma=gamma, warmup_factor=0.1, warmup_iters=warmup_epochs, warmup_method="linear", adjustable=True)
+# scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS, eta_min=1e-6)
+
+scheduler = WarmupAutoJenks(optimizer,milestones=gsm_lr_boundaries, warmup_factor=1/2, warmup_iters=warmup_epochs)
+accuracy = Accuracy(task='multiclass', num_classes=10)
+top5accuracy = MulticlassAccuracy(num_classes=10, top_k=5)
+ ## Check the number of parameters in the model vs number of trainiable parameters
+bias_prune = False
 
 # Experiment tracking
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-experiment_name = "ImageNet"
-model_name = "ResNet50"
+experiment_name = "CIFAR10"
+model_name = "ResNet56"
 log_dir = os.path.join("runs", timestamp, experiment_name, model_name)
 writer = SummaryWriter(log_dir)
 
@@ -123,13 +153,12 @@ train_loss, train_acc = 0.0, 0.0
 train_top5acc = 0.0
 count = 0
 original_magnitude = sum(torch.norm(p)**2 for p in model.parameters())
-lambda_ = 0.01
+lambda_ = 0
 
 
-train_dir = "ResNet50_ImageNet_output/"
+train_dir = "ResNet56_CIFAR10_output/"
 os.makedirs(train_dir, exist_ok=True)  # Create directory if it doesn't exist
 name =  "SGD_Agg"
-EPOCHS = 280
 log_filename = os.path.join(train_dir, f"log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 train_filename = os.path.join(train_dir, f"training_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 trace_filename = os.path.join(train_dir, f"trace_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
@@ -137,163 +166,80 @@ sparsity_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum
 trace_val_filename = os.path.join(train_dir, f"sparisty_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 val_filename = os.path.join(train_dir,f"validation_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 test_filename = os.path.join(train_dir,f"test_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+debug_filename = os.path.join(train_dir,f"debug_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+jenks_filename = os.path.join(train_dir,f"jenks_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
+prune_filename = os.path.join(train_dir,f"prune_log_{timestamp}_{momentum}_{name}_{EPOCHS}.txt")
 master_count = 0
 epoch = 0
-prune_epoch = 100
 no_jenks =True
+l2 = False
+mag_prune = True
+with open(log_filename,"a") as f:
+    print(f"Starting Learning rate: {learning_rate}", file=f)
+    print(f"Momentum: {momentum}", file=f)
+    print(f"Weight decay: {weight_decay}", file=f)
+    print(f"Batch size: {BATCH_SIZE}", file=f)
+    print(f"Epochs: {EPOCHS}", file=f)
+    print(f"Epoch to start pruning: {prune_epoch}", file=f)
+    print(f"Warmup epochs: {warmup_epochs}", file=f)
+    if nestrov:
+        print(f"Opt type is Nesterov", file=f)
+    else:
+        print(f"Opt type is Jenks SGD", file=f)
+    if kill_velocity:
+        print(f"Velocity is killed", file=f)
+    else:
+        print(f"Velocity is not killed", file=f)
+    if mask:
+        print(f"Mask is used", file=f)
+    else:
+        print(f"Mask is not used", file=f)
+    if bias_lr:
+        print(f"Bias LR is used", file=f)
+    else:
+        print(f"Bias LR is not used", file=f)
+    if no_jenks:
+        print(f"No Jenks is used", file=f)
+    else:
+        print(f"Jenks is used", file=f)
+    if mag_prune:
+        print(f"Mag prune is used", file=f)
+    else:
+        print(f"Mag prune is not used", file=f)
+    if label_smoothing > 0:
+        print(f"Label smoothing is used with value: {label_smoothing}", file=f)
+    else:
+        print(f"Label smoothing is not used", file=f)
 prune_count = 0
-for epoch in range(EPOCHS):
-    # Training loop
-    print("Epoch: ", epoch)
-    epoch += 1
-    model.train()
-    #print the epoch and learning rate
-    with open(train_filename,"a") as f:
-        print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
-    count = 0
-    train_loss, train_acc = 0.0, 0.0
-    train_top5acc = 0.0
-    start = time()
-    print(f"Memory free: {get_memory_free_MiB(0)} MiB")
-    for X, y in train_dataloader:
-        # print(torch.cuda.memory_summary())
-        torch.cuda.empty_cache()
-        count += 1
-        # loss = loss.clone() + lambda_ * l2_reg
-        X, y = X.to(device), y.to(device)
-        master_count += 1
-        acc, acc5, loss = train_one_step_prune(model,X, y, optimizer, loss_fn, epoch, warmup_epochs,prune_epochs=prune_epoch, mask=mask,)
-        if mask and epoch>prune_epoch:
-            ## Go through all the parameters and set the pruned ones to zero
-            for name, param in model.named_parameters():
-                param.data = param.data *optimizer.state[param]['mask']
-        # acc = accuracy(y_pred, y)
-        # acc_5 = top5accuracy(y_pred, y)
-        train_loss += loss.item()
-        train_top5acc += acc5.item()
-        train_acc += acc.item()
-        l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
-        # print("Train loss type : ", type(train_loss))
-        # print("Train Acc type : ", type(train_acc))
-        # print("Train Top5Acc type : ", type(train_top5acc))
-        # print("Loss type : ", type(loss))
-        # print("l2_reg type : ", type(l2_reg))
-        with open(train_filename, "a") as f:
-            print(f"Iteration: {count}| Loss: {train_loss/count: .5f}| Acc: {train_acc/count: .5f} | Top 5 Acc: {train_top5acc/count: .5f} |L_2: {l2_reg/original_magnitude: .5f}", file=f)
-    stop = time()
-    print(f"Time taken for epoch: {stop-start}")
-    # if epoch < 151:
-    scheduler.step()
-    with open (log_filename,"a") as f:
-        print(f"Epoch: {epoch}| Learning Rate: {scheduler.get_last_lr()}", file=f)
-    if epoch >= prune_epoch and epoch % 10 == 0:
-        # if kill_velocity and epoch==prune_epoch:
-        #     Prune_Score(optimizer, kill_velocity=True)
-        if one_shot and epoch==prune_epoch and mask:
-            print("Pruning the weights")
-            Prune_Score(optimizer, mask=True)
-            prune_count += 1
-        elif not one_shot and epoch>=prune_epoch and epoch % 20 == 0 and prune_count<10:
-            print("Pruning the weights")
-            Prune_Score(optimizer, mask=True)
-            prune_count += 1
-        # if not kill_velocity or not mask:
-        #     Prune_Score(optimizer)
-        '''Make sure the weights are back on the device'''
-        # with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-        #     print("Able to prune the weights", file=f)
-        # model = prunedmodel.to(device)
-        non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
-        total_params = sum(p.numel() for p in model.parameters())
-        sparsity = 1 - non_zero_params / total_params
-        with open(sparsity_filename,"a") as f:
-            print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
-    if epoch == warmup_epochs:
-        '''Change the learning rate to the base value'''
-        for group in optimizer.param_groups:
-            group['lr'] = 3e-3
-        # for param_group in optimizer.param_groups:
-        #     param_group['momentum'] = 0.99
-        
-    model.eval()
-    with torch.inference_mode():
-        with open(val_filename,"a") as f:
-            print(f"Epoch: {epoch}", file=f)
-        val_loss, val_acc = 0.0, 0.0
-        val_top5acc = 0.0
-        count_val = 0
-        for X, y in val_dataloader:
-            count_val += 1
-            X, y = X.to(device), y.to(device)
-
-            y_pred = model(X)
-
-            loss = loss_fn(y_pred, y)
-            val_loss += loss.item()
-            # optimizer.zero_grad()
-            # with backpack(DiagHessian(), HMP()):
-            # # keep graph for autodiff HVPs
-            #     loss.backward()
-            # trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
-            # with open(trace_val_filename,"a") as f:
-            #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
-            acc = accuracy(y_pred, y)
-            top5_acc = top5accuracy(y_pred, y)
-            val_top5acc += top5_acc
-            val_acc += acc
-            with open(val_filename,"a") as f:
-                print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
-
-        # val_loss /= len(test_dataloader)
-        # val_acc /= len(test_dataloader)
-
-    writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
-    writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
-    with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
-        print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
-    ## Save model
-    torch.save(model.state_dict(), f"models/{timestamp}_{experiment_name}_{model_name}_epoch_{epoch}.pth")
-
-val_loss, val_acc = 0.0, 0.0
-val_top5acc = 0.0
-count_val = 0
-'''Make sure the weights are back on the device'''
-non_zero_params = sum(torch.count_nonzero(p) for p in model.parameters())
-# non_zero_params_2 = sum(torch.count_nonzero(p) for p in model_2.parameters())
-total_params = sum(p.numel() for p in model.parameters())
-sparsity = 1 - non_zero_params / total_params
-# sparsity_2 = 1 - non_zero_params_2 / total_params
-model.eval()
-with open(sparsity_filename,"a") as f:
-    print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f)
-
-model.eval()
-with torch.inference_mode():
-    with open(test_filename,"a") as f:
-        print(f"Epoch: {epoch}", file=f)
-    val_loss, val_acc = 0.0, 0.0
-    val_top5acc = 0.0
-    for X, y in test_dataloader:
-        count_val += 1
-        X, y = X.to(device), y.to(device)
-
-        y_pred = model(X)
-
-        loss = loss_fn(y_pred, y)
-        val_loss += loss.item()
-        # optimizer.zero_grad()
-        # with backpack(DiagHessian(), HMP()):
-        # # keep graph for autodiff HVPs
-        #     loss.backward()
-        # trace = hutchinson_trace_hmp(model, V=1000, V_batch=10)
-        # with open(trace_val_filename,"a") as f:
-        #     print(f"Iteration: {count_val}| Trace: {trace: .5f}", file=f)
-        acc = accuracy(y_pred, y)
-        top5_acc = top5accuracy(y_pred, y)
-        val_top5acc += top5_acc
-        val_acc += acc
-        with open(test_filename,"a") as f:
-            print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
-
-    val_loss /= len(test_dataloader)
-    val_acc /= len(test_dataloader)
+sparsity = 0.0
+one_update = True
+total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print(f"Total trainable parameters in the model: {total_params}")
+total_pruned_params = sum(p.numel() for p in model.parameters() if p.dim() in [2, 4])
+print(f"Total prunebale parameters in the model: {total_pruned_params}")
+prune_epoch_list = [prune_epoch]
+prune_between = 25
+# Run the training and validation loop
+weight_turnoff = True
+if weight_turnoff:
+    train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                experiment_name, model_name, timestamp,
+                train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                jenks_filename=jenks_filename,
+                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=5,
+                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs, min_epochs=min_epochs, elem_bias = True, accum_steps=8)
+else:
+    train_val_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device,
+                experiment_name, model_name, timestamp,
+                train_filename=train_filename, val_filename=val_filename, log_filename=log_filename,
+                sparsity_filename=sparsity_filename, prune_filename=trace_filename, debug_filename=debug_filename,
+                jenks_filename=jenks_filename,
+                prune_count=prune_count, one_update=one_update, EPOCHS=EPOCHS, sparsity=sparsity,
+                prune_epoch_list=prune_epoch_list, prune_epoch=prune_epoch, prune_between=5,
+                prune_ratio=prune_ratio, one_shot=one_shot, mask=mask,
+                mag_prune=mag_prune, bias_prune=bias_prune, kill_velocity=kill_velocity,
+                l2=l2, lambda_=lambda_, warmup_epochs=warmup_epochs, min_epochs=min_epochs)

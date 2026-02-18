@@ -108,6 +108,11 @@ class DenseNet3(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
+        for name, module in self.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)) and module.weight.dim() in [2, 4]:
+                module.do_prune = True
+            else:
+                module.do_prune = False
     def forward(self, x):
         out = self.conv1(x)
         out = self.trans1(self.block1(out))

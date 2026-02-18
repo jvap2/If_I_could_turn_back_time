@@ -55,6 +55,11 @@ else:
         nn.ReLU(),
         nn.Linear(in_features=100, out_features=10),
     ).to(device)
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)) and module.weight.dim() in [2, 4]:
+            module.do_prune = True
+        else:
+            module.do_prune = False
 
 print(f"Number of parameters in the model: {sum(p.numel() for p in model.parameters())}")
 names = [name for name, layer in model.named_modules() if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)]

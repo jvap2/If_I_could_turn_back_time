@@ -1,0 +1,5 @@
+name,sparsity
+stem.conv1.weight,0.772
+stem.conv2.weight,0.95044
+linear1.weight,0.9981375
+linear2.weight,0.9864
