@@ -810,8 +810,9 @@ class QuantizationObjective(nn.Module):
         self.C = self.W - self.s * self.Q
 
         # Trainable parameter (logits)
-        self.Theta = nn.Parameter(torch.zeros_like(self.W))
-
+        self.Theta = nn.Parameter(torch.ones_like(self.W))
+        # For experimentation, set Theta to be C/s
+        self.Theta.data = self.C / (self.s + 1e-12)  # Avoid division by zero
     def forward(self):
 
         W = self.W                    # (d_out, d_in)
@@ -819,7 +820,7 @@ class QuantizationObjective(nn.Module):
         C = self.C                    # (d_out, d_in)
         s = self.s                    # (d_out, 1)
         Q = self.Q                    # (d_out, d_in)
-        Theta = torch.clip(torch.sigmoid(self.Theta)*1.2 -.1, 0.0, 1.0)  # (d_out, d_in)
+        Theta = torch.clip(((torch.tanh(self.Theta)+1)/2)*1.2 -.1, 0.0, 1.0)  # (d_out, d_in)
 
         d_out, d_in = W.shape
 
@@ -880,24 +881,24 @@ class QuantizationObjective(nn.Module):
         return total_loss
     
 
-def run_pgd(model, lr=1e-2, steps=500):
+def run_pgd(model, lr=1e-3, steps=500):
 
-    # optimizer = torch.optim.SGD([model.Theta], lr=lr)
-    optimizer = torch.optim.Adam([model.Theta], lr=lr)
+    optimizer = torch.optim.SGD([model.Theta], lr=lr)
+    # optimizer = torch.optim.Adam([model.Theta], lr=lr)
     beta_0 = 2
-    beta_final = 8
-    beta_step = (beta_final / beta_0) ** (1 / steps)
+    beta_final = 24
+    beta_step = ((beta_final-beta_0)/steps)
     for _ in range(steps):
 
         optimizer.zero_grad()
         loss = model()
         loss.backward()
         optimizer.step()
-        model.beta *= beta_step  # Gradually increase the strength of the binary regularizer
+        model.beta += beta_step  # Gradually increase the strength of the binary regularizer
 
     # Return a projected Theta in [0,1] without reassigning the Parameter
     with torch.no_grad():
-        Theta_proj = torch.clip(torch.sigmoid(model.Theta.data) * 1.2 - 0.1, 0.0, 1.0)
+        Theta_proj = torch.clip(((torch.tanh(model.Theta)+1)/2)*1.2 -.1, 0.0, 1.0) 
     return Theta_proj
 
 
