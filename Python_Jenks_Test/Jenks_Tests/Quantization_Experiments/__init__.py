@@ -15,7 +15,8 @@ from .utils import (
     snap_to_grid,
     symmetric_uniform_quantize_tensor,
     symmetric_uniform_quantize_network,
-    geometry_aware_rounding
+    geometry_aware_rounding,
+    geometry_aware_rounding_v2
 )
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     'snap_to_grid',
     'symmetric_uniform_quantize_tensor',
     'symmetric_uniform_quantize_network',
-    'geometry_aware_rounding'
+    'geometry_aware_rounding',
+    'geometry_aware_rounding_v2'
 ]
 

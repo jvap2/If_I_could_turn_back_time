@@ -228,7 +228,32 @@ class WarmupMultiStepJenksBias(torch.optim.lr_scheduler._LRScheduler):
 
         return scaled_lrs
     
-
+class Min_OBJ_Lr_Scheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self,
+                 optimizer, 
+                 last_epoch=-1):
+        self.a = torch.ones(len(optimizer.param_groups), device=optimizer.param_groups[0]['params'][0].device)
+        self.b = torch.ones(len(optimizer.param_groups), device=optimizer.param_groups[0]['params'][0].device)
+        self.init_lr = torch.zeros(len(optimizer.param_groups), device=optimizer.param_groups[0]['params'][0].device)
+        for i, group in enumerate(optimizer.param_groups):
+            # ensure stored initial lr is tensor on device
+            self.init_lr[i] = torch.tensor(group['lr'], device=optimizer.param_groups[0]['params'][0].device, dtype=self.a.dtype)
+        for i,val in enumerate(self.init_lr):
+            self.a[i] = (self.init_lr[i]/(sqrt(2)-1))**2
+            self.b[i] = self.init_lr[i]/(sqrt(2)-1)
+        
+        super(Min_OBJ_Lr_Scheduler, self).__init__(optimizer, last_epoch)
+    def get_lr(self, epoch=None, metric=None):
+        if epoch is not None:
+            self.last_epoch = epoch
+        scaled_lrs = []
+        for i,group in enumerate(self.optimizer.param_groups):
+            lr_t = torch.sqrt(self.b[i]**2 + self.a[i]) - self.b[i]
+            # update a,b with tensor lr
+            self.a[i] += lr_t**2
+            self.b[i] += lr_t
+            scaled_lrs.append(lr_t.item())
+        return scaled_lrs
 
 class WarmupAutoJenks(torch.optim.lr_scheduler._LRScheduler):
     def __init__(

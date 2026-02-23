@@ -1,4 +1,4 @@
-from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding
+from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2
 from torchvision import datasets, transforms
 from utils import RandomContrast, RandomGamma, TinyImageNetDataset
 from Quantization_Experiments.utils import QuantNetwork
@@ -322,11 +322,11 @@ for name in mask:
     mask[name] = mask[name].to(device)
 import torch
 torch.cuda.empty_cache()
-geometry_aware_rounding(reg_model, val_dataloader, device=device, bitwidth=8)
+quant_model = geometry_aware_rounding_v2(reg_model, val_dataloader, device=device, bitwidth=8)
 
 
-TestNetwork(reg_model, val_dataset, filepath=accuracy_geometry_filename)
+TestNetwork(quant_model, val_dataset, filepath=accuracy_geometry_filename)
 '''Print out the model details after geometry-aware quantization to see if there are any changes in bitwidths'''
-for name, module in reg_model.named_modules():
+for name, module in quant_model.named_modules():
     if isinstance(module, (nn.Conv2d, nn.Linear)):
         print(f"Quantized Weights of {name}: {module.weight}", file=open(bitwidth_geometry_filename, "a"))
