@@ -1,4 +1,4 @@
-from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2
+from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2, geometry_aware_rounding_BRECQ
 from torchvision import datasets, transforms
 from utils import RandomContrast, RandomGamma, TinyImageNetDataset
 from Quantization_Experiments.utils import QuantNetwork
@@ -13,7 +13,7 @@ import torch
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
 
-bitwidths = []
+bitwidth = 8
 
 net = networks[2]
 data = data[1]
@@ -89,7 +89,7 @@ elif net == "VGG19":
         csv_file = "VGG19_TinyImageNet_data_quant.csv"
     model = quantvgg19(dataset=datasets_name)
     reg_model = vgg19(dataset=datasets_name)
-folder_name = f"Quantization_Experiments/{net}_{data}"
+folder_name = f"Quantization_Experiments/{net}_{data}/{bitwidth}_bit"
 import os
 os.makedirs(folder_name, exist_ok=True)
 bitwidth_filename = f"{folder_name}/{net}_{data}_bitwidths.txt"
@@ -322,7 +322,7 @@ for name in mask:
     mask[name] = mask[name].to(device)
 import torch
 torch.cuda.empty_cache()
-quant_model = geometry_aware_rounding_v2(reg_model, val_dataloader, device=device, bitwidth=8)
+quant_model = geometry_aware_rounding_BRECQ(reg_model, val_dataloader, device=device, bitwidth=8)
 
 
 TestNetwork(quant_model, val_dataset, filepath=accuracy_geometry_filename)

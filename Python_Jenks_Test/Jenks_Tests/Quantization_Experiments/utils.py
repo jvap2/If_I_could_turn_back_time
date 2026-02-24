@@ -7,6 +7,10 @@ from torch import sigmoid
 import copy
 import gc
 from custom_schedulers import Min_OBJ_Lr_Scheduler
+from math import sqrt
+from .layers import QuantLinear, QuantConv2d
+from densenet import DenseBlock, TransitionBlock, BottleneckBlock, BasicBlock
+from resnet import BasicBlock as ResNetBasicBlock
 
 def CrossLayerEqualization(model, input_shape):
     """
@@ -245,14 +249,6 @@ def custom_round_layer(module, calibration_loader, lambda_gram=0.1):
     W_quant = s * best_choice
 
     module.weight.data.copy_(W_quant)
-
-
-    import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-import brevitas
-from brevitas.nn import QuantLinear, QuantConv2d
 
 
 
@@ -672,6 +668,7 @@ def snap_to_grid(W, scale, bitwidth):
 #         GEOMETRY-AWARE ROUNDING ATTEMPT 2
 #         This method uses projected gradient steps
 # ============================================================
+
 
 
 def get_second_last_layer(model):
@@ -1141,7 +1138,7 @@ class QuantizationObjective_v3(nn.Module):
         self.Q = Q * M  # Apply mask to Q to ensure pruned weights are not optimized towards nonzero values
         self.M = M  # Mask from pruning to ensure we only optimize over unpruned weights
         self.s = s
-        self.lamb_reg = lamb
+        self.lamb_reg = 1e-4
         self.lamb = lamb if last_layer else 0.0
         self.beta = beta
         self.last_layer = last_layer
@@ -1156,22 +1153,20 @@ class QuantizationObjective_v3(nn.Module):
         with torch.no_grad():
             self.Theta.data = self.C / (self.s + 1e-12)  # Avoid division by zero
     def forward(self):
-
-        W = self.W                    # (d_out, d_in)
+        M = self.M                    # Mask to ensure we only optimize over unpruned weights
+        W = self.W*M                    # (d_out, d_in)
         Sigma = self.Sigma            # (d_in, d_in)
         Sigma_cross = self.Sigma_cross  # (d_in, d_in)
         Sigma_q = self.Sigma_q          # (d_in, d_in)
-        M = self.M                    # Mask to ensure we only optimize over unpruned weights
         C = self.C                    # (d_out, d_in)
         s = self.s                    # (d_out, 1)
-        Q = self.Q                    # (d_out, d_in)
-        Theta = torch.clip(torch.sigmoid(self.Theta)*1.2 -.1, 0.0, 1.0)  # (d_out, d_in)
+        Q = self.Q*M                    # (d_out, d_in)
+        Theta = torch.clip(torch.sigmoid(self.Theta)*1.2 -.1, 0.0, 1.0)*M  # (d_out, d_in)
 
         d_out, d_in = W.shape
 
         activation_loss = torch.zeros(1, device=W.device)
-        W_bar = s * M * (Q + Theta)
-        geom_loss = torch.zeros(1, device=W.device)
+        W_bar = s * (Q + Theta)
         term_1 = torch.trace(W @ Sigma @ W.t())
         term_2 = -1.0* torch.trace(W @ Sigma_cross @ W_bar.t()) -1.0* torch.trace(W_bar @ Sigma_cross.t() @ W.t())
         term_3 = torch.trace(W_bar @ Sigma_q @ W_bar.t())
@@ -1189,15 +1184,20 @@ class QuantizationObjective_v3(nn.Module):
         # ---- Geometric term (row-wise safe) ----
         geom_loss = torch.zeros(1, device=W.device)
         if self.second_last_layer:
-            W_quant = s * M * (Q + Theta)
+            W_quant = s * (Q + Theta)
             K = W @ Sigma @ W.t()
             M = W_quant @ Sigma_q @ W_quant.t()
+            ## Normalize K and M by their size
+            K = K / (sqrt(d_out * d_in))
+            M = M / (sqrt(d_out * d_in))
             geom_loss = torch.norm(K - M, p="fro") ** 2
         if self.last_layer:
             '''Going to check the Gram Matrix of just the weights without the input covariance term to ensure simplex ETF.'''
-            W_quant = s * M * (Q + Theta)
-            K = W @ W.t()
-            M = W_quant @ W_quant.t()
+            W_quant = s * (Q + Theta)
+            K = W.t() @ W
+            M = W_quant.t() @ W_quant
+            K = K / (sqrt(d_out * d_in))
+            M = M / (sqrt(d_out * d_in))
             geom_loss = torch.norm(K - M, p="fro") ** 2
         print(f"Geometric loss: {geom_loss.item()}")
 
@@ -1207,7 +1207,7 @@ class QuantizationObjective_v3(nn.Module):
 
 
 
-def run_pgd(model, lr=7.5e-3, steps=6000):
+def run_pgd(model, lr=7.5e-3, steps=500):
 
     # optimizer = torch.optim.SGD([model.Theta], lr=lr)
 
@@ -1238,7 +1238,7 @@ def Set_Theta(theta):
 
 def geometry_aware_rounding(model, dataloader, device, bitwidth=4):
 
-    lamb = .0005
+    lamb = .01
     print("lambda has been generated")
 
     Q, s = GenerateQ(model, bitwidth)
@@ -1407,3 +1407,359 @@ def compute_compression(model,
         "compressed_bits": compressed_bits,
         "compression_ratio": compression_ratio
     }
+
+
+#============================================================
+#         BLOCKWISE OPTIMIZATION ATTEMPT
+#============================================================
+
+def quantize_module(module, bitwidth=4):
+    """
+    Recursively replaces Conv2d and Linear layers
+    with quantized versions.
+    """
+
+    module = copy.deepcopy(module)
+
+    for name, child in module.named_children():
+
+        if isinstance(child, nn.Conv2d):
+            setattr(module, name, QuantConv2d(child, bitwidth))
+
+        elif isinstance(child, nn.Linear):
+            setattr(module, name, QuantLinear(child, bitwidth))
+
+        else:
+            quantize_module(child, bitwidth)
+
+    return module
+
+class ModelBlock(nn.Module):
+    def __init__(self, layers):
+        super().__init__()
+        self.block = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.block(x)
+    
+
+# class BlockReconstructionObjective(nn.Module):
+#     def __init__(self, block_fp, block_q, cached_inputs):
+#         super().__init__()
+#         self.block_fp = block_fp
+#         self.block_q = block_q
+#         self.cached_inputs = cached_inputs
+
+#     def forward(self):
+#         loss = 0
+#         for x in self.cached_inputs:
+#             with torch.no_grad():
+#                 y_fp = self.block_fp(x)
+
+#             y_q = self.block_q(x)
+#             loss += F.mse_loss(y_q, y_fp)
+
+#         return loss
+
+def estimate_output_curvature(model, module, dataloader, device):
+
+    model.eval()
+    G_accum = None
+    count = 0
+
+    def hook(module, grad_input, grad_output):
+        nonlocal G_accum, count
+        g = grad_output[0].detach()          # (B, d_out, ...)
+        g = g.flatten(2).mean(dim=2)         # spatial average if conv
+        G_batch = g.t() @ g                  # (d_out, d_out)
+
+        if G_accum is None:
+            G_accum = G_batch
+        else:
+            G_accum += G_batch
+
+        count += g.shape[0]
+
+    handle = module.register_full_backward_hook(hook)
+
+    for x, y in dataloader:
+        x, y = x.to(device), y.to(device)
+        model.zero_grad()
+        out = model(x)
+        loss = F.cross_entropy(out, y)
+        loss.backward()
+
+    handle.remove()
+
+    return G_accum / count
+
+
+def split_vgg_features_into_blocks(features_module):
+    blocks = []
+    current = []
+
+    for layer in features_module:
+        current.append(layer)
+
+        if isinstance(layer, nn.MaxPool2d):
+            blocks.append(nn.Sequential(*current))
+            current = []
+
+    if current:
+        blocks.append(nn.Sequential(*current))
+
+    return blocks
+
+def count_conv_layers(module):
+    return sum(1 for m in module.modules() if isinstance(m, nn.Conv2d))
+
+def find_structural_blocks(model, min_convs=2):
+    blocks = []
+
+    for name, module in model.named_children():
+
+        conv_count = count_conv_layers(module)
+
+        if conv_count >= min_convs:
+            blocks.append((name, module))
+
+    return blocks
+
+import torch.nn as nn
+
+def generate_brecq_blocks(model):
+
+    blocks = []
+    current_block = []
+    current_name = None
+
+    children = list(model.named_children())
+
+    for i, (name, module) in enumerate(children):
+
+        print(f"Analyzing module {name} for block generation...")
+
+        # --- Stem ---
+        if name == "conv1":
+            blocks.append(("conv1", nn.Sequential(module)))
+            print(f"--> Adding stem block: {name}")
+            continue
+
+        # --- Dense Blocks ---
+        if name.startswith("block"):
+            blocks.append((name, module))
+            print(f"--> Adding structural block: {name}")
+            continue
+
+        # --- Transition Layers ---
+        if name.startswith("trans"):
+            blocks.append((name, module))
+            print(f"--> Adding structural block: {name}")
+            continue
+
+        # --- Final BN + ReLU (stitch into last dense block) ---
+        if name in ["bn1", "relu"]:
+            if len(blocks) > 0:
+                last_name, last_module = blocks[-1]
+                stitched = nn.Sequential(last_module, module)
+                blocks[-1] = (last_name, stitched)
+                print(f"--> Stitching {name} into {last_name}")
+            continue
+
+        # --- Classifier ---
+        if isinstance(module, nn.Linear):
+            blocks.append((name, module))
+            print(f"--> Adding classifier block")
+            continue
+
+        print(f"--> Skipping {name}")
+
+    return blocks
+
+def is_residual_block(module):
+    convs = [m for m in module.modules() if isinstance(m, nn.Conv2d)]
+
+    # BasicBlock → 2 convs
+    # Bottleneck → 3 convs
+    if len(convs) in [2, 3]:
+        return True
+
+    return False
+
+import torch.nn as nn
+
+def is_dense_layer(module):
+    # Detect by internal structure, not name
+    convs = [m for m in module.modules() if isinstance(m, nn.Conv2d)]
+    bns   = [m for m in module.modules() if isinstance(m, nn.BatchNorm2d)]
+
+    # DenseLayer typically has:
+    # BN → ReLU → 1x1 conv
+    # BN → ReLU → 3x3 conv
+    return len(convs) == 2 and len(bns) >= 2
+
+def generate_fine_grained_blocks(model):
+
+    blocks = []
+
+    for name, module in model.named_modules():
+
+        # Skip root
+        if module is model:
+            continue
+
+        # DenseLayer blocks
+        if is_dense_layer(module):
+            blocks.append((name, module))
+            print(f"--> Found DenseLayer block: {name}")
+            continue
+
+        # Residual blocks
+        if is_residual_block(module):
+            blocks.append((name, module))
+            print(f"--> Found Residual block: {name}")
+            continue
+
+        # Transition layers (DenseNet)
+        if isinstance(module, nn.Sequential):
+            convs = [m for m in module.modules() if isinstance(m, nn.Conv2d)]
+            if len(convs) == 1:
+                blocks.append((name, module))
+                print(f"--> Found transition block: {name}")
+
+    return blocks
+
+def build_quantized_stage(model, stage_name="layer3", bitwidth=4):
+
+    stage_fp = getattr(model, stage_name)
+    stage_q = quantize_module(stage_fp, bitwidth)
+
+    return stage_fp, stage_q
+
+
+def cache_block_inputs(model, stage_name, dataloader, device, num_batches=10):
+
+    model.eval()
+    cached = []
+
+    def hook(module, inp, out):
+        cached.append(inp[0].detach())
+
+    handle = getattr(model, stage_name).register_forward_hook(hook)
+
+    for i, (x, _) in enumerate(dataloader):
+        if i >= num_batches:
+            break
+        model(x.to(device))
+
+    handle.remove()
+
+    return cached
+
+class BlockReconstructionObjective(nn.Module):
+    def __init__(self, stage_fp, stage_q, cached_inputs, lamb=1e-4):
+        super().__init__()
+        self.stage_fp = stage_fp
+        self.stage_q = stage_q
+        self.cached_inputs = cached_inputs
+        self.beta = 2
+        self.lamb = lamb
+
+
+        # collect all quantized modules whose weights we can adjust
+        self._adjust_modules = []
+        for module in self.stage_q.modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                self._adjust_modules.append(module)
+
+        # create a flattened Theta parameter covering all weights in the block
+        total_params = sum(m.weight.data.numel() for m in self._adjust_modules)
+        device = self._adjust_modules[0].weight.device if self._adjust_modules else torch.device('cpu')
+        ### Go through the layers and take their theta slices and concatenate them into one big Theta vector for optimization, we will then need to apply the optimized Theta back to the layers after PGD
+        self.Theta = nn.Parameter(torch.zeros(total_params, device=device))
+        offset = 0
+        for module in self._adjust_modules:
+            numel = module.weight.data.numel()
+            with torch.no_grad():
+                self.Theta[offset : offset + numel].copy_(module.Theta.view(-1))
+            offset += numel
+        ## Take s from each layer
+        self.s = []
+        for module in self._adjust_modules:
+            if hasattr(module, 's'):
+                self.s.append(module.s.view(-1))
+            else:
+                self.s.append(torch.ones(module.weight.data.size(0), device=device))  # default s=1 for layers without explicit scaling
+        self.s = torch.cat(self.s)
+
+    def forward(self):
+        loss = 0
+        for x in self.cached_inputs:
+            with torch.no_grad():
+                y_fp = self.stage_fp(x)
+
+            # apply current Theta to a temporary copy of the quantized block
+            block = copy.deepcopy(self.stage_q)
+            offset = 0
+            for module in block.modules():
+                if isinstance(module, (nn.Conv2d, nn.Linear)):
+                    numel = module.weight.data.numel()
+                    theta_slice = self.Theta[offset : offset + numel].view_as(module.weight.data)
+                    module.weight.data += theta_slice * self.s[offset : offset + numel]
+                    offset += numel
+
+            y_q = block(x)
+            loss += F.mse_loss(y_q, y_fp)
+        return loss
+
+
+def apply_optimized_theta_to_block(block_q, Theta_opt):
+    """Update each quant module's weights using slices of the flattened Theta_opt.
+
+    Theta_opt is assumed to be a 1‑D tensor with entries corresponding to the
+    concatenation of all weight parameters in the block (in the same order used
+    by :class:`BlockReconstructionObjective`).
+    """
+    with torch.no_grad():
+        offset = 0
+        for name, module in block_q.named_modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                W = module.weight.data
+                numel = W.numel()
+                theta_slice = Theta_opt[offset : offset + numel].view_as(W)
+                module.weight.data.copy_(W + theta_slice)
+                offset += numel
+
+def copy_quant_block_to_model(model, stage_name, block_q):
+    # This function would need to know how to copy the weights from the quantized block back to the original model's block
+    # For simplicity, let's assume the structure of block_q matches that of the original block in the model
+    with torch.no_grad():
+        for (name_q, module_q), (name_m, module_m) in zip(block_q.named_modules(), getattr(model, stage_name).named_modules()):
+            if isinstance(module_q, (nn.Conv2d, nn.Linear)) and isinstance(module_m, (nn.Conv2d, nn.Linear)):
+                module_m.weight.data.copy_(module_q.weight.data)
+                if module_q.bias is not None and module_m.bias is not None:
+                    module_m.bias.data.copy_(module_q.bias.data)
+
+def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=4):
+
+    lamb = 5e-5
+    ## Now we need to find the structural blocks in the model to apply blockwise reconstruction
+    # blocks = generate_brecq_blocks(model)
+    blocks = generate_fine_grained_blocks(model)  # alternative fine-grained block generation
+    quant_model = copy.deepcopy(model)
+    print(f"Identified {len(blocks)} blocks for reconstruction.")
+    for stage_name, block_fp in blocks:
+        print(f"Processing block: {stage_name}")
+        block_q = quantize_module(block_fp, bitwidth)
+        cached_inputs = cache_block_inputs(model, stage_name, dataloader, device)
+        objective = BlockReconstructionObjective(block_fp, block_q, cached_inputs)
+        Theta_opt = run_pgd(objective)
+        # After optimization, we need to update the quantized block's weights based on the optimized Theta
+        # This part is a bit tricky since Theta is not explicitly defined for the whole block like in layerwise optimization
+        # We would need to extract the optimized weights from the block_q after PGD and copy them back to the original model's block
+        # For simplicity, let's assume we have a function that can apply the optimized Theta to update the quantized block's weights
+        apply_optimized_theta_to_block(block_q, Theta_opt)
+        # Now we need to copy the updated quantized block's weights back to the original model's block
+        copy_quant_block_to_model(quant_model, stage_name, block_q)
+    return quant_model
+        

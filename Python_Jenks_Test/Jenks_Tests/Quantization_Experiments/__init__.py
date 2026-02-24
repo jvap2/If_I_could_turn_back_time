@@ -16,9 +16,11 @@ from .utils import (
     symmetric_uniform_quantize_tensor,
     symmetric_uniform_quantize_network,
     geometry_aware_rounding,
-    geometry_aware_rounding_v2
+    geometry_aware_rounding_v2,
+    geometry_aware_rounding_BRECQ
 )
 
+from .layers import QuantLinear, QuantConv2d
 __all__ = [
 	'QuantLeNet5',
 	'QuantLeNet300',
@@ -33,6 +35,7 @@ __all__ = [
     'symmetric_uniform_quantize_tensor',
     'symmetric_uniform_quantize_network',
     'geometry_aware_rounding',
-    'geometry_aware_rounding_v2'
+    'geometry_aware_rounding_v2',
+    'geometry_aware_rounding_BRECQ'
 ]
 

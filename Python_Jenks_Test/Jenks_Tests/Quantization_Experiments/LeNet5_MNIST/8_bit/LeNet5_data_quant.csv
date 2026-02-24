@@ -1,0 +1,5 @@
+name,sparsity
+stem.conv1,0.772
+stem.conv2,0.95044
+linear1,0.99814
+linear2,0.9864
