@@ -308,7 +308,7 @@ log_data.to_csv(f"{folder_name}/log_dynamic_ranges_{net}.csv", index=False)
 
 
 ''' Now we want to apply the geometry-aware quantization to see if it improves the accuracy. Use a smaller calibration batch size to reduce memory.'''
-val_dataloader = DataLoader(val_dataset, batch_size=1000, shuffle=False, num_workers=2, pin_memory=True)
+val_dataloader = DataLoader(val_dataset, batch_size=128, shuffle=False, num_workers=2, pin_memory=True)
 '''We need to get the mask from pruning from the reg model to multiply it with the quantized weights to make sure we are only quantizing the non-zero weights. We can use the state_dict of the reg model to get the masks.'''
 '''Iterate through the layers and set the mask to one if a value is non-zero and zero if it is zero. Then we can apply the geometry-aware quantization to the quantized model using the masks.'''
 mask = {}
