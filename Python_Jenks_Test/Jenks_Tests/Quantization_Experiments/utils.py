@@ -1270,7 +1270,7 @@ def run_pgd(model, lr=7.5e-3, steps=6000):
     return Theta_proj
 
 
-def run_pgd_block(model, lr=1e-2, steps=1000):
+def run_pgd_block(model, lr=1e-2, steps=500):
     """Run projected gradient descent on the given objective.
 
     Only parameters whose name contains ``Theta`` are included in the optimizer.
