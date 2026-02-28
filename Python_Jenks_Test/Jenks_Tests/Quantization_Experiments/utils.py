@@ -1283,7 +1283,7 @@ def run_pgd_block(model, lr=1e-2, steps=500):
     for module in model.stage_q.modules():
         if isinstance(module, (QuantConv2d, QuantLinear)):
             theta_params.append(module.Theta)
-
+    model.lamb = 5e-6  # Start with no geometric regularization, we'll increase it gradually
     optimizer = torch.optim.Adam(theta_params, lr=lr)
     beta_0 = 2
     beta_final = 24
@@ -1292,15 +1292,12 @@ def run_pgd_block(model, lr=1e-2, steps=500):
     for step in range(steps):
         optimizer.zero_grad()
         loss = model()
-        # print("Loss:", loss.item())
-        # for p in theta_params:
-        #     print("requires_grad:", p.requires_grad)
-        #     print("is_leaf:", p.is_leaf)
         loss.backward()
         optimizer.step()
         if hasattr(model, "beta"):
-            model.beta += beta_step
-
+            model.beta += beta_step  # After some initial steps, turn on the geometric regularization
+        if step > 0:
+            model.lamb = 5e-6 + (step) * (1e-4 - 5e-6) / (steps)  # Gradually increase lambda to its final value
 
     if hasattr(model, "Theta"):
         with torch.no_grad():
@@ -1690,23 +1687,61 @@ def generate_brecq_blocks(model):
 
     return blocks
 
+def stitch_last_dense_block(model):
+    """Collect the last dense block and all subsequent BN/ReLU/AvgPool layers."""
+    modules = list(model.named_children())
+    stitched_block = []
+
+    # Find the index of the last dense block
+    last_dense_idx = -1
+    for idx, (name, module) in enumerate(modules):
+        if isinstance(module, (BasicBlock, BottleneckBlock, TransitionBlock)):
+            last_dense_idx = idx
+
+    if last_dense_idx < 0:
+        raise RuntimeError("No dense block found in model")
+
+    # Collect from the last dense block onwards
+    for idx in range(last_dense_idx, len(modules)):
+        name, module = modules[idx]
+        if isinstance(module, (BasicBlock, BottleneckBlock, TransitionBlock,
+                               nn.BatchNorm2d, nn.ReLU, nn.AdaptiveAvgPool2d)):
+            stitched_block.append(module)
+        elif isinstance(module, nn.Linear):
+            break  # stop before classifier
+        else:
+            break  # stop at unexpected modules
+
+    if not stitched_block:
+        raise RuntimeError("Failed to stitch last dense block")
+
+    return nn.Sequential(*stitched_block)
 
 
 def generate_fine_grained_blocks(model):
 
     blocks = []
+    dense_layers = []
+    for name, module in model.named_modules():
+        if isinstance(module, BasicBlock) or isinstance(module, BottleneckBlock) or isinstance(module, TransitionBlock):
+            dense_layers.append((name, module))
 
+    last_dense_name, last_dense_module = dense_layers[-1]
     for name, module in model.named_modules():
 
         # Skip root
         if module is model:
             continue
-
         # DenseLayer blocks
         if isinstance(module, BasicBlock) or isinstance(module, BottleneckBlock) or isinstance(module, TransitionBlock):
-            blocks.append((name, module))
-            print(f"--> Found DenseLayer block: {name}")
-            continue
+            if name == last_dense_name:
+                stitched = stitch_last_dense_block(model)
+                blocks.append(("last_dense_stitched", stitched))
+                continue
+            else:
+                blocks.append((name, module))
+                print(f"--> Found DenseLayer block: {name}")
+                continue
 
         # Residual blocks
         elif isinstance(module, ResNetBasicBlock):
@@ -1763,7 +1798,15 @@ def build_quantized_stage(model, stage_name="layer3", bitwidth=4):
     return stage_fp, stage_q
 
 
-def cache_block_inputs(model, stage_name, dataloader, device, num_batches=1):
+def cache_block_inputs(model, stage, dataloader, device, num_batches=1):
+    """Run a few batches and record the input tensors to the given block.
+
+    ``stage`` may be either a dotted module name (string) or the module
+    instance itself.  The latter is convenient when working with a *copy* of a
+    submodule, but the copied module is not registered under the original
+    model.  In that case we silently fall back to hooking the *corresponding*
+    original module in ``model`` (currently the last dense block).
+    """
 
     model.eval()
     cached = []
@@ -1771,8 +1814,25 @@ def cache_block_inputs(model, stage_name, dataloader, device, num_batches=1):
     def hook(module, inp, out):
         cached.append(inp[0].detach())
 
-    # handle = getattr(model, stage_name).register_forward_hook(hook)
-    target = _get_module(model, stage_name)
+    # identify a hook target inside `model`
+    if isinstance(stage, str):
+        target = _get_module(model, stage)
+    else:
+        # try to find the same object inside model's hierarchy
+        target = None
+        for name, mod in model.named_modules():
+            if mod is stage:
+                target = mod
+                break
+        if target is None:
+            # stage not part of model (e.g. stitched block).  use last dense
+            # layer as an approximation since that's where cached_inputs are
+            # ultimately consumed.
+            for name, mod in model.named_modules():
+                if isinstance(mod, (BasicBlock, BottleneckBlock, TransitionBlock)):
+                    target = mod
+            if target is None:
+                raise RuntimeError("Unable to locate block in model for caching inputs")
     handle = target.register_forward_hook(hook)
     for i, (x, _) in enumerate(dataloader):
         if i >= num_batches:
@@ -1780,6 +1840,9 @@ def cache_block_inputs(model, stage_name, dataloader, device, num_batches=1):
         model(x.to(device))
 
     handle.remove()
+
+    if len(cached) == 0:
+        raise RuntimeError(f"No activations captured when caching inputs for {stage}")
 
     return cached
 
@@ -1801,6 +1864,7 @@ class BlockReconstructionObjective(nn.Module):
         self.cached_inputs = cached_inputs
         self.beta = 2
         self.lamb = lamb
+        self.geo_lamb =1e-3
         self.second_to_last_layer = second_to_last_layer
         self.last_layer = last_layer
         self.Cx = Cx
@@ -1907,15 +1971,29 @@ class BlockReconstructionObjective(nn.Module):
                 if W_fp is None:
                     raise RuntimeError("No Conv2d or Linear layer found in stage_fp for geometric regularizer")
 
-                # Flatten per-output weights when needed and compute Gram
+                # Flatten per-output weights when needed and compute Gram from
+                # the masked flattened weights so dimensions line up.
                 W_fp_flat = W_fp.view(W_fp.size(0), -1)
-                K = W_fp @ W_fp.t()
-                M = W_quant @ W_quant.t()
+                W_q_flat = W_quant.view(W_quant.size(0), -1)
+
+                # Build mask with same flattened shape (per-output element mask)
+                if hasattr(module_q, 'mask'):
+                    mask = module_q.mask.view(W_q_flat.size(0), -1).to(W_q_flat.device)
+                else:
+                    mask = torch.ones_like(W_q_flat)
+
+                # Apply mask elementwise to flattened weights, then compute Gram
+                W_fp_masked = W_fp_flat * mask
+                W_q_masked = W_q_flat * mask
+
+                K = W_fp_masked @ W_fp_masked.t()
+                M = W_q_masked @ W_q_masked.t()
+
                 K = K / (sqrt(K.shape[0] * K.shape[1]))
                 M = M / (sqrt(M.shape[0] * M.shape[1]))
                 geom_loss = torch.norm(K - M, p="fro") ** 2
                 print(f"Geometric loss: {geom_loss.item()}")
-                loss += self.lamb * geom_loss
+                loss += self.geo_lamb * geom_loss
         return loss
 
 def copy_quant_block_to_model(model, stage_name, block_q):
@@ -1928,6 +2006,20 @@ def copy_quant_block_to_model(model, stage_name, block_q):
                 module_m.weight.data.copy_(module_q.weight.data)
                 if module_q.bias is not None and module_m.bias is not None:
                     module_m.bias.data.copy_(module_q.bias.data)
+
+def get_module_by_name(model, name):
+    """
+    Retrieve a submodule from a model using its dotted path name.
+    Example: 'features.denseblock4.denselayer16.conv2'
+    """
+    module = model
+    if name == "":
+        return module
+
+    for attr in name.split("."):
+        module = getattr(module, attr)
+    return module
+
 
 def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
 
@@ -1947,16 +2039,47 @@ def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
         print(f"Parameters in quant block before optimization: ")
         for name_p, p in block_q.named_parameters():
             print(f"  {name_p}: requires_grad={p.requires_grad} shape={tuple(p.shape)}")
-        cached_inputs = cache_block_inputs(model, stage_name, dataloader, device)
+        # pass block_fp itself because ``stage_name`` may be a synthetic
+        # identifier that doesn't exist as a submodule (e.g. "last_dense_stitched").
+        cached_inputs = cache_block_inputs(model, block_fp, dataloader, device)
 
         # Compute per-layer input covariances and output curvatures by extracting
         # activations for each Conv/Linear module within the block.
         Sigma_dict = {}
         Sigma_g_dict = {}
         for name_m, m_fp in block_fp.named_modules():
+
             if isinstance(m_fp, (nn.Conv2d, nn.Linear)):
-                Sigma_dict[name_m] = compute_input_covariance_blocks(m_fp, cached_inputs)
-                Sigma_g_dict[name_m] = estimate_output_curvature(model, m_fp, dataloader, device)
+
+                # ---- Compute input covariance (local block OK) ----
+                Sigma_dict[name_m] = compute_input_covariance_blocks(
+                    m_fp,
+                    cached_inputs
+                )
+
+                # ---- Compute output curvature (MUST use real module inside model) ----
+                full_name = stage_name if name_m == "" else f"{stage_name}.{name_m}"
+
+                try:
+                    m_model = get_module_by_name(model, full_name)
+                except AttributeError:
+                    raise RuntimeError(
+                        f"Failed to locate module '{full_name}' inside model. "
+                        f"Block stitching likely changed structure."
+                    )
+
+                # Safety check
+                if not any(m_model is m for m in model.modules()):
+                    raise RuntimeError(
+                        f"Module '{full_name}' is not part of model graph."
+                    )
+
+                Sigma_g_dict[name_m] = estimate_output_curvature(
+                    model,
+                    m_model,
+                    dataloader,
+                    device
+                )
 
         objective = BlockReconstructionObjective(
             block_fp,
