@@ -551,7 +551,14 @@ def estimate_input_quant_covariance(model, quant_model, layer, quant_layer, data
     quant_handle.remove()
     if len(inputs_list) == 0:
         raise RuntimeError("No activations captured for covariance estimation.")
-    
+
+    # if quant_layer was not part of quant_model (common during block
+    # optimization), the forward hook above never fired and our list is
+    # empty.  Fall back to using the fp inputs as a proxy.
+    if len(quant_inputs_list) == 0:
+        print("[estimate_input_quant_covariance] quant_inputs_list empty, reusing fp inputs")
+        quant_inputs_list = list(inputs_list)
+
     X = torch.cat(inputs_list, dim=0).to(device)
     Xq = torch.cat(quant_inputs_list, dim=0).to(device)
     Cx = (X.T @ X) / X.shape[0]
@@ -1504,7 +1511,11 @@ def quantize_module(module, bitwidth=4):
     if isinstance(module, nn.Linear):
         mask = (module.weight.data != 0).float()
         return QuantLinear(module, bitwidth, mask=mask)
-
+    if isinstance(module, list):
+        quantized_modules = []
+        for m in module:
+            quantized_modules.append(quantize_module(m, bitwidth))
+        return quantized_modules
     # otherwise recurse into children
     module = copy.deepcopy(module)
     for name, child in module.named_children():
@@ -1604,6 +1615,73 @@ def compute_input_covariance_blocks(module, cached_inputs):
 
     return X_accum / total
 
+import torch
+
+
+def compute_class_means(cached_outputs, targets, num_classes):
+    class_sums = torch.zeros(num_classes, cached_outputs[0].size(1), device=cached_outputs[0].device)
+    class_counts = torch.zeros(num_classes, device=cached_outputs[0].device)
+
+    for output, target in zip(cached_outputs, targets):
+        for c in range(num_classes):
+            mask = (target == c)
+            if mask.any():
+                class_sums[c] += output[mask].sum(dim=0)
+                class_counts[c] += mask.sum()
+
+    class_means = class_sums / class_counts.unsqueeze(1)
+    return class_means
+
+
+def simplex_etf_gram(C, device):
+    I = torch.eye(C, device=device)
+    ones = torch.ones(C, C, device=device)
+    G = I - ones / C
+    G = G / torch.norm(G, p='fro')
+    return G
+
+
+#======================================================
+#         ETF STRUCTURE ENFORCEMENT OBJECTIVE
+#======================================================
+
+def etf_weight_loss(W):
+    C = W.shape[0]
+    ## Center W by subtracting the mean of each row to ensure zero-mean rows, which is a requirement for simplex ETF structure
+    W_centered = W - W.mean(dim=1, keepdim=True)
+    G = W_centered @ W_centered.T
+    G = G / torch.norm(G, p='fro')
+
+    G_target = simplex_etf_gram(C, W.device)
+
+    return torch.norm(G - G_target, p='fro')**2
+
+def etf_weight_loss_v2(W):
+    C = W.shape[0]
+
+    W_centered = W - W.mean(dim=1, keepdim=True)
+    G = W_centered @ W_centered.T
+
+    G_target = simplex_etf_gram(C, W.device)
+
+    # REMOVE normalization of G
+    # Compute optimal scaling alpha
+    alpha = (G * G_target).sum() / (G_target * G_target).sum()
+
+    return torch.norm(G - alpha * G_target, p='fro')**2
+
+def nc_alignment_loss(W, M):
+    Wn = W / (W.norm(dim=1, keepdim=True) + 1e-8)
+    Mn = M / (M.norm(dim=1, keepdim=True) + 1e-8)
+    return torch.norm(Wn - Mn, p='fro')**2
+
+
+def geometry_preserve_original_weights(W_fp, W_quant):
+    Wc_fp = W_fp -W_fp.mean(dim=1, keepdim=True)
+    Wc_quant = W_quant - W_quant.mean(dim=1, keepdim=True)
+    G_fp = Wc_fp @ Wc_fp.T
+    G_quant = Wc_quant @ Wc_quant.T
+    return torch.norm(G_fp - G_quant, p='fro')**2
 
 def split_vgg_features_into_blocks(features_module):
     blocks = []
@@ -1734,14 +1812,33 @@ def generate_fine_grained_blocks(model):
             continue
         # DenseLayer blocks
         if isinstance(module, BasicBlock) or isinstance(module, BottleneckBlock) or isinstance(module, TransitionBlock):
-            if name == last_dense_name:
-                stitched = stitch_last_dense_block(model)
-                blocks.append(("last_dense_stitched", stitched))
-                continue
-            else:
-                blocks.append((name, module))
-                print(f"--> Found DenseLayer block: {name}")
-                continue
+            # if name == last_dense_name:
+
+            #     stitched_modules = [module]
+
+            #     parent = model
+            #     path_parts = name.split(".")
+            #     for p in path_parts[:-1]:
+            #         parent = getattr(parent, p)
+
+            #     children = list(parent.named_children())
+            #     idx = [i for i, (n, _) in enumerate(children) if n == path_parts[-1]][0]
+
+            #     for _, next_module in children[idx + 1:]:
+            #         if isinstance(next_module, (nn.BatchNorm2d, nn.ReLU, nn.AdaptiveAvgPool2d)):
+            #             stitched_modules.append(next_module)
+            #         else:
+            #             break
+
+            #     # DO NOT wrap in nn.Sequential
+            #     blocks.append((name, stitched_modules))
+
+            #     print(f"--> Stitched final DenseLayer block (structure preserved): {name}")
+            #     continue
+            # else:
+            blocks.append((name, module))
+            print(f"--> Found DenseLayer block: {name}")
+            continue
 
         # Residual blocks
         elif isinstance(module, ResNetBasicBlock):
@@ -1810,9 +1907,10 @@ def cache_block_inputs(model, stage, dataloader, device, num_batches=1):
 
     model.eval()
     cached = []
-
+    targets = []
     def hook(module, inp, out):
         cached.append(inp[0].detach())
+        targets.append(out[0].detach())
 
     # identify a hook target inside `model`
     if isinstance(stage, str):
@@ -1844,7 +1942,16 @@ def cache_block_inputs(model, stage, dataloader, device, num_batches=1):
     if len(cached) == 0:
         raise RuntimeError(f"No activations captured when caching inputs for {stage}")
 
-    return cached
+    return cached,targets
+
+def etf_feature_loss(M):
+    C = M.shape[0]
+    G = M @ M.T
+    G = G / torch.norm(G, p='fro')
+
+    G_target = simplex_etf_gram(C, M.device)
+
+    return torch.norm(G - G_target, p='fro')**2
 
 class BlockReconstructionObjective(nn.Module):
     """Objective that measures reconstruction error for a quantized block.
@@ -1857,17 +1964,22 @@ class BlockReconstructionObjective(nn.Module):
     them directly.
     """
 
-    def __init__(self, stage_fp, stage_q, cached_inputs, lamb=1e-4, Cx=None, Cg=None, use_gn=True, second_to_last_layer=False, last_layer=False):
+    def __init__(self, model, quant_model, dataloader, stage_fp, stage_q, cached_inputs, targets, lamb=1e-4, Cx=None, Cx_quant=None, Cg=None, use_gn=True, second_to_last_layer=False, last_layer=False):
         super().__init__()
+        self.model = model
+        self.quant_model = quant_model
+        self.dataloader = dataloader
         self.stage_fp = stage_fp
         self.stage_q = stage_q
         self.cached_inputs = cached_inputs
+        self.targets = targets
         self.beta = 2
         self.lamb = lamb
         self.geo_lamb =1e-3
         self.second_to_last_layer = second_to_last_layer
         self.last_layer = last_layer
         self.Cx = Cx
+        self.Cx_quant = Cx_quant
         self.Cg = Cg
         self.use_gn = use_gn
         for p in self.stage_fp.parameters():
@@ -1917,8 +2029,9 @@ class BlockReconstructionObjective(nn.Module):
                         mask = module_q.mask.view(W_q.size(0), -1)
                     else:
                         mask = module_q.mask
-
-                    DeltaW = mask*(W_q - W_fp)
+                    W_fp = W_fp * mask
+                    W_q = W_q * mask
+                    DeltaW = W_q - W_fp
 
                     # geometry-aware regularization
                     if self.use_gn and (self.Cg is not None) and (self.Cx is not None):
@@ -1935,13 +2048,26 @@ class BlockReconstructionObjective(nn.Module):
                         # fall back to identity if shape mismatches or missing
                         if Cg_layer is None or Cg_layer.shape[0] != DeltaW.shape[0]:
                             Cg_layer = torch.eye(DeltaW.shape[0], device=DeltaW.device)
+                            print(f"Warning: Cg_layer for {name_fp} is missing or shape mismatch, using identity.")
                         if Cx_layer is None or Cx_layer.shape[0] != DeltaW.shape[1]:
                             Cx_layer = torch.eye(DeltaW.shape[1], device=DeltaW.device)
+                            print(f"Warning: Cx_layer for {name_fp} is missing or shape mismatch, using identity.")
 
                         gn_loss = torch.trace(
                             DeltaW.T @ Cg_layer @ DeltaW @ Cx_layer
                         )
                         loss += gn_loss
+                        # if self.second_to_last_layer:
+                        #     outputs = []
+                        #     for x in self.cached_inputs:
+                        #         outputs.append(self.stage_q(x))
+                        #     out = torch.cat(outputs, dim=0)
+                        #     M = compute_class_means(out, self.targets, num_classes=out.shape[1])
+                        #     # center before computing ETF loss
+                        #     M = M - M.mean(dim=0, keepdim=True)
+                        #     geom_loss = etf_feature_loss(M)
+                        #     loss += self.geo_lamb * geom_loss
+                        #     print(f"Geometric loss (second to last layer): {geom_loss.item()}")
         ## Enforce theta to be close to binary values (0 or 1) to encourage quantization grid snapping
         binary_reg = 0
         for module in self.stage_q.modules():
@@ -1958,42 +2084,43 @@ class BlockReconstructionObjective(nn.Module):
                     Theta = torch.clip(torch.sigmoid(module.Theta)*1.2 -.1, 0.0, 1.0)
                     W_quant = module.s * (module.Q + Theta)
                     break
-            if W_quant is not None:
+            # if W_quant is not None:
                 # Find the first Conv2d/Linear weight tensor inside the floating-point
                 # stage module. Some stages may be single layers (Linear/Conv2d)
                 # or containers (Sequential). Using indexed access like
                 # ``self.stage_fp[0]`` fails when the stage is a leaf module.
-                W_fp = None
-                for m in self.stage_fp.modules():
-                    if isinstance(m, (nn.Conv2d, nn.Linear)):
-                        W_fp = m.weight.data
-                        break
-                if W_fp is None:
-                    raise RuntimeError("No Conv2d or Linear layer found in stage_fp for geometric regularizer")
+                # W_fp = None
+                # for m in self.stage_fp.modules():
+                #     if isinstance(m, (nn.Conv2d, nn.Linear)):
+                #         W_fp = m.weight.data
+                #         break
+                # if W_fp is None:
+                #     raise RuntimeError("No Conv2d or Linear layer found in stage_fp for geometric regularizer")
 
-                # Flatten per-output weights when needed and compute Gram from
-                # the masked flattened weights so dimensions line up.
-                W_fp_flat = W_fp.view(W_fp.size(0), -1)
-                W_q_flat = W_quant.view(W_quant.size(0), -1)
+                # # Flatten per-output weights when needed and compute Gram from
+                # # the masked flattened weights so dimensions line up.
+                # W_fp_flat = W_fp.view(W_fp.size(0), -1)
+                # W_q_flat = W_quant.view(W_quant.size(0), -1)
 
-                # Build mask with same flattened shape (per-output element mask)
-                if hasattr(module_q, 'mask'):
-                    mask = module_q.mask.view(W_q_flat.size(0), -1).to(W_q_flat.device)
-                else:
-                    mask = torch.ones_like(W_q_flat)
+                # # Build mask with same flattened shape (per-output element mask)
+                # if hasattr(module_q, 'mask'):
+                #     mask = module_q.mask.view(W_q_flat.size(0), -1).to(W_q_flat.device)
+                # else:
+                #     mask = torch.ones_like(W_q_flat)
 
-                # Apply mask elementwise to flattened weights, then compute Gram
-                W_fp_masked = W_fp_flat * mask
-                W_q_masked = W_q_flat * mask
+                # # Apply mask elementwise to flattened weights, then compute Gram
+                # W_fp_masked = W_fp_flat * mask
+                # W_q_masked = W_q_flat * mask
 
-                K = W_fp_masked @ W_fp_masked.t()
-                M = W_q_masked @ W_q_masked.t()
+                # K = W_fp_masked @ W_fp_masked.t()
+                # M = W_q_masked @ W_q_masked.t()
 
-                K = K / (sqrt(K.shape[0] * K.shape[1]))
-                M = M / (sqrt(M.shape[0] * M.shape[1]))
-                geom_loss = torch.norm(K - M, p="fro") ** 2
-                print(f"Geometric loss: {geom_loss.item()}")
-                loss += self.geo_lamb * geom_loss
+                # K = K / (sqrt(K.shape[0] * K.shape[1]))
+                # M = M / (sqrt(M.shape[0] * M.shape[1]))
+                # geom_loss = torch.norm(K - M, p="fro") ** 2
+                # geom_loss = etf_weight_loss(W_quant)
+                # print(f"Geometric loss: {geom_loss.item()}")
+                # loss += self.geo_lamb * geom_loss
         return loss
 
 def copy_quant_block_to_model(model, stage_name, block_q):
@@ -2009,16 +2136,17 @@ def copy_quant_block_to_model(model, stage_name, block_q):
 
 def get_module_by_name(model, name):
     """
-    Retrieve a submodule from a model using its dotted path name.
-    Example: 'features.denseblock4.denselayer16.conv2'
+    Retrieve a submodule from a model using its dotted path name.  This
+    understands integer components (e.g. 'layer3.0.conv1') by delegating to
+    ``_get_module`` which already implements the logic.
     """
-    module = model
     if name == "":
-        return module
-
-    for attr in name.split("."):
-        module = getattr(module, attr)
-    return module
+        return model
+    try:
+        return _get_module(model, name)
+    except Exception as e:
+        # propagate as AttributeError to match previous behaviour
+        raise AttributeError(str(e))
 
 
 def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
@@ -2035,13 +2163,14 @@ def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
     for stage_name, block_fp in blocks:
         print(f"Processing block: {stage_name}")
         block_q = quantize_module(block_fp, bitwidth)
+        copy_quant_block_to_model(quant_model, stage_name, block_q)
         # debug: list all trainable parameters in the quantized block
-        print(f"Parameters in quant block before optimization: ")
-        for name_p, p in block_q.named_parameters():
-            print(f"  {name_p}: requires_grad={p.requires_grad} shape={tuple(p.shape)}")
+        # print(f"Parameters in quant block before optimization: ")
+        # for name_p, p in block_q.named_parameters():
+        #     print(f"  {name_p}: requires_grad={p.requires_grad} shape={tuple(p.shape)}")
         # pass block_fp itself because ``stage_name`` may be a synthetic
         # identifier that doesn't exist as a submodule (e.g. "last_dense_stitched").
-        cached_inputs = cache_block_inputs(model, block_fp, dataloader, device)
+        cached_inputs, targets = cache_block_inputs(model, block_fp, dataloader, device)
 
         # Compute per-layer input covariances and output curvatures by extracting
         # activations for each Conv/Linear module within the block.
@@ -2057,21 +2186,14 @@ def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
                     cached_inputs
                 )
 
-                # ---- Compute output curvature (MUST use real module inside model) ----
+                # ---- Output curvature (must use real model module) ----
                 full_name = stage_name if name_m == "" else f"{stage_name}.{name_m}"
 
                 try:
                     m_model = get_module_by_name(model, full_name)
                 except AttributeError:
                     raise RuntimeError(
-                        f"Failed to locate module '{full_name}' inside model. "
-                        f"Block stitching likely changed structure."
-                    )
-
-                # Safety check
-                if not any(m_model is m for m in model.modules()):
-                    raise RuntimeError(
-                        f"Module '{full_name}' is not part of model graph."
+                        f"Failed to locate module '{full_name}' inside model."
                     )
 
                 Sigma_g_dict[name_m] = estimate_output_curvature(
@@ -2080,13 +2202,29 @@ def geometry_aware_rounding_BRECQ(model, dataloader, device, bitwidth=8):
                     dataloader,
                     device
                 )
+        Sigma_dict_q={}
+        if stage_name == second_to_last_stage_name:
+            for name_m, m_fp in block_q.named_modules():
+
+                if isinstance(m_fp, (nn.Conv2d, nn.Linear)):
+
+                    # ---- Compute input covariance (local block OK) ----
+                    Sigma_dict_q[name_m] = compute_input_covariance_blocks(
+                        m_fp,
+                        cached_inputs
+                    )
 
         objective = BlockReconstructionObjective(
+            model,
+            quant_model,
+            dataloader,
             block_fp,
             block_q,
             cached_inputs,
-            lamb,
+            targets=targets,
+            lamb=lamb,
             Cx=Sigma_dict,
+            Cx_quant=Sigma_dict_q if stage_name == second_to_last_stage_name else None,
             Cg=Sigma_g_dict,
             second_to_last_layer=(stage_name == second_to_last_stage_name),
             last_layer=(stage_name == last_stage_name),

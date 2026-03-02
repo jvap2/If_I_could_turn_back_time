@@ -10,6 +10,7 @@ from rcnet import create_lenet5
 from resnet import resnet56 , resnet32
 from models import vgg19
 import torch
+import os
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
 
@@ -323,7 +324,6 @@ for name in mask:
 import torch
 torch.cuda.empty_cache()
 quant_model = geometry_aware_rounding_BRECQ(reg_model, val_dataloader, device=device, bitwidth=bitwidth)
-
 
 TestNetwork(quant_model, val_dataset, filepath=accuracy_geometry_filename)
 '''Print out the model details after geometry-aware quantization to see if there are any changes in bitwidths'''
