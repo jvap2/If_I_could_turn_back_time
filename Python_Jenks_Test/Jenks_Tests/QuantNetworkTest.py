@@ -16,8 +16,8 @@ data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
 geometry = True
 bitwidth = 8
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-net = networks[-1]
-data = data[3]
+net = networks[2]
+data = data[1]
 
 if net == "LeNet5":
     model = QuantLeNet5()
