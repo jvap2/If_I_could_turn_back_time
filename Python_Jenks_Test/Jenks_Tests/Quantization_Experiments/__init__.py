@@ -17,8 +17,15 @@ from .utils import (
     symmetric_uniform_quantize_network,
     geometry_aware_rounding,
     geometry_aware_rounding_v2,
-    geometry_aware_rounding_BRECQ
+    geometry_aware_rounding_BRECQ,
+    cache_block_inputs
 )
+
+
+from .brecq import(
+    brecq_quantize
+)
+
 
 from .layers import QuantLinear, QuantConv2d
 __all__ = [
@@ -36,6 +43,8 @@ __all__ = [
     'symmetric_uniform_quantize_network',
     'geometry_aware_rounding',
     'geometry_aware_rounding_v2',
-    'geometry_aware_rounding_BRECQ'
+    'geometry_aware_rounding_BRECQ',
+    'brecq_quantize',
+    'cache_block_inputs'
 ]
 

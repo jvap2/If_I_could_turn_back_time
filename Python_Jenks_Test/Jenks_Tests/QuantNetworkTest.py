@@ -1,4 +1,4 @@
-from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2, geometry_aware_rounding_BRECQ
+from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2, geometry_aware_rounding_BRECQ, brecq_quantize
 from torchvision import datasets, transforms
 from utils import RandomContrast, RandomGamma, TinyImageNetDataset
 from Quantization_Experiments.utils import QuantNetwork
@@ -13,11 +13,11 @@ import torch
 import os
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
-
+geometry = True
 bitwidth = 8
-
-net = networks[2]
-data = data[1]
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net = networks[-1]
+data = data[3]
 
 if net == "LeNet5":
     model = QuantLeNet5()
@@ -94,12 +94,18 @@ folder_name = f"Quantization_Experiments/{net}_{data}/{bitwidth}_bit"
 import os
 os.makedirs(folder_name, exist_ok=True)
 bitwidth_filename = f"{folder_name}/{net}_{data}_bitwidths.txt"
-bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_GAQ.txt"
+if geometry==False:
+    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_BRECQ.txt"
+else:
+    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_GAQ.txt"
 accuracy_filename = f"{folder_name}/{net}_{data}_accuracy.txt"
-accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_GAQ.txt"
+if geometry==False:
+    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_BRECQ.txt"
+else:
+    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_GAQ.txt"
 theta_filename = f"{folder_name}/{net}_{data}_theta_values.txt"
 pruned_filename = f"{folder_name}/{net}_{data}_pruned_weights.txt"
-
+reg_model.to(device=device)
 reg_model.load_state_dict(torch.load(saved_dict))
 for name, module in reg_model.named_modules():
     if isinstance(module, (nn.Conv2d, nn.Linear)):
@@ -323,8 +329,8 @@ for name in mask:
     mask[name] = mask[name].to(device)
 import torch
 torch.cuda.empty_cache()
-quant_model = geometry_aware_rounding_BRECQ(reg_model, val_dataloader, device=device, bitwidth=bitwidth)
-
+# quant_model = geometry_aware_rounding_BRECQ(reg_model, val_dataloader, device=device, name=net, bitwidth=bitwidth)
+quant_model = brecq_quantize(model=reg_model, calibration_loader=val_dataloader, name=net,bitwidth=bitwidth, geometry = geometry)
 TestNetwork(quant_model, val_dataset, filepath=accuracy_geometry_filename)
 '''Print out the model details after geometry-aware quantization to see if there are any changes in bitwidths'''
 for name, module in quant_model.named_modules():
