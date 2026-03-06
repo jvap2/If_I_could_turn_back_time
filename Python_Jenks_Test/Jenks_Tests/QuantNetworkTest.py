@@ -1,4 +1,4 @@
-from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2, geometry_aware_rounding_BRECQ, brecq_quantize
+from Quantization_Experiments import QuantLeNet5, QuantLeNet300, Quantdensenet40, Quantresnet56, Quantresnet32, quantvgg19,Torch_to_Brevitas, apply_geometry_aware_quantization, symmetric_uniform_quantize_network, geometry_aware_rounding, geometry_aware_rounding_v2, geometry_aware_rounding_BRECQ, brecq_quantize, test_vis
 from torchvision import datasets, transforms
 from utils import RandomContrast, RandomGamma, TinyImageNetDataset
 from Quantization_Experiments.utils import QuantNetwork
@@ -13,8 +13,8 @@ import torch
 import os
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
-geometry = True
-bitwidth = 8
+geometry = False
+bitwidth = 2
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net = networks[2]
 data = data[1]
@@ -105,13 +105,14 @@ else:
     accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_GAQ.txt"
 theta_filename = f"{folder_name}/{net}_{data}_theta_values.txt"
 pruned_filename = f"{folder_name}/{net}_{data}_pruned_weights.txt"
+visual_filename = f"{folder_name}/{net}_{data}_data_visuals.png"
 reg_model.to(device=device)
 reg_model.load_state_dict(torch.load(saved_dict))
 for name, module in reg_model.named_modules():
     if isinstance(module, (nn.Conv2d, nn.Linear)):
         print(f"Quantized Weights of {name}: {module.weight}", file=open(pruned_filename, "a"))
 model = Torch_to_Brevitas(model,saved_dict)
-
+test_vis(reg_model,visual_filename)
 TinyImageNet_PATH = "./datasets/tiny-imagenet-200/"
 CIFAR10_PATH = "./datasets"  # 'cifar10' , 'cifar100', 'tiny_imagenet'
 if datasets_name == 'tiny_imagenet':
@@ -335,4 +336,4 @@ TestNetwork(quant_model, val_dataset, filepath=accuracy_geometry_filename)
 '''Print out the model details after geometry-aware quantization to see if there are any changes in bitwidths'''
 for name, module in quant_model.named_modules():
     if isinstance(module, (nn.Conv2d, nn.Linear)):
-        print(f"Quantized Weights of {name}: {module.weight}", file=open(bitwidth_geometry_filename, "a"))
+        print(f"Quantized Weights of {name}: {module.weight_quantizer()}", file=open(bitwidth_geometry_filename, "a"))

@@ -27,6 +27,10 @@ from .brecq import(
 )
 
 
+from .frequency_geometry import(
+    test_vis
+)
+
 from .layers import QuantLinear, QuantConv2d
 __all__ = [
 	'QuantLeNet5',
@@ -46,5 +50,6 @@ __all__ = [
     'geometry_aware_rounding_BRECQ',
     'brecq_quantize',
     'cache_block_inputs'
+    'test_vis'
 ]
 
