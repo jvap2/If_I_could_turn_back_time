@@ -6,6 +6,59 @@ import copy
 from densenet import DenseBlock, TransitionBlock, BottleneckBlock, BasicBlock
 from resnet import BasicBlock as ResNetBasicBlock
 
+
+
+
+def generate_fourier_probe(shape, freq_x, freq_y):
+
+    B, C, H, W = shape
+
+    x = torch.arange(W).float()
+    y = torch.arange(H).float()
+
+    grid_x, grid_y = torch.meshgrid(x, y, indexing="xy")
+
+    probe = torch.sin(
+        2 * math.pi * (
+            freq_x * grid_x / W +
+            freq_y * grid_y / H
+        )
+    )
+
+    probe = probe.unsqueeze(0).unsqueeze(0)
+    probe = probe.repeat(B, C, 1, 1)
+
+    return probe
+
+def fourier_probe_loss(block_fp, block_q, freqs=None):
+
+    loss = 0
+    if freqs==None:
+        freqs = [
+    (0,0),
+    (1,0),
+    (0,1),
+    (2,0),
+    (0,2),
+    (1,1),]  
+    for (name_fp, layer_fp), (name_q, layer_q) in zip(
+        block_fp.named_modules(), block_q.named_modules()
+    ):
+        if isinstance(layer_fp, torch.nn.Conv2d) and isinstance(layer_q, torch.nn.Conv2d):
+            shape = layer_fp.shape
+            for fx, fy in freqs:
+
+                probe = generate_fourier_probe(shape, fx, fy).to(layer_fp.weight.device)
+
+                with torch.no_grad():
+                    y_fp = layer_fp(probe)
+
+                y_q = layer_q(probe)
+
+                loss += torch.mean((y_q - y_fp)**2)
+
+    return loss / len(freqs)
+
 class UniformAffineQuantizer(nn.Module):
     def __init__(self, bitwidth=8, per_channel=True, symmetric=True):
         super().__init__()
@@ -77,6 +130,7 @@ class AdaRoundQuantizer(nn.Module):
     def forward(self):
         delta = self.quantizer.delta
         s = torch.sigmoid(self.alpha).to(device=self.device)
+        s = torch.clamp(s*1.2-.1,0,1)
         # print(s.device)
         # print(self.W_floor.device)
         # print(self.mask.device)
@@ -94,6 +148,64 @@ def block_reconstruction_loss(block_fp, block_q, inputs):
     output = block_q(inputs)
 
     return F.mse_loss(output, target)
+
+
+
+def spectral_distortion_block(block_fp, block_q):
+    """
+    Compute spectral distortion between a floating point block
+    and its quantized counterpart.
+
+    block_fp : original block
+    block_q  : quantized block (with AdaRound weights)
+    """
+
+    total_error = 0.0
+    n_layers = 0
+
+    for (name_fp, mod_fp), (name_q, mod_q) in zip(
+        block_fp.named_modules(), block_q.named_modules()
+    ):
+
+        if isinstance(mod_fp, nn.Conv2d) and isinstance(mod_q, nn.Conv2d) and hasattr(mod_q, "weight_quantizer"):
+
+            W_fp = mod_fp.weight
+            W_q = mod_q.weight_quantizer()
+
+            # fft_fp = torch.fft.fftshift(
+            #     torch.fft.fft2(W_fp, dim=(-2,-1)),
+            #     dim=(-2,-1)
+            # )
+
+            # fft_q = torch.fft.fftshift(
+            #     torch.fft.fft2(W_q, dim=(-2,-1)),
+            #     dim=(-2,-1)
+            # )
+            fft_fp = torch.fft.fftn(W_fp, dim=(-2,-1))
+            fft_q  = torch.fft.fftn(W_q, dim=(-2,-1))
+
+            power_fp = torch.abs(fft_fp)**2
+            power_q = torch.abs(fft_q)**2
+            # error = torch.abs(fft_q - fft_fp) ** 2
+            error = torch.mean((power_fp-power_q)**2)
+            # print("Spec Error from function:", error)
+
+            # total_error += error.mean()
+            total_error +=error
+            n_layers += 1
+
+    if n_layers == 0:
+        # Find a module with weight_quantizer to get device
+        device = None
+        for module in block_q.modules():
+            if hasattr(module, "weight_quantizer"):
+                device = module.weight_quantizer.quantizer.delta.device
+                break
+        if device is None:
+            device = torch.device("cpu")
+        return torch.tensor(0.0, device=device)
+
+    return total_error / n_layers
 
 def block_reconstruction_loss_opt(target, block_q, inputs):
     output = block_q(inputs)
@@ -149,13 +261,27 @@ def nc_alignment_loss_v2(W, M):
     return torch.norm(Wn - Mn, p='fro')**2
 
 def geometry_preserve_original_weights_v2(fp_module, quant_module):
-    W_fp = fp_module.weight
-    W_quant = quant_module.weight_quantizer()
-    Wc_fp = W_fp -W_fp.mean(dim=1, keepdim=True)
-    Wc_quant = W_quant - W_quant.mean(dim=1, keepdim=True)
-    G_fp = Wc_fp @ Wc_fp.T
-    G_quant = Wc_quant @ Wc_quant.T
-    return torch.norm(G_fp - G_quant, p='fro')**2
+    total_loss = 0.0
+    n_layers = 0
+    
+    # Handle both single layer modules and composite blocks
+    for (name_fp, mod_fp), (name_q, mod_q) in zip(
+        fp_module.named_modules(), quant_module.named_modules()
+    ):
+        if isinstance(mod_fp, (nn.Conv2d, nn.Linear)) and isinstance(mod_q, (nn.Conv2d, nn.Linear)) and hasattr(mod_q, "weight_quantizer"):
+            W_fp = mod_fp.weight
+            W_quant = mod_q.weight_quantizer()
+            Wc_fp = W_fp - W_fp.mean(dim=1, keepdim=True)
+            Wc_quant = W_quant - W_quant.mean(dim=1, keepdim=True)
+            G_fp = Wc_fp @ Wc_fp.T
+            G_quant = Wc_quant @ Wc_quant.T
+            total_loss += torch.norm(G_fp - G_quant, p='fro')**2
+            n_layers += 1
+    
+    if n_layers == 0:
+        return torch.tensor(0.0, device=next(quant_module.parameters()).device)
+    
+    return total_loss / n_layers
 
 def anneal_lambda(lamb_max, progress):
     lambda_t = lamb_max * 0.5 * (1 - math.cos(math.pi * progress))
@@ -166,8 +292,8 @@ def anneal_beta(progress,beta_start,beta_end):
     beta_t = beta_start + (beta_end - beta_start) * \
             0.5 * (1 - math.cos(math.pi * progress))
     return beta_t
-def reconstruct_block(block_fp, block_q, inputs, last_layer=False,
-                      iters=2000, lr=1e-3):
+def reconstruct_block(block_fp, block_q, inputs, last_layer=False, geometry=False,
+                      iters=3000, lr=1e-3):
 
     optimizer = torch.optim.Adam(block_q.parameters(), lr=lr)
     lamb = 5e-4
@@ -191,22 +317,27 @@ def reconstruct_block(block_fp, block_q, inputs, last_layer=False,
             lambda_t = 0
             beta_t = beta
         else:
-            progress = progress = (i - warmup) / (iters - warmup)
+            progress = (i - warmup) / (iters - warmup)
             lambda_t = anneal_lambda(lamb,progress=progress)
             beta_t = anneal_beta(progress,beta,beta_final)
         loss_reg = block_regularization_loss(block_q,lambda_t,beta_t)
         if i%100==0:
             print("Reconstruction Loss", loss.item())
             print("Regularization Loss:", loss_reg.item())
-        loss+=loss_reg
+        if geometry:
+            loss_spec = spectral_distortion_block(block_fp,block_q)
+            if i%100==0:
+                print("Spectral Loss:",loss_spec.item())
+            loss += beta_t*loss_spec
         if last_layer:
             ## Perform Geometric term
             # loss_geo = etf_weight_loss_v3(block_q)
-            loss = geometry_preserve_original_weights_v2(block_fp,block_q)
+            loss_geo = geometry_preserve_original_weights_v2(block_fp,block_q)
             # loss_geo = nc_alignment_loss_v2(block_q,inputs)
             if i%100 ==0:
-                print("Geometric loss:",loss.item())
-            loss += loss_reg
+                print("Geometric loss:",loss_geo.item())
+            loss += beta_t*loss_geo
+        loss += loss_reg
         loss.backward()
         optimizer.step()
 
@@ -541,9 +672,9 @@ def brecq_quantize(model, calibration_loader,name,bitwidth, geometry=False):
 
         block_q = copy_block_with_quantizers(block, bitwidth=bitwidth)
         if geometry==False:
-            reconstruct_block(block, block_q, inputs,geometry)
+            reconstruct_block(block, block_q, inputs, last_layer=False,geometry=geometry)
         else:
-            reconstruct_block(block, block_q, inputs,name==last_name)
+            reconstruct_block(block, block_q, inputs,name==last_name, geometry=geometry)
 
         apply_bias_correction(block, block_q, inputs)
 

@@ -14,9 +14,9 @@ import os
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
 geometry = False
-bitwidth = 2
+bitwidth = 6
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-net = networks[2]
+net = networks[-1]
 data = data[1]
 
 if net == "LeNet5":
@@ -316,7 +316,7 @@ log_data.to_csv(f"{folder_name}/log_dynamic_ranges_{net}.csv", index=False)
 
 
 ''' Now we want to apply the geometry-aware quantization to see if it improves the accuracy. Use a smaller calibration batch size to reduce memory.'''
-val_dataloader = DataLoader(val_dataset, batch_size=512, shuffle=False, num_workers=2, pin_memory=True)
+val_dataloader = DataLoader(val_dataset, batch_size=1024, shuffle=False, num_workers=2, pin_memory=True)
 '''We need to get the mask from pruning from the reg model to multiply it with the quantized weights to make sure we are only quantizing the non-zero weights. We can use the state_dict of the reg model to get the masks.'''
 '''Iterate through the layers and set the mask to one if a value is non-zero and zero if it is zero. Then we can apply the geometry-aware quantization to the quantized model using the masks.'''
 mask = {}
