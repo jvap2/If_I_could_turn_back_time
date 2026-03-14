@@ -31,6 +31,12 @@ from .frequency_geometry import(
     test_vis
 )
 
+
+from .experimental import (
+    gram_operator_loss,
+    
+)
+
 from .layers import QuantLinear, QuantConv2d
 __all__ = [
 	'QuantLeNet5',

@@ -14,10 +14,11 @@ import os
 networks = ["LeNet5", "LeNet300", "DenseNet40", "ResNet56", "VGG19", "ResNet32"]
 data = ["MNIST", "CIFAR10", "CIFAR100", "tiny_imagenet"]
 geometry = False
-bitwidth = 6
+batch_size = 256
+bitwidth = 2
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net = networks[-1]
-data = data[1]
+data = data[2]
 
 if net == "LeNet5":
     model = QuantLeNet5()
@@ -95,14 +96,14 @@ import os
 os.makedirs(folder_name, exist_ok=True)
 bitwidth_filename = f"{folder_name}/{net}_{data}_bitwidths.txt"
 if geometry==False:
-    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_BRECQ.txt"
+    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_BRECQ_{batch_size}.txt"
 else:
-    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_GAQ.txt"
+    bitwidth_geometry_filename = f"{folder_name}/{net}_{data}_bitwidths_after_GAQ_{batch_size}.txt"
 accuracy_filename = f"{folder_name}/{net}_{data}_accuracy.txt"
 if geometry==False:
-    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_BRECQ.txt"
+    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_BRECQ_{batch_size}.txt"
 else:
-    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_GAQ.txt"
+    accuracy_geometry_filename = f"{folder_name}/{net}_{data}_accuracy_after_GAQ_{batch_size}.txt"
 theta_filename = f"{folder_name}/{net}_{data}_theta_values.txt"
 pruned_filename = f"{folder_name}/{net}_{data}_pruned_weights.txt"
 visual_filename = f"{folder_name}/{net}_{data}_data_visuals.png"
@@ -316,7 +317,7 @@ log_data.to_csv(f"{folder_name}/log_dynamic_ranges_{net}.csv", index=False)
 
 
 ''' Now we want to apply the geometry-aware quantization to see if it improves the accuracy. Use a smaller calibration batch size to reduce memory.'''
-val_dataloader = DataLoader(val_dataset, batch_size=1024, shuffle=False, num_workers=2, pin_memory=True)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
 '''We need to get the mask from pruning from the reg model to multiply it with the quantized weights to make sure we are only quantizing the non-zero weights. We can use the state_dict of the reg model to get the masks.'''
 '''Iterate through the layers and set the mask to one if a value is non-zero and zero if it is zero. Then we can apply the geometry-aware quantization to the quantized model using the masks.'''
 mask = {}

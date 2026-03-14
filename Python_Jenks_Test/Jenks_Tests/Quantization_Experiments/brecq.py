@@ -9,55 +9,6 @@ from resnet import BasicBlock as ResNetBasicBlock
 
 
 
-def generate_fourier_probe(shape, freq_x, freq_y):
-
-    B, C, H, W = shape
-
-    x = torch.arange(W).float()
-    y = torch.arange(H).float()
-
-    grid_x, grid_y = torch.meshgrid(x, y, indexing="xy")
-
-    probe = torch.sin(
-        2 * math.pi * (
-            freq_x * grid_x / W +
-            freq_y * grid_y / H
-        )
-    )
-
-    probe = probe.unsqueeze(0).unsqueeze(0)
-    probe = probe.repeat(B, C, 1, 1)
-
-    return probe
-
-def fourier_probe_loss(block_fp, block_q, freqs=None):
-
-    loss = 0
-    if freqs==None:
-        freqs = [
-    (0,0),
-    (1,0),
-    (0,1),
-    (2,0),
-    (0,2),
-    (1,1),]  
-    for (name_fp, layer_fp), (name_q, layer_q) in zip(
-        block_fp.named_modules(), block_q.named_modules()
-    ):
-        if isinstance(layer_fp, torch.nn.Conv2d) and isinstance(layer_q, torch.nn.Conv2d):
-            shape = layer_fp.shape
-            for fx, fy in freqs:
-
-                probe = generate_fourier_probe(shape, fx, fy).to(layer_fp.weight.device)
-
-                with torch.no_grad():
-                    y_fp = layer_fp(probe)
-
-                y_q = layer_q(probe)
-
-                loss += torch.mean((y_q - y_fp)**2)
-
-    return loss / len(freqs)
 
 class UniformAffineQuantizer(nn.Module):
     def __init__(self, bitwidth=8, per_channel=True, symmetric=True):
@@ -661,6 +612,27 @@ def cache_block_input(model, block, loader, device, num_batches=2):
 
 def brecq_quantize(model, calibration_loader,name,bitwidth, geometry=False):
 
+    iters = 2000
+    if bitwidth==2:
+        if geometry ==True:
+            iters=600
+        else:
+            iters=800
+    elif bitwidth ==4:
+        if geometry ==True:
+            iters=1200
+        else:
+            iters=1600
+    elif bitwidth ==6:
+        if geometry ==True:
+            iters=1800
+        else:
+            iters=2400
+    elif bitwidth ==8:
+        if geometry ==True:
+            iters=2400
+        else:
+            iters=3200
     model.eval()
     device = next(model.parameters()).device
     print(device)
@@ -672,9 +644,9 @@ def brecq_quantize(model, calibration_loader,name,bitwidth, geometry=False):
 
         block_q = copy_block_with_quantizers(block, bitwidth=bitwidth)
         if geometry==False:
-            reconstruct_block(block, block_q, inputs, last_layer=False,geometry=geometry)
+            reconstruct_block(block, block_q, inputs, last_layer=False,geometry=geometry, iters=iters)
         else:
-            reconstruct_block(block, block_q, inputs,name==last_name, geometry=geometry)
+            reconstruct_block(block, block_q, inputs,name==last_name, geometry=geometry, iters=iters)
 
         apply_bias_correction(block, block_q, inputs)
 
