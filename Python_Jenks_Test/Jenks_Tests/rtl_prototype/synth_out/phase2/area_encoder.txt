@@ -1,0 +1,183 @@
+
+15. Printing statistics.
+
+=== gf4_activation_encoder ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+     8612        - wires
+     9394        - wire bits
+       65        - public wires
+      736        - public wire bits
+       18        - ports
+      140        - port bits
+     8653 1.18E+04 cells
+      318  338.352   AND2_X1
+      200      266   AND3_X1
+       72  114.912   AND4_X1
+       15    19.95   AOI211_X1
+      623  662.872   AOI21_X1
+       19   30.324   AOI221_X1
+       19   40.432   AOI222_X1
+      250    332.5   AOI22_X1
+      165    877.8   DFFR_X1
+      319 1.44E+03   DFF_X1
+      493  262.276   INV_X1
+      427  795.074   MUX2_X1
+     1556 1.24E+03   NAND2_X1
+      157  167.048   NAND3_X1
+       92   122.36   NAND4_X1
+      753  600.894   NOR2_X1
+       94  100.016   NOR3_X1
+       18    23.94   NOR4_X1
+       20     26.6   OAI211_X1
+      573  609.672   OAI21_X1
+       14   22.344   OAI221_X1
+       70     93.1   OAI22_X1
+        9   16.758   OAI33_X1
+      245   260.68   OR2_X1
+      222   295.26   OR3_X1
+        8   12.768   OR4_X1
+      992 1.58E+03   XNOR2_X1
+      910  1452.36   XOR2_X1
+        2        - submodules
+        1        -   $paramod$1521fe31dd94b0ec5010bf1c07f975a722eca990\gf4_isqrt
+        1        -   $paramod\gf4_sumsq\X_WIDTH=s32'00000000000000000000000000010000
+
+   Chip area for module '\gf4_activation_encoder': 11811.730000
+     of which used for sequential elements: 2320.318000 (19.64%)
+
+=== $paramod\gf4_sumsq\X_WIDTH=s32'00000000000000000000000000010000 ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+     1842        - wires
+     2020        - wire bits
+       11        - public wires
+      189        - public wire bits
+        7        - ports
+       53        - port bits
+     1831 2.34E+03 cells
+       80    85.12   AND2_X1
+       41    54.53   AND3_X1
+        4    6.384   AND4_X1
+        3     3.99   AOI211_X1
+      155   164.92   AOI21_X1
+       42    55.86   AOI22_X1
+       69   367.08   DFFR_X1
+      150     79.8   INV_X1
+        9   16.758   MUX2_X1
+      264  210.672   NAND2_X1
+       47   50.008   NAND3_X1
+        6     7.98   NAND4_X1
+      176  140.448   NOR2_X1
+       29   30.856   NOR3_X1
+        2     2.66   NOR4_X1
+        6     7.98   OAI211_X1
+      177  188.328   OAI21_X1
+       23    30.59   OAI22_X1
+        1    1.862   OAI33_X1
+       57   60.648   OR2_X1
+       43    57.19   OR3_X1
+        2    3.192   OR4_X1
+      282  450.072   XNOR2_X1
+      163  260.148   XOR2_X1
+
+   Chip area for module '$paramod\gf4_sumsq\X_WIDTH=s32'00000000000000000000000000010000': 2337.076000
+     of which used for sequential elements: 367.080000 (15.71%)
+
+=== $paramod$1521fe31dd94b0ec5010bf1c07f975a722eca990\gf4_isqrt ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+      376        - wires
+      584        - wire bits
+       15        - public wires
+      164        - public wire bits
+        7        - ports
+       53        - port bits
+      379  810.236 cells
+        7    7.448   AND2_X1
+        2     2.66   AND3_X1
+        1     1.33   AOI211_X1
+        6    6.384   AOI21_X1
+       30    63.84   AOI222_X1
+       22    29.26   AOI22_X1
+       89   473.48   DFFR_X1
+       58   30.856   INV_X1
+       19   35.378   MUX2_X1
+       28   22.344   NAND2_X1
+        1    1.064   NAND3_X1
+       29   23.142   NOR2_X1
+        4    4.256   NOR3_X1
+        2     2.66   OAI211_X1
+       38   40.432   OAI21_X1
+        1    1.596   OAI221_X1
+        3    5.586   OAI33_X1
+        7    7.448   OR2_X1
+       22   35.112   XNOR2_X1
+       10    15.96   XOR2_X1
+
+   Chip area for module '$paramod$1521fe31dd94b0ec5010bf1c07f975a722eca990\gf4_isqrt': 810.236000
+     of which used for sequential elements: 473.480000 (58.44%)
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+    10863  1.5E+04 gf4_activation_encoder
+      379  810.236 $paramod$1521fe31dd94b0ec5010bf1c07f975a722eca990\gf4_isqrt
+     1831 2.34E+03 $paramod\gf4_sumsq\X_WIDTH=s32'00000000000000000000000000010000
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+    10830        - wires
+    11998        - wire bits
+       91        - public wires
+     1089        - public wire bits
+       32        - ports
+      246        - port bits
+        -        - memories
+        -        - memory bits
+        -        - processes
+    10863  1.5E+04 cells
+      405   430.92   AND2_X1
+      243   323.19   AND3_X1
+       76  121.296   AND4_X1
+       19    25.27   AOI211_X1
+      784  834.176   AOI21_X1
+       19   30.324   AOI221_X1
+       49  104.272   AOI222_X1
+      314   417.62   AOI22_X1
+      323  1718.36   DFFR_X1
+      319 1.44E+03   DFF_X1
+      701  372.932   INV_X1
+      455   847.21   MUX2_X1
+     1848 1.47E+03   NAND2_X1
+      205   218.12   NAND3_X1
+       98   130.34   NAND4_X1
+      958  764.484   NOR2_X1
+      127  135.128   NOR3_X1
+       20     26.6   NOR4_X1
+       28    37.24   OAI211_X1
+      788  838.432   OAI21_X1
+       15    23.94   OAI221_X1
+       93   123.69   OAI22_X1
+       13   24.206   OAI33_X1
+      309  328.776   OR2_X1
+      265   352.45   OR3_X1
+       10    15.96   OR4_X1
+     1296 2.07E+03   XNOR2_X1
+     1083 1.73E+03   XOR2_X1
+        2 3.15E+03 submodules
+        1  810.236   $paramod$1521fe31dd94b0ec5010bf1c07f975a722eca990\gf4_isqrt
+        1 2.34E+03   $paramod\gf4_sumsq\X_WIDTH=s32'00000000000000000000000000010000
+
+   Chip area for top module '\gf4_activation_encoder': 14959.042000
+     of which used for sequential elements: 3160.878000 (21.13%)
+

@@ -1,0 +1,137 @@
+
+14. Printing statistics.
+
+=== gf4_block_scaled_mac ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+     7222        - wires
+     7567        - wire bits
+       26        - public wires
+      371        - public wire bits
+       15        - ports
+      134        - port bits
+     7228  8581.16 cells
+      277  294.728   AND2_X1
+      156   207.48   AND3_X1
+       29   46.284   AND4_X1
+        9    11.97   AOI211_X1
+      596  634.144   AOI21_X1
+        3    4.788   AOI221_X1
+       80    106.4   AOI22_X1
+      113   601.16   DFFR_X1
+      463  246.316   INV_X1
+       37   68.894   MUX2_X1
+     1204  960.792   NAND2_X1
+      199  211.736   NAND3_X1
+       13    17.29   NAND4_X1
+      921  734.958   NOR2_X1
+      132  140.448   NOR3_X1
+        9    11.97   NOR4_X1
+       17    22.61   OAI211_X1
+      528  561.792   OAI21_X1
+       64    85.12   OAI22_X1
+       12   22.344   OAI33_X1
+      277  294.728   OR2_X1
+      146   194.18   OR3_X1
+        2    3.192   OR4_X1
+     1095  1747.62   XNOR2_X1
+      846 1.35E+03   XOR2_X1
+        1        - submodules
+        1        -   $paramod$941518d7eb035a837d818a7c0b55768700f870cb\gf4_joint_product_table
+
+   Chip area for module '\gf4_block_scaled_mac': 8581.160000
+     of which used for sequential elements: 601.160000 (7.01%)
+
+=== $paramod$941518d7eb035a837d818a7c0b55768700f870cb\gf4_joint_product_table ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+     3936        - wires
+     5001        - wire bits
+       75        - public wires
+     1140        - public wire bits
+       11        - ports
+       52        - port bits
+     3879 8.88E+03 cells
+      143  152.152   AND2_X1
+       18    23.94   AND3_X1
+      139   184.87   AOI211_X1
+      107  113.848   AOI21_X1
+       14   22.344   AOI221_X1
+       14    18.62   AOI22_X1
+     1088 4.92E+03   DFF_X1
+       57   30.324   INV_X1
+     1217 2.27E+03   MUX2_X1
+       96   76.608   NAND2_X1
+       36   38.304   NAND3_X1
+        2     2.66   NAND4_X1
+      254  202.692   NOR2_X1
+       17   18.088   NOR3_X1
+      176   234.08   OAI211_X1
+      316  336.224   OAI21_X1
+       68  108.528   OAI221_X1
+       18    23.94   OAI22_X1
+       90    95.76   OR2_X1
+        8    10.64   OR3_X1
+        1    1.596   XOR2_X1
+
+   Chip area for module '$paramod$941518d7eb035a837d818a7c0b55768700f870cb\gf4_joint_product_table': 8881.208000
+     of which used for sequential elements: 4919.936000 (55.40%)
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+    11107 1.75E+04 gf4_block_scaled_mac
+     3879 8.88E+03 $paramod$941518d7eb035a837d818a7c0b55768700f870cb\gf4_joint_product_table
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+    11158        - wires
+    12568        - wire bits
+      101        - public wires
+     1511        - public wire bits
+       26        - ports
+      186        - port bits
+        -        - memories
+        -        - memory bits
+        -        - processes
+    11107 1.75E+04 cells
+      420   446.88   AND2_X1
+      174   231.42   AND3_X1
+       29   46.284   AND4_X1
+      148   196.84   AOI211_X1
+      703  747.992   AOI21_X1
+       17   27.132   AOI221_X1
+       94   125.02   AOI22_X1
+      113   601.16   DFFR_X1
+     1088 4.92E+03   DFF_X1
+      520   276.64   INV_X1
+     1254 2.33E+03   MUX2_X1
+     1300   1037.4   NAND2_X1
+      235   250.04   NAND3_X1
+       15    19.95   NAND4_X1
+     1175   937.65   NOR2_X1
+      149  158.536   NOR3_X1
+        9    11.97   NOR4_X1
+      193   256.69   OAI211_X1
+      844  898.016   OAI21_X1
+       68  108.528   OAI221_X1
+       82   109.06   OAI22_X1
+       12   22.344   OAI33_X1
+      367  390.488   OR2_X1
+      154   204.82   OR3_X1
+        2    3.192   OR4_X1
+     1095  1747.62   XNOR2_X1
+      847 1.35E+03   XOR2_X1
+        1 8.88E+03 submodules
+        1 8.88E+03   $paramod$941518d7eb035a837d818a7c0b55768700f870cb\gf4_joint_product_table
+
+   Chip area for top module '\gf4_block_scaled_mac': 17462.368000
+     of which used for sequential elements: 5521.096000 (31.62%)
+

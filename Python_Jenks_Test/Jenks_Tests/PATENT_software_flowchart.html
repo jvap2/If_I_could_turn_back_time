@@ -1,0 +1,81 @@
+<style>
+  :root { color-scheme: light; }
+  body { background:#fff; color:#111; font-family: Arial, Helvetica, sans-serif;
+         margin:0; padding:28px 18px; }
+  .sheet { max-width: 760px; margin:0 auto; }
+  h1 { font-size:19px; text-align:center; margin:0 0 4px; }
+  .sub { text-align:center; color:#555; font-size:12.5px; margin:0 0 22px; }
+  .phase { border:1.5px dashed #9aa; border-radius:10px; padding:14px 14px 6px;
+           margin:0 0 10px; }
+  .phase > .plabel { font-size:12px; font-weight:700; letter-spacing:.04em;
+           color:#334; text-transform:uppercase; margin:0 0 12px; }
+  .flow { display:flex; flex-direction:column; align-items:center; }
+  .box { width:82%; box-sizing:border-box; border:1.6px solid #33475b;
+         border-radius:8px; padding:9px 12px; font-size:13px; line-height:1.35;
+         background:#f6f8fb; text-align:center; }
+  .box .n { display:inline-block; min-width:20px; height:20px; line-height:20px;
+            border-radius:50%; background:#33475b; color:#fff; font-size:11px;
+            font-weight:700; margin-right:7px; }
+  .io { background:#eef2ee; border-color:#5a6b5a; border-radius:22px; width:72%; }
+  .store { background:#f2eef7; border-color:#6b5a7b; }
+  .key { background:#fff6e6; border:2.2px solid #d08a1a; }
+  .key .tag { display:block; font-size:10.5px; font-weight:700; color:#b9760f;
+              letter-spacing:.05em; text-transform:uppercase; margin-bottom:3px; }
+  .dec { width:74%; background:#eaf1f7; border:1.6px solid #33475b;
+         border-radius:8px; padding:9px 12px; font-size:13px; text-align:center;
+         transform:none; }
+  .arrow { width:0; height:16px; border-left:2px solid #7a8797; margin:3px 0; position:relative; }
+  .arrow:after { content:""; position:absolute; left:-4px; bottom:-1px;
+                 border:5px solid transparent; border-top-color:#7a8797; }
+  .albl { font-size:11px; color:#667; margin:-1px 0 2px; }
+  .loop { font-size:11.5px; color:#b9760f; font-weight:700; margin:2px 0 0; }
+  .foot { font-size:11px; color:#666; margin-top:14px; text-align:center; }
+</style>
+
+<div class="sheet">
+  <h1>Software Process Flowchart — Gaussian 4-bit (GF4) Quantized Inference</h1>
+  <p class="sub">Main steps performed by the software. Phase&nbsp;A prepares the model once; Phase&nbsp;B runs at inference, once per network layer.</p>
+
+  <div class="phase">
+    <p class="plabel">Phase A — Model Preparation &amp; Quantization&nbsp;&nbsp;(performed once)</p>
+    <div class="flow">
+      <div class="box io"><span class="n">1</span>Input: trained neural network &amp; a small calibration dataset</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">2</span>For each linear layer, generate a randomized orthogonal (Hadamard) rotation</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">3</span>Forward the calibration data; collect statistics of the <b>rotated</b> activations per layer (second-moment&nbsp;/&nbsp;Hessian and mean&nbsp;μ)</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">4</span>Rotate each layer's weights by the Hadamard transform and quantize the rotated weights to 4&nbsp;bits (per-block scaled), <b>stabilizing the fit with adaptive condition-number Hessian damping</b></div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">5</span>Compute the activation mean-correction (μ) and the corresponding bias-correction term</div>
+      <div class="arrow"></div>
+      <div class="box store"><span class="n">6</span>Store the compressed model: 4-bit weights, rotation, per-block scales, μ, bias-correction</div>
+    </div>
+  </div>
+
+  <div class="arrow"></div>
+
+  <div class="phase">
+    <p class="plabel">Phase B — Inference&nbsp;&nbsp;(repeated for each layer)</p>
+    <div class="flow">
+      <div class="box io"><span class="n">7</span>Receive the layer's input activations</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">8</span>Apply the Hadamard rotation to the activations</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">9</span>Subtract the activation mean μ</div>
+      <div class="arrow"></div>
+      <div class="box key"><span class="tag">Core step — GF4 look-up table</span><span class="n">10</span>Quantize the rotated activations to 4&nbsp;bits with the GF4 Gaussian codebook: normalize by a per-block scale, then map each value to the nearest of <b>8&nbsp;Gaussian-distributed magnitude levels + a sign bit</b> (a 4-bit code)</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">11</span>Perform the multiply-accumulate directly in the 4-bit domain (4-bit weights × 4-bit activations) via table-look-up decode</div>
+      <div class="arrow"></div>
+      <div class="box"><span class="n">12</span>Add the bias-correction and the layer bias to form the layer output</div>
+      <div class="arrow"></div>
+      <div class="dec"><span class="n">13</span>More layers remaining?</div>
+      <p class="loop">&#8635; Yes → advance to next layer (return to step&nbsp;7)</p>
+      <div class="arrow"></div>
+      <div class="box io">No → output the network's result</div>
+    </div>
+  </div>
+
+  <p class="foot">The GF4 look-up table (step&nbsp;10) is the central inventive step; the surrounding rotation, per-block scaling, and mean/bias corrections place it in context. Steps 3–5 (calibration &amp; condition-number-stabilized weight fit) enable robust 4-bit operation across model scale.</p>
+</div>

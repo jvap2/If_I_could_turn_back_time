@@ -80,6 +80,25 @@ def _mlp_skip(model_name):
 # RETAIN=0 disables outlier-layer retention (the without-retention ablation).
 RETAIN = os.environ.get("RETAIN", "1") != "0"
 
+# FP16_SKIP: comma-separated layer-name substrings forced to FP16, UNIONed on top
+# of _mlp_skip's MLP-output default. Empty (default) => the existing protocol, so
+# every prior result is byte-identical; this is an opt-in outlier-protection dial.
+# Motivation: on >6.7B emergent-outlier models (opt-13b) the ATTENTION-OUTPUT
+# projection out_proj/o_proj blows up in the Hadamard domain (recon max 0.5-0.7 vs
+# 0.06-0.2 elsewhere) and fc2-only protection is insufficient. Try:
+#   FP16_SKIP=out_proj            (OPT/GPT attn-out)  |  FP16_SKIP=o_proj (Llama)
+#   FP16_SKIP=out_proj,o_proj     (arch-agnostic, harmless if a name is absent)
+_FP16_SKIP_EXTRA = tuple(
+    s.strip() for s in os.environ.get("FP16_SKIP", "").split(",") if s.strip())
+
+
+def _skip_set():
+    """Full FP16-skip set for the current run: the per-arch MLP-output default
+    (only when RETAIN) plus any explicit FP16_SKIP additions, de-duplicated,
+    order preserved."""
+    base = _mlp_skip(MODEL) if RETAIN else ()
+    return tuple(dict.fromkeys(base + _FP16_SKIP_EXTRA))
+
 # Hadamard block size: "auto" (full-row padded Hadamard — best decorrelation, the
 # default that carries the main results) or an integer (e.g. 16, 32, 64) for the
 # hardware-local block-diagonal Hadamard. Smaller blocks are cheaper/local in
@@ -104,7 +123,7 @@ OFFLOAD = os.environ.get("OFFLOAD", "0") != "0"
 
 
 def build(model, calib):
-    skip = _mlp_skip(MODEL) if RETAIN else ()
+    skip = _skip_set()
     return quantize_model_fp(
         model, calib, block_size=BS, e_bits=E_B, m_bits=M_B,
         e_bits_scale=E_S, m_bits_scale=M_S, device=DEV,
@@ -115,7 +134,7 @@ def build(model, calib):
 
 
 def main():
-    skip = _mlp_skip(MODEL) if RETAIN else ()
+    skip = _skip_set()
     print(f"[iso-energy] MODEL={MODEL}  RETAIN={RETAIN}  HAD_BS={HAD_BS}  "
           f"LEAN={LEAN}  OFFLOAD={OFFLOAD}  (skip {skip} -> FP16)")
     tok = AutoTokenizer.from_pretrained(MODEL)
@@ -272,7 +291,7 @@ def main():
             sc[(K, N)] = sc.get((K, N), 0) + 1
     cfg = m.config
     export = {"model": MODEL, "seqlen": SEQLEN, "block_size": BS,
-              "skipped_fp16": list(_mlp_skip(MODEL)),
+              "skipped_fp16": list(_skip_set()),
               "config": {"hidden_size": getattr(cfg, "hidden_size", None),
                          "intermediate_size": getattr(cfg, "intermediate_size",
                                                       getattr(cfg, "ffn_dim", None)),

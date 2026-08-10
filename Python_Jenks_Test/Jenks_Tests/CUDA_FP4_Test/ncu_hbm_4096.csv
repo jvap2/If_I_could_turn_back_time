@@ -1,0 +1,10 @@
+==PROF== Connected to process 3645777 (/usr/bin/python3.10)
+Profiled one fused_gemv call and one naive_gemv call at M=4096, K=4096. Run this under ncu (see this file's docstring) to get real HBM traffic numbers.
+==PROF== Disconnected from process 3645777
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","3645777","python3.10","127.0.0.1","e2m1_fused_wonly_gemv_kernel(const unsigned char *, const __half *, const unsigned char *, const __half *, __half *, int, int, const float *)","1","7","(256, 1, 1)","(512, 1, 1)","0","8.9","Command line profiler metrics","dram__bytes_read.sum","byte","11,551,616"
+"0","3645777","python3.10","127.0.0.1","e2m1_fused_wonly_gemv_kernel(const unsigned char *, const __half *, const unsigned char *, const __half *, __half *, int, int, const float *)","1","7","(256, 1, 1)","(512, 1, 1)","0","8.9","Command line profiler metrics","dram__bytes_write.sum","byte","0"
+"1","3645777","python3.10","127.0.0.1","e2m1_dequantize_to_fp16_kernel(const unsigned char *, const __half *, const unsigned char *, __half *, int, int)","1","7","(256, 1, 1)","(8, 4096, 1)","0","8.9","Command line profiler metrics","dram__bytes_read.sum","byte","11,550,848"
+"1","3645777","python3.10","127.0.0.1","e2m1_dequantize_to_fp16_kernel(const unsigned char *, const __half *, const unsigned char *, __half *, int, int)","1","7","(256, 1, 1)","(8, 4096, 1)","0","8.9","Command line profiler metrics","dram__bytes_write.sum","byte","569,472"
+"2","3645777","python3.10","127.0.0.1","fp16_dense_gemv_kernel(const __half *, const __half *, __half *, int, int, const float *)","1","7","(256, 1, 1)","(512, 1, 1)","0","8.9","Command line profiler metrics","dram__bytes_read.sum","byte","33,568,896"
+"2","3645777","python3.10","127.0.0.1","fp16_dense_gemv_kernel(const __half *, const __half *, __half *, int, int, const float *)","1","7","(256, 1, 1)","(512, 1, 1)","0","8.9","Command line profiler metrics","dram__bytes_write.sum","byte","0"

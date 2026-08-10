@@ -1,0 +1,116 @@
+
+15. Printing statistics.
+
+=== gf4_pe ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+      784        - wires
+      882        - wire bits
+       16        - public wires
+      114        - public wire bits
+       10        - ports
+       60        - port bits
+      768   968.24 cells
+       44   46.816   AND2_X1
+        7     9.31   AND3_X1
+        3    4.788   AND4_X1
+        3     3.99   AOI211_X1
+       62   65.968   AOI21_X1
+       11    14.63   AOI22_X1
+       32   170.24   DFFR_X1
+       56   29.792   INV_X1
+        2    3.724   MUX2_X1
+      131  104.538   NAND2_X1
+       24   25.536   NAND3_X1
+        2     2.66   NAND4_X1
+       84   67.032   NOR2_X1
+       18   19.152   NOR3_X1
+        2     2.66   NOR4_X1
+        4     5.32   OAI211_X1
+       77   81.928   OAI21_X1
+        5     6.65   OAI22_X1
+        2    3.724   OAI33_X1
+       30    31.92   OR2_X1
+        7     9.31   OR3_X1
+        3    4.788   OR4_X1
+       96  153.216   XNOR2_X1
+       63  100.548   XOR2_X1
+        1        - submodules
+        1        -   gf4_decode_fixed
+
+   Chip area for module '\gf4_pe': 968.240000
+     of which used for sequential elements: 170.240000 (17.58%)
+
+=== gf4_decode_fixed ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+        7        - wires
+       16        - wire bits
+        4        - public wires
+       13        - public wire bits
+        4        - ports
+       13        - port bits
+        7    5.852 cells
+        1    1.064   AND2_X1
+        2    2.128   AOI21_X1
+        2    1.064   INV_X1
+        2    1.596   NOR2_X1
+
+   Chip area for module '\gf4_decode_fixed': 5.852000
+     of which used for sequential elements: 0.000000 (0.00%)
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+      775  974.092 gf4_pe
+        7    5.852 gf4_decode_fixed
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+      791        - wires
+      898        - wire bits
+       20        - public wires
+      127        - public wire bits
+       14        - ports
+       73        - port bits
+        -        - memories
+        -        - memory bits
+        -        - processes
+      775  974.092 cells
+       45    47.88   AND2_X1
+        7     9.31   AND3_X1
+        3    4.788   AND4_X1
+        3     3.99   AOI211_X1
+       64   68.096   AOI21_X1
+       11    14.63   AOI22_X1
+       32   170.24   DFFR_X1
+       58   30.856   INV_X1
+        2    3.724   MUX2_X1
+      131  104.538   NAND2_X1
+       24   25.536   NAND3_X1
+        2     2.66   NAND4_X1
+       86   68.628   NOR2_X1
+       18   19.152   NOR3_X1
+        2     2.66   NOR4_X1
+        4     5.32   OAI211_X1
+       77   81.928   OAI21_X1
+        5     6.65   OAI22_X1
+        2    3.724   OAI33_X1
+       30    31.92   OR2_X1
+        7     9.31   OR3_X1
+        3    4.788   OR4_X1
+       96  153.216   XNOR2_X1
+       63  100.548   XOR2_X1
+        1    5.852 submodules
+        1    5.852   gf4_decode_fixed
+
+   Chip area for top module '\gf4_pe': 974.092000
+     of which used for sequential elements: 170.240000 (17.48%)
+

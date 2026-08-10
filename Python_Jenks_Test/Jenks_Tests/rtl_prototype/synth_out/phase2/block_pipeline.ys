@@ -1,0 +1,14 @@
+read_verilog -sv "phase1_lutxlut/gf4_joint_product_table.v"
+read_verilog -sv "phase1_lutxlut/gf4_block_scaled_mac.v"
+read_verilog -sv "phase2_encoder/gf4_fp16_to_fixed.v"
+read_verilog -sv "phase2_encoder/gf4_sumsq.v"
+read_verilog -sv "phase2_encoder/gf4_isqrt.v"
+read_verilog -sv "phase2_encoder/gf4_activation_encoder.v"
+read_verilog -sv "phase2_encoder/gf4_block_pipeline.v"
+hierarchy -top gf4_block_pipeline
+proc; opt; fsm; opt; memory; opt
+techmap; opt
+dfflibmap -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+abc -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+clean
+tee -o synth_out/phase2/area_block_pipeline.txt stat -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"

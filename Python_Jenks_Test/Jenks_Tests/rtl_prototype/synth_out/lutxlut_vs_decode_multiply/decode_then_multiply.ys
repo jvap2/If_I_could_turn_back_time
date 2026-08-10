@@ -1,0 +1,9 @@
+read_verilog -sv "phase0_decode/gf4_decode_programmable.v"
+read_verilog -sv "phase0_decode/gf4_pe_decode_then_multiply.v"
+hierarchy -top gf4_pe_decode_then_multiply
+proc; opt; fsm; opt; memory; opt
+techmap; opt
+dfflibmap -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+abc -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+clean
+tee -o synth_out/lutxlut_vs_decode_multiply/area_decode_then_multiply.txt stat -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"

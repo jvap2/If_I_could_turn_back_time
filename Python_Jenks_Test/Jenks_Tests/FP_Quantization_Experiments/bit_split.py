@@ -265,139 +265,7 @@ def quantize_activations_gf4(x, block_size, clip_ratio=2.5, levels=None):
     return x_hat.reshape(orig_shape).to(orig_dtype)
 
 
-def quantize_activations_gf4_adaptive(
-    x, block_size,
-    clip_candidates=(1.5, 2.0, 2.5, 3.0, 4.0),
-    levels=None,
-    chunk_size=32768,
-):
-    """
-    Per-block online clip-ratio selection for GF4 (novel).
 
-    For each quantization block independently, evaluates all clip_candidates
-    and picks the one minimizing reconstruction MSE. Blocks are processed in
-    chunks of `chunk_size` to bound peak memory regardless of sequence length
-    — the [B, bs, 8] dist tensor is the dominant allocation and would OOM on
-    long GPTQ sequences (2048 tokens × batch 4 × 128 blocks = ~1M blocks).
-    chunk_size=32768 keeps dist at ~16MB per candidate pass.
-    """
-    orig_dtype = x.dtype
-    orig_shape = x.shape
-    device     = x.device
-
-    if levels is None:
-        levels = GF4_POS.to(device=device)
-    else:
-        levels = levels.to(device=device)
-
-    x_2d = x.reshape(-1, orig_shape[-1]).float()
-    N, K = x_2d.shape
-
-    pad   = (block_size - K % block_size) % block_size
-    x_pad = F.pad(x_2d, (0, pad))
-    K_pad = x_pad.shape[1]
-    n_blk = K_pad // block_size
-    B     = N * n_blk
-
-    x_blk = x_pad.reshape(B, block_size)   # [B, bs]
-    sign  = torch.sign(x_blk)
-    x_abs = x_blk.abs()                    # [B, bs]
-    rms   = x_abs.pow(2).mean(dim=-1).sqrt().clamp(min=1e-8)  # [B]
-
-    best_mse  = torch.full((B,), float('inf'), device=device)  # [B]
-    best_hat  = torch.zeros_like(x_blk)                        # [B, bs]
-
-    for start in range(0, B, chunk_size):
-        end      = min(start + chunk_size, B)
-        s_abs    = x_abs[start:end]                            # [C, bs]
-        s_sign   = sign[start:end]
-        s_rms    = rms[start:end]                              # [C]
-
-        c_best_mse = best_mse[start:end].clone()
-        c_best_hat = best_hat[start:end].clone()
-
-        for alpha in clip_candidates:
-            scale  = (s_rms * alpha).unsqueeze(-1)             # [C, 1]
-            x_norm = (s_abs / scale).clamp(0.0, 1.0)          # [C, bs]
-            dist   = (x_norm.unsqueeze(-1) - levels.view(1, 1, -1)).abs()
-            q_lvl  = levels[dist.argmin(dim=-1)]               # [C, bs]
-            x_hat  = s_sign * scale * q_lvl                    # [C, bs]
-            mse    = (s_abs - x_hat.abs()).pow(2).mean(dim=-1) # [C]
-
-            better     = mse < c_best_mse
-            c_best_mse = torch.where(better, mse, c_best_mse)
-            c_best_hat = torch.where(better.unsqueeze(-1), x_hat, c_best_hat)
-
-        best_mse[start:end] = c_best_mse
-        best_hat[start:end] = c_best_hat
-
-    x_hat_out = best_hat.reshape(N, K_pad)
-    if pad > 0:
-        x_hat_out = x_hat_out[:, :K]
-    return x_hat_out.reshape(orig_shape).to(orig_dtype)
-
-
-def quantize_activations_gf4_residual(
-    x, block_size,
-    clip_ratio1=2.5, clip_ratio2=2.5,
-    levels=None,
-):
-    """
-    Two-stage residual GF4 quantization (novel).
-
-    Stage 1: Q1 = GF4(x,  clip_ratio1)
-    Stage 2: Q2 = GF4(x - Q1, clip_ratio2)
-    Output:  Q1 + Q2
-
-    The residual of GF4-quantized Gaussian activations is also approximately
-    Gaussian (zero-mean, reduced variance), so GF4 is near-optimal for the
-    second stage too. Net effective resolution ≈ 2× at 2× activation compute.
-
-    Useful as an ablation: compare against a single GF4 stage to measure
-    the quantization-noise floor after one pass.
-    """
-    x_f  = x.float()
-    x_q1 = quantize_activations_gf4(x_f, block_size, clip_ratio=clip_ratio1, levels=levels)
-    residual = x_f - x_q1
-    x_q2 = quantize_activations_gf4(residual, block_size, clip_ratio=clip_ratio2, levels=levels)
-    return (x_q1 + x_q2).to(x.dtype)
-
-
-def quantize_gf4_residual_npass(x, block_size, n_pass=2, clip_ratios=None, levels=None):
-    """
-    N-stage residual GF4 — the hardware "multi-pass" precision model.
-
-    Generalizes quantize_activations_gf4_residual to an arbitrary pass count.
-    Each pass GF4-quantizes the residual the previous passes left behind and
-    accumulates in FP (one shared per-block scale across passes):
-
-        Q = 0;  for p in range(n_pass):  Q += GF4(x - Q)
-
-    Precision dial (each pass adds ~9 dB SNR ≈ 1.5 effective bits; the residual
-    of GF4-quantized Gaussian data is itself ~Gaussian, so GF4 stays near-optimal
-    on every pass):
-        n_pass=1 -> plain GF4 (W4A4, ~3 eff. bits)
-        n_pass=2 -> residual-GF4 (~6 eff. bits, ≈A16; == the 2-stage version)
-        n_pass=4 -> ~6-10 eff. bits depending on tail heaviness — empirically
-                    enough to recover FP16-RETENTION accuracy on the outlier
-                    layers (down_proj/fc2/lm_head), so a multi-pass FP4 engine
-                    runs them on its accumulator with NO dedicated FP16 unit.
-                    (Validate the exact pass count with validate_multipass.py.)
-
-    Distribution-agnostic, so it applies to weights or activations.  The output
-    is a sum of n_pass FP4 codes — exactly what the wide accumulator on a
-    multi-pass FP4 array produces, so its reconstruction error is the accuracy
-    that hardware would actually see.
-    """
-    if clip_ratios is None:
-        clip_ratios = [2.5] * n_pass
-    x_f = x.float()
-    q_total = torch.zeros_like(x_f)
-    for p in range(n_pass):
-        q = quantize_activations_gf4(x_f - q_total, block_size,
-                                     clip_ratio=clip_ratios[p], levels=levels)
-        q_total = q_total + q
-    return q_total.to(x.dtype)
 
 
 # ── Learned GF4 codebook optimization ────────────────────────────────────────
@@ -3138,7 +3006,33 @@ def reconstruct_layer_fp_blockdiag_scaled_v5(
     m_bits_scale,
     device
 ):
+    import os
     W    = layer.weight.data.to(device)
+
+    # ── Diagnostic gate: WNOQUANT=1 -> return the EXACT (rotated) weight, no ────
+    # quantization, to test whether the opt-13b collapse is in weight-quant or in
+    # the forward machinery. A16 with exact weights should ~= the fp16 weight
+    # ceiling (~10.5); if it is still ~300, the weights are exonerated.
+    if os.environ.get("WNOQUANT", "0") != "0":
+        Wm   = W.view(W.shape[0], -1) if W.dim() == 4 else W
+        N, M = Wm.shape
+        nb   = math.ceil(M / block_size)
+        return {"weight_q": W.float().to(device),
+                "alpha": torch.ones(N, nb),
+                "bias":  torch.full((N, nb), 2 ** (e_bits - 1) - 1, dtype=torch.long)}
+
+    # ── Optional NVFP4-style per-tensor (second-level) scale — env W2SCALE=1 ───
+    # The per-block E4M3 alpha (quantize_scale_batched) underflows to subnormal/
+    # zero when the (padded-Hadamard) rotated weights are small: opt-13b hits
+    # ~92% subnormal alpha and flushes whole blocks to 0, corrupting the recon.
+    # Normalize W by a full-precision per-tensor RMS so the block scales land in
+    # E4M3's normal range; multiplied back into weight_q/alpha at the end.
+    # Default (unset/0): S = 1.0 -> every added line is a no-op -> byte-identical.
+    S = torch.ones((), dtype=torch.float32, device=W.device)
+    if os.environ.get("W2SCALE", "0") != "0":
+        S = W.detach().float().pow(2).mean().sqrt().clamp_min(1e-12)
+        W = W / S
+
     mask = (W != 0).float()
  
     if W.dim() == 4:
@@ -3178,7 +3072,31 @@ def reconstruct_layer_fp_blockdiag_scaled_v5(
         H_block = H_blocks_layer[block_idx].to(device)
         if H_block.shape[0] != k:
             H_block = H_block[:k, :k]
- 
+
+        # WQDAMP=λ: GPTQ-style Hessian damping. The early-block post-LN residual
+        # Hessian is ill-conditioned (OPT massive-activation dirs); the un-damped
+        # solve over-fits high-energy dirs -> up to 48% weight error in blocks 1-4.
+        # H += λ·mean(diag H)·I stabilizes it (λ->large -> raw MSE). Default 0 = no-op.
+        _dmp = float(os.environ.get("WQDAMP", "0"))
+        if _dmp > 0:
+            _di = _dmp * torch.diagonal(H_block).mean().clamp_min(1e-12)
+            H_block = H_block + _di * torch.eye(
+                H_block.shape[0], device=H_block.device, dtype=H_block.dtype)
+
+        # WQKAPPA=κ: ADAPTIVE (condition-number-targeted) damping. Per 16x16 block,
+        # add just enough λI to cap the condition number at κ — auto-heavy on the
+        # ill-conditioned early residual-stream blocks, ~zero on well-conditioned
+        # ones (out_proj, deep layers). DEFAULT ON at κ=100: fixes the opt-13b W4A16
+        # collapse (304->10.5) and is neutral-to-helpful on 1.3b/6.7b (no regression).
+        # Set WQKAPPA=0 to disable (reproduces the old undamped numbers). Composes w/ WQDAMP.
+        _kap = float(os.environ.get("WQKAPPA", "100"))
+        if _kap > 1.0:
+            _ev = torch.linalg.eigvalsh(H_block)
+            _ld = (_ev[-1].clamp_min(1e-12) / _kap - _ev[0]).clamp_min(0)
+            if _ld > 0:
+                H_block = H_block + _ld * torch.eye(
+                    H_block.shape[0], device=H_block.device, dtype=H_block.dtype)
+
         w_eff  = w_block * m_block
         pruned = m_block.sum(dim=1) < 1e-8
  
@@ -3313,6 +3231,13 @@ def reconstruct_layer_fp_blockdiag_scaled_v5(
         alpha_out_saved = alpha_out_saved.view(original_shape[0], -1)
         bias_out_saved  = bias_out_saved.view(original_shape[0], -1)
  
+    # Restore the per-tensor second-level scale (S=1.0 unless W2SCALE=1): the
+    # solve ran in the normalized domain, so scale weight_q and the stored alpha
+    # back by S here.  x * 1.0 is exact in IEEE, so W2SCALE=0 stays byte-identical.
+    S_cpu           = S.detach().cpu()
+    weight_q_cpu    = weight_q_cpu * S_cpu
+    alpha_out_saved = alpha_out_saved * S_cpu
+
     # ── Return dict ───────────────────────────────────────────────────────────
     return {
         "weight_q": weight_q_cpu.to(device),   # [N, M] on device, as before
@@ -10100,8 +10025,11 @@ class HadamardQuantLinearFP(nn.Module):
             # Adds back W_had_q @ μ that was subtracted in step 3.
             # Only needed when bias_correction was not folded into b.
             if self.bias_correction is not None:
-                out_2d = out_2d + self.bias_correction.to(
-                    device=out_2d.device, dtype=out_2d.dtype)
+                # Add the (possibly large) DC correction W_had_q@μ in fp32 and round
+                # ONCE. Adding it in fp16 loses the O(1) per-token signal when the DC
+                # term is huge (opt-13b's large-outlier μ) — the W4A16-collapse bug.
+                out_2d = (out_2d.float() + self.bias_correction.to(
+                    device=out_2d.device, dtype=torch.float32)).to(out_2d.dtype)
 
         else:
             # Fallback: weight_q not yet set — use original weights
@@ -10949,18 +10877,12 @@ def calibrate_model_hadamard_joint(
             print(f"  bias_corr max={bias_corr.abs().max():.4f}  "
                   f"bias_corr mean={bias_corr.abs().mean():.4f}")
 
-            existing_bias = module.inner.linear.bias
-            if existing_bias is not None:
-                module.inner.linear.bias.data = (
-                    existing_bias.data.float() + bias_corr.to(device)
-                ).to(existing_bias.dtype)
-                module.bias_correction = None
-                print(f"  bias_corr folded into existing bias")
-            else:
-                module.bias_correction = bias_corr.half()
-                print(f"  bias_corr stored as separate buffer")
-
-            module.mu = mu.half()
+            # fp32, separate buffer (added post-GEMM in forward step 6): folding
+            # W_had_q@μ into an fp16 bias or storing μ as fp16 injects error
+            # ~|W_had_q@μ|·2⁻¹¹ that swamps the signal for large-μ models (opt-13b).
+            module.bias_correction = bias_corr.float()
+            module.mu              = mu.float()
+            print(f"  bias_corr stored as separate fp32 buffer")
 
             del X_had_all, W_had_q, bias_corr
             torch.cuda.empty_cache()
@@ -12409,18 +12331,12 @@ def calibrate_model_stochastic_fp4(
             W_had_q   = res["weight_q"].to(device).float()
             bias_corr = (W_had_q @ mu.to(device)).cpu()
 
-            existing_bias = module.inner.linear.bias
-            if existing_bias is not None:
-                module.inner.linear.bias.data = (
-                    existing_bias.data.float() + bias_corr.to(device)
-                ).to(existing_bias.dtype)
-                module.bias_correction = None
-                print(f"  bias_corr folded into existing bias")
-            else:
-                module.bias_correction = bias_corr.half()
-                print(f"  bias_corr stored as separate buffer")
-
-            module.mu = mu.half()
+            # fp32, separate buffer (added post-GEMM in forward step 6): folding
+            # W_had_q@μ into an fp16 bias or storing μ as fp16 injects error
+            # ~|W_had_q@μ|·2⁻¹¹ that swamps the signal for large-μ models (opt-13b).
+            module.bias_correction = bias_corr.float()
+            module.mu              = mu.float()
+            print(f"  bias_corr stored as separate fp32 buffer")
             del X_had_all, W_had_q, bias_corr
             torch.cuda.empty_cache()
         else:
@@ -12973,6 +12889,15 @@ def calibrate_model_gf4_offload(
                 e_bits_scale=e_bits_scale, m_bits_scale=m_bits_scale,
                 device=device, n_samples=n_samples, compare_standard=compare_standard,
             )
+            # WQDEBUG=1: per-layer v5 weight-reconstruction relerr (ALL layers) to
+            # locate which layers the solver wrecks on opt-13b. Print-only, no numerics.
+            import os as _os
+            if _os.environ.get("WQDEBUG", "0") != "0":
+                _wq = res["weight_q"].detach().cpu().float()
+                _wr = ((_wq - W_had.float()).norm()
+                       / W_had.float().norm().clamp_min(1e-9)).item()
+                print(f"  [wq] block {b:2d} {nm:24s} v5 weight relerr {_wr:.4f}"
+                      + ("   <-- BAD" if _wr > 0.5 else ""))
             if compare_standard:
                 comparison_log[f"{b}.{nm}"] = {
                     "method": res["method"],
@@ -12984,15 +12909,14 @@ def calibrate_model_gf4_offload(
             mu = (mu_sum[nm] / max(mu_cnt[nm], 1)).to(device).float()
             W_had_q   = res["weight_q"].to(device).float()
             bias_corr = (W_had_q @ mu).cpu()
-            existing_bias = module.inner.linear.bias
-            if existing_bias is not None:
-                module.inner.linear.bias.data = (
-                    existing_bias.data.float() + bias_corr.to(device)
-                ).to(existing_bias.dtype)
-                module.bias_correction = None
-            else:
-                module.bias_correction = bias_corr.half()
-            module.mu = mu.half()
+            # Keep bias_correction a SEPARATE fp32 buffer (added after the GEMM in
+            # step 6) and keep μ fp32. Folding W_had_q@μ into an fp16 bias — or
+            # storing μ as fp16 — injects absolute error ~|W_had_q@μ|·2⁻¹¹: negligible
+            # for small μ but CATASTROPHIC for large-outlier models (opt-13b: μ huge →
+            # error swamps the O(1) signal → W4A16 collapses to ~300 PPL). Llama-13b
+            # (no bias, small μ, same 8192 pad) is unaffected — exactly the split seen.
+            module.bias_correction = bias_corr.float()
+            module.mu              = mu.float()
 
             module.weight_q       = res["weight_q"].reshape(W_had.shape).to(
                 module.inner.linear.weight.dtype)

@@ -1,0 +1,127 @@
+
+14. Printing statistics.
+
+=== gf4_pe_decode_then_multiply ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+      793        - wires
+      891        - wire bits
+       19        - public wires
+      117        - public wire bits
+       10        - ports
+       57        - port bits
+      774  980.742 cells
+       39   41.496   AND2_X1
+       26    34.58   AND3_X1
+        8   12.768   AND4_X1
+        6     7.98   AOI211_X1
+       89   94.696   AOI21_X1
+       17    22.61   AOI22_X1
+       32   170.24   DFFR_X1
+       39   20.748   INV_X1
+        1    1.862   MUX2_X1
+      136  108.528   NAND2_X1
+       21   22.344   NAND3_X1
+        4     5.32   NAND4_X1
+       75    59.85   NOR2_X1
+       14   14.896   NOR3_X1
+        1     1.33   NOR4_X1
+        4     5.32   OAI211_X1
+       79   84.056   OAI21_X1
+        1    1.596   OAI221_X1
+        3     3.99   OAI22_X1
+        2    3.724   OAI33_X1
+       24   25.536   OR2_X1
+       26    34.58   OR3_X1
+        1    1.596   OR4_X1
+       67  106.932   XNOR2_X1
+       59   94.164   XOR2_X1
+        2        - submodules
+        2        -   $paramod$7966e24db8b0643e03a207601cfe3d99668d1d32\gf4_decode_programmable
+
+   Chip area for module '\gf4_pe_decode_then_multiply': 980.742000
+     of which used for sequential elements: 170.240000 (17.36%)
+
+=== $paramod$7966e24db8b0643e03a207601cfe3d99668d1d32\gf4_decode_programmable ===
+
+        +----------Local Count, excluding submodules.
+        |        +-Local Area, excluding submodules.
+        |        | 
+      237        - wires
+      321        - wire bits
+       17        - public wires
+      101        - public wire bits
+        9        - ports
+       29        - port bits
+      229  599.564 cells
+        9    9.576   AND2_X1
+       72  325.584   DFF_X1
+        3    1.596   INV_X1
+      135   251.37   MUX2_X1
+        1    0.798   NAND2_X1
+        1    1.064   NAND3_X1
+        1     1.33   NAND4_X1
+        1    0.798   NOR2_X1
+        2    2.128   NOR3_X1
+        2     2.66   NOR4_X1
+        1    1.064   OR2_X1
+        1    1.596   OR4_X1
+
+   Chip area for module '$paramod$7966e24db8b0643e03a207601cfe3d99668d1d32\gf4_decode_programmable': 599.564000
+     of which used for sequential elements: 325.584000 (54.30%)
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+     1232  2179.87 gf4_pe_decode_then_multiply
+      229  599.564 $paramod$7966e24db8b0643e03a207601cfe3d99668d1d32\gf4_decode_programmable
+
+        +----------Count including submodules.
+        |        +-Area including submodules.
+        |        | 
+     1267        - wires
+     1533        - wire bits
+       53        - public wires
+      319        - public wire bits
+       28        - ports
+      115        - port bits
+        -        - memories
+        -        - memory bits
+        -        - processes
+     1232  2179.87 cells
+       57   60.648   AND2_X1
+       26    34.58   AND3_X1
+        8   12.768   AND4_X1
+        6     7.98   AOI211_X1
+       89   94.696   AOI21_X1
+       17    22.61   AOI22_X1
+       32   170.24   DFFR_X1
+      144  651.168   DFF_X1
+       45    23.94   INV_X1
+      271  504.602   MUX2_X1
+      138  110.124   NAND2_X1
+       23   24.472   NAND3_X1
+        6     7.98   NAND4_X1
+       77   61.446   NOR2_X1
+       18   19.152   NOR3_X1
+        5     6.65   NOR4_X1
+        4     5.32   OAI211_X1
+       79   84.056   OAI21_X1
+        1    1.596   OAI221_X1
+        3     3.99   OAI22_X1
+        2    3.724   OAI33_X1
+       26   27.664   OR2_X1
+       26    34.58   OR3_X1
+        3    4.788   OR4_X1
+       67  106.932   XNOR2_X1
+       59   94.164   XOR2_X1
+        2  1.2E+03 submodules
+        2  1.2E+03   $paramod$7966e24db8b0643e03a207601cfe3d99668d1d32\gf4_decode_programmable
+
+   Chip area for top module '\gf4_pe_decode_then_multiply': 2179.870000
+     of which used for sequential elements: 821.408000 (37.68%)
+

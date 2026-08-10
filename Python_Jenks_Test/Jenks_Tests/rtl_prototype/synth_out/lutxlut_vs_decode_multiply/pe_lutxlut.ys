@@ -1,0 +1,9 @@
+read_verilog -sv "phase1_lutxlut/gf4_joint_product_table.v"
+read_verilog -sv "phase1_lutxlut/gf4_pe_lutxlut.v"
+hierarchy -top gf4_pe_lutxlut
+proc; opt; fsm; opt; memory; opt
+techmap; opt
+dfflibmap -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+abc -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+clean
+tee -o synth_out/lutxlut_vs_decode_multiply/area_pe_lutxlut.txt stat -liberty "/home/jvap2/eda/nangate45/lib/NangateOpenCellLibrary_typical.lib"
