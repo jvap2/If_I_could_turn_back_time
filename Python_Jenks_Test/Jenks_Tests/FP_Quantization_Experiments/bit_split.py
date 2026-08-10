@@ -217,6 +217,106 @@ def quantize_activations(x, block_size, e_bits=2, m_bits=1,
     return x_hat.reshape(orig_shape).to(orig_dtype)
 
 
+def quantize_activations_gf4_adaptive(
+    x, block_size,
+    clip_candidates=(1.5, 2.0, 2.5, 3.0, 4.0),
+    levels=None,
+    chunk_size=32768,
+):
+    """
+    Per-block online clip-ratio selection for GF4 (novel).
+
+    For each quantization block independently, evaluates all clip_candidates
+    and picks the one minimizing reconstruction MSE. Blocks are processed in
+    chunks of `chunk_size` to bound peak memory regardless of sequence length
+    — the [B, bs, 8] dist tensor is the dominant allocation and would OOM on
+    long GPTQ sequences (2048 tokens × batch 4 × 128 blocks = ~1M blocks).
+    chunk_size=32768 keeps dist at ~16MB per candidate pass.
+    """
+    orig_dtype = x.dtype
+    orig_shape = x.shape
+    device     = x.device
+
+    if levels is None:
+        levels = GF4_POS.to(device=device)
+    else:
+        levels = levels.to(device=device)
+
+    x_2d = x.reshape(-1, orig_shape[-1]).float()
+    N, K = x_2d.shape
+
+    pad   = (block_size - K % block_size) % block_size
+    x_pad = F.pad(x_2d, (0, pad))
+    K_pad = x_pad.shape[1]
+    n_blk = K_pad // block_size
+    B     = N * n_blk
+
+    x_blk = x_pad.reshape(B, block_size)   # [B, bs]
+    sign  = torch.sign(x_blk)
+    x_abs = x_blk.abs()                    # [B, bs]
+    rms   = x_abs.pow(2).mean(dim=-1).sqrt().clamp(min=1e-8)  # [B]
+
+    best_mse  = torch.full((B,), float('inf'), device=device)  # [B]
+    best_hat  = torch.zeros_like(x_blk)                        # [B, bs]
+
+    for start in range(0, B, chunk_size):
+        end      = min(start + chunk_size, B)
+        s_abs    = x_abs[start:end]                            # [C, bs]
+        s_sign   = sign[start:end]
+        s_rms    = rms[start:end]                              # [C]
+
+        c_best_mse = best_mse[start:end].clone()
+        c_best_hat = best_hat[start:end].clone()
+
+        for alpha in clip_candidates:
+            scale  = (s_rms * alpha).unsqueeze(-1)             # [C, 1]
+            x_norm = (s_abs / scale).clamp(0.0, 1.0)          # [C, bs]
+            dist   = (x_norm.unsqueeze(-1) - levels.view(1, 1, -1)).abs()
+            q_lvl  = levels[dist.argmin(dim=-1)]               # [C, bs]
+            x_hat  = s_sign * scale * q_lvl                    # [C, bs]
+            mse    = (s_abs - x_hat.abs()).pow(2).mean(dim=-1) # [C]
+
+            better     = mse < c_best_mse
+            c_best_mse = torch.where(better, mse, c_best_mse)
+            c_best_hat = torch.where(better.unsqueeze(-1), x_hat, c_best_hat)
+
+        best_mse[start:end] = c_best_mse
+        best_hat[start:end] = c_best_hat
+
+    x_hat_out = best_hat.reshape(N, K_pad)
+    if pad > 0:
+        x_hat_out = x_hat_out[:, :K]
+    return x_hat_out.reshape(orig_shape).to(orig_dtype)
+
+
+
+def quantize_activations_gf4_residual(
+    x, block_size,
+    clip_ratio1=2.5, clip_ratio2=2.5,
+    levels=None,
+):
+    """
+    Two-stage residual GF4 quantization (novel).
+
+    Stage 1: Q1 = GF4(x,  clip_ratio1)
+    Stage 2: Q2 = GF4(x - Q1, clip_ratio2)
+    Output:  Q1 + Q2
+
+    The residual of GF4-quantized Gaussian activations is also approximately
+    Gaussian (zero-mean, reduced variance), so GF4 is near-optimal for the
+    second stage too. Net effective resolution ≈ 2× at 2× activation compute.
+
+    Useful as an ablation: compare against a single GF4 stage to measure
+    the quantization-noise floor after one pass.
+    """
+    x_f  = x.float()
+    x_q1 = quantize_activations_gf4(x_f, block_size, clip_ratio=clip_ratio1, levels=levels)
+    residual = x_f - x_q1
+    x_q2 = quantize_activations_gf4(residual, block_size, clip_ratio=clip_ratio2, levels=levels)
+    return (x_q1 + x_q2).to(x.dtype)
+
+
+
 def quantize_activations_gf4(x, block_size, clip_ratio=2.5, levels=None):
     """
     Gaussian-optimal FP4 activation quantization (GF4).
