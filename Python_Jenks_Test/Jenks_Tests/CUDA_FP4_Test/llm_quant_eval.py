@@ -191,6 +191,21 @@ _cli.add_argument("--model", default="facebook/opt-125m",
 _cli.add_argument("--seqlen", type=int, default=2048)
 _cli.add_argument("--num-eval-windows", type=int, default=20)
 _cli.add_argument("--num-calib-windows", type=int, default=8)
+_cli.add_argument("--config", default="all",
+                   choices=["all", "baseline", "naive", "w4a16_raw", "w4a16_hadamard",
+                            "w4a4", "rotated"],
+                   help="Which config(s) to run. 'all' (default) = the legacy single-process "
+                        "run of every config (keeps the ~model-sized fp16 original_weights clone, "
+                        "which caps it near 7B). Any SINGLE config runs in isolation and needs NO "
+                        "clone (process exit frees everything, nothing to restore), so big models "
+                        "fit in just model + that config's calibration. 'rotated' = w4a16_hadamard "
+                        "+ w4a4 together (they share the rotated calibration). Run one config per "
+                        "process and each appends its PPL to --results-csv; assemble the table from "
+                        "the CSV. This is how you get every perplexity on a 30B model without the "
+                        "clone OOM.")
+_cli.add_argument("--results-csv", default="eval_results.csv",
+                   help="CSV that each run appends its (model, config, ppl, ...) row to, so "
+                        "per-config runs in separate processes accumulate into one table.")
 _cli.add_argument("--device-map", action="store_true",
                    help="Load the model with HF/accelerate's device_map='auto' instead of a "
                         "single .to(cuda) call - spreads layers across all visible GPUs and, "
@@ -229,6 +244,36 @@ MODEL_NAME = _args.model
 SEQLEN = _args.seqlen          # matches the deck's stated "non-overlapping 2048-token" protocol
 NUM_EVAL_WINDOWS = _args.num_eval_windows      # raise for a more rigorous PPL number if time allows
 NUM_CALIB_WINDOWS = _args.num_calib_windows    # separate windows (from TRAIN split) used only to build per-layer Hessians
+
+# --- Which configs this process runs (see --config). A SINGLE config needs no
+#     original_weights clone: nothing precedes it in this process to restore. ---
+CONFIG          = _args.config
+WANT_BASELINE   = CONFIG in ("all", "baseline")
+WANT_NAIVE      = CONFIG in ("all", "naive")
+WANT_W4A16_RAW  = CONFIG in ("all", "w4a16_raw")
+WANT_W4A16_HAD  = CONFIG in ("all", "w4a16_hadamard", "rotated")
+WANT_W4A4       = CONFIG in ("all", "w4a4", "rotated")
+NEED_RAW_CALIB  = WANT_W4A16_RAW                       # raw-basis Hessian solve
+NEED_ROT_CALIB  = WANT_W4A16_HAD or WANT_W4A4          # rotated-basis Hessian solve
+NEED_CALIB      = NEED_RAW_CALIB or NEED_ROT_CALIB     # baseline/naive need no calibration at all
+NEED_CLONE      = CONFIG == "all"                      # only the legacy all-in-one run restores between configs
+
+
+def _append_result(config, ppl):
+    """Append one (model, config, ppl) row to --results-csv so per-config runs
+    in separate processes accumulate into a single table. Written immediately
+    after each PPL so an OOM in a later config never loses an earlier result."""
+    import csv as _csv
+    path = _args.results_csv
+    new = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        w = _csv.writer(f)
+        if new:
+            w.writerow(["timestamp", "model", "config", "ppl", "seqlen",
+                        "eval_windows", "calib_windows"])
+        w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), MODEL_NAME, config,
+                    f"{ppl:.4f}", SEQLEN, NUM_EVAL_WINDOWS, NUM_CALIB_WINDOWS])
+    print(f"  [recorded {config} -> {ppl:.4f} in {path}]")
 HESS_BLOCK = 32                # must divide every target layer's in_features; must be <= HESSIAN_MAX_BLOCK (32) in the kernel
 KAPPA = 100.0
 POWER_ITERS = 30
@@ -398,10 +443,13 @@ def compute_perplexity(model, windows):
     return float(np.exp(total_nll / total_tokens))
 
 
-print("Computing BASELINE (unquantized FP16) perplexity...")
-t0 = time.time()
-ppl_baseline = compute_perplexity(model, eval_windows)
-print(f"Baseline PPL: {ppl_baseline:.4f}  ({time.time()-t0:.1f}s)\n")
+ppl_baseline = None
+if WANT_BASELINE:
+    print("Computing BASELINE (unquantized FP16) perplexity...")
+    t0 = time.time()
+    ppl_baseline = compute_perplexity(model, eval_windows)
+    print(f"Baseline PPL: {ppl_baseline:.4f}  ({time.time()-t0:.1f}s)\n")
+    _append_result("baseline", ppl_baseline)
 
 # ============================================================================
 # 4. Identify target Linear layers (everything except retained ones)
@@ -580,7 +628,13 @@ if _args.device_map:
 # of the model's weights, resident in CPU RAM for the whole run - fine at
 # 7-13B, a real limitation past that, where it would need to become a
 # disk-backed snapshot restored on demand instead.
-original_weights = {name: module.weight.data.detach().to("cpu").clone() for name, module in targets}
+# Only the legacy all-in-one run (--config all) needs this clone, to restore
+# originals between the several weight-modifying configs it runs back-to-back.
+# A single-config run modifies weights at most once and then the process exits,
+# so there is nothing to restore -> no clone -> the ~model-sized fp16 CPU copy
+# that caps this script near 7B simply doesn't exist.
+original_weights = ({name: module.weight.data.detach().to("cpu").clone() for name, module in targets}
+                    if NEED_CLONE else None)
 
 # ============================================================================
 # 5. Register hooks to capture REAL calibration input activations per layer
@@ -609,18 +663,19 @@ def make_hook(name):
     return hook
 
 
-for name, module in targets:
-    hooks.append(module.register_forward_hook(make_hook(name)))
+if NEED_CALIB:   # baseline / naive need no calibration at all
+    for name, module in targets:
+        hooks.append(module.register_forward_hook(make_hook(name)))
 
-print("Running calibration forward passes to capture real activations...")
-calib_input_device = _input_device(model)
-with torch.no_grad():
-    for w in calib_windows:
-        model(w.to(calib_input_device))
+    print("Running calibration forward passes to capture real activations...")
+    calib_input_device = _input_device(model)
+    with torch.no_grad():
+        for w in calib_windows:
+            model(w.to(calib_input_device))
 
-for h in hooks:
-    h.remove()
-print("Calibration activations captured.\n")
+    for h in hooks:
+        h.remove()
+    print("Calibration activations captured.\n")
 
 # ============================================================================
 # 6. E2M1 dequantize (torch, GPU) - mirrors reference.py's already-validated
@@ -691,114 +746,124 @@ def dequantize_e2m1(W_codes, W_alpha, W_bias, block_size):
 #    idle state between the four evaluation passes below stays small; each
 #    pass dequantizes on demand right before it needs the weights.
 # ============================================================================
-print("Quantizing weights with the real Hessian-weighted CUDA kernels")
-print("(raw basis for W4A16, Hadamard-rotated basis for W4A4/W4A16-Hadamard,")
-print("computed together per layer so each layer's calibration activations")
-print("can be freed immediately)...")
-
+# Always defined so later config sections can reference them unconditionally.
 raw_quant_state = {}   # name -> dict(codes, alpha, bias) on CPU - raw (un-rotated) basis
 rot_quant_state = {}   # name -> dict(...) on CPU - Hadamard-rotated basis
 per_layer_relerr = []
-t_start = time.time()
 
-for name, module in targets:
-    K = module.in_features
-    N = module.out_features
+if NEED_CALIB:
+    _bases = ("raw+rotated" if (NEED_RAW_CALIB and NEED_ROT_CALIB)
+              else "raw" if NEED_RAW_CALIB else "Hadamard-rotated")
+    print("Quantizing weights with the real Hessian-weighted CUDA kernels")
+    print(f"({_bases} basis, per --config {CONFIG}; each layer's calibration")
+    print("activations are freed immediately after its solve)...")
+    t_start = time.time()
 
-    X_raw = torch.cat(captured[name], dim=0).to(KERNEL_DEVICE).float().contiguous()
-    del captured[name]   # free this layer's CPU-resident calibration activations NOW
-    W_fp32 = module.weight.data.float().to(KERNEL_DEVICE).contiguous()
+    for name, module in targets:
+        K = module.in_features
+        N = module.out_features
 
-    # --- raw-basis Hessian weight-quant (feeds W4A16) ---
-    H = ext.hessian_accumulate(X_raw, HESS_BLOCK)                      # REAL kernel, REAL data
-    H_damped = ext.hessian_damp_blocks(H, KAPPA, POWER_ITERS)          # REAL kernel
-    W_codes, W_alpha, W_bias = ext.hessian_weight_solve(W_fp32, H_damped)  # REAL kernel
+        X_raw = torch.cat(captured[name], dim=0).to(KERNEL_DEVICE).float().contiguous()
+        del captured[name]   # free this layer's CPU-resident calibration activations NOW
+        W_fp32 = module.weight.data.float().to(KERNEL_DEVICE).contiguous()
 
-    W_hat = dequantize_e2m1(W_codes, W_alpha, W_bias, HESS_BLOCK)
-    relerr = (W_hat - W_fp32).norm() / (W_fp32.norm() + 1e-8)
-    per_layer_relerr.append((name, relerr.item()))
-    raw_quant_state[name] = dict(codes=W_codes.cpu(), alpha=W_alpha.cpu(), bias=W_bias.cpu())
+        if NEED_RAW_CALIB:
+            # --- raw-basis Hessian weight-quant (feeds W4A16) ---
+            H = ext.hessian_accumulate(X_raw, HESS_BLOCK)                      # REAL kernel, REAL data
+            H_damped = ext.hessian_damp_blocks(H, KAPPA, POWER_ITERS)          # REAL kernel
+            W_codes, W_alpha, W_bias = ext.hessian_weight_solve(W_fp32, H_damped)  # REAL kernel
+            W_hat = dequantize_e2m1(W_codes, W_alpha, W_bias, HESS_BLOCK)
+            relerr = (W_hat - W_fp32).norm() / (W_fp32.norm() + 1e-8)
+            per_layer_relerr.append((name, relerr.item()))
+            raw_quant_state[name] = dict(codes=W_codes.cpu(), alpha=W_alpha.cpu(), bias=W_bias.cpu())
+            del H, H_damped, W_codes, W_alpha, W_bias, W_hat
 
-    # --- Hadamard-rotated basis (feeds W4A4 and the W4A16-Hadamard ablation) ---
-    # Same per-layer random sign vector applied to both the weight's columns
-    # and every activation tensor at that layer - the invariant that makes
-    # the rotation reversible/consistent (QuaRot-style). Seeded from a
-    # deterministic hash of the layer name (zlib.crc32), NOT Python's
-    # built-in hash() - str hashing is randomized per-process by default
-    # (PYTHONHASHSEED), so hash(name) gives a different sign vector, and
-    # therefore a slightly different PPL, on every single run. crc32 is
-    # stable across runs/processes/machines.
-    seed = zlib.crc32(name.encode("utf-8")) % (2 ** 31)
-    gen = torch.Generator(device="cpu").manual_seed(seed)
-    d_sign = (torch.randint(0, 2, (K,), generator=gen).float() * 2 - 1).to(KERNEL_DEVICE)
+        if NEED_ROT_CALIB:
+            # --- Hadamard-rotated basis (feeds W4A4 and the W4A16-Hadamard ablation) ---
+            # Same per-layer random sign vector applied to both the weight's columns
+            # and every activation tensor at that layer - the invariant that makes
+            # the rotation reversible/consistent (QuaRot-style). Seeded from a
+            # deterministic hash of the layer name (zlib.crc32), NOT Python's
+            # built-in hash() - str hashing is randomized per-process by default
+            # (PYTHONHASHSEED), so hash(name) gives a different sign vector, and
+            # therefore a slightly different PPL, on every single run. crc32 is
+            # stable across runs/processes/machines.
+            seed = zlib.crc32(name.encode("utf-8")) % (2 ** 31)
+            gen = torch.Generator(device="cpu").manual_seed(seed)
+            d_sign = (torch.randint(0, 2, (K,), generator=gen).float() * 2 - 1).to(KERNEL_DEVICE)
 
-    X_had = ext.hadamard_fwht(X_raw, ACT_HAD_BLOCK, d_sign)          # REAL kernel: rotate calibration activations
-    W_had = ext.hadamard_fwht(W_fp32, ACT_HAD_BLOCK, d_sign)         # REAL kernel: rotate weight columns identically
+            X_had = ext.hadamard_fwht(X_raw, ACT_HAD_BLOCK, d_sign)          # REAL kernel: rotate calibration activations
+            W_had = ext.hadamard_fwht(W_fp32, ACT_HAD_BLOCK, d_sign)         # REAL kernel: rotate weight columns identically
 
-    H_r = ext.hessian_accumulate(X_had, HESS_BLOCK)                  # REAL kernel, on ROTATED activations
-    H_r_damped = ext.hessian_damp_blocks(H_r, KAPPA, POWER_ITERS)    # REAL kernel
-    Wc_r, Wa_r, Wb_r = ext.hessian_weight_solve(W_had, H_r_damped)   # REAL kernel, on ROTATED weight
-    W_had_hat = dequantize_e2m1(Wc_r, Wa_r, Wb_r, HESS_BLOCK)        # dense reconstructed rotated weight
+            H_r = ext.hessian_accumulate(X_had, HESS_BLOCK)                  # REAL kernel, on ROTATED activations
+            H_r_damped = ext.hessian_damp_blocks(H_r, KAPPA, POWER_ITERS)    # REAL kernel
+            Wc_r, Wa_r, Wb_r = ext.hessian_weight_solve(W_had, H_r_damped)   # REAL kernel, on ROTATED weight
+            W_had_hat = dequantize_e2m1(Wc_r, Wa_r, Wb_r, HESS_BLOCK)        # dense reconstructed rotated weight
 
-    mu = X_had.mean(dim=0).contiguous()                              # [K], real per-channel mean, rotated basis
-    bias_correction = (W_had_hat @ mu).contiguous()                  # [N] = W_had_q @ mu
+            mu = X_had.mean(dim=0).contiguous()                              # [K], real per-channel mean, rotated basis
+            bias_correction = (W_had_hat @ mu).contiguous()                  # [N] = W_had_q @ mu
 
-    # Clip-ratio calibration search: real gf4_encode(mu=...)/gf4_decode
-    # round trip per candidate, exactly like bench.py section 5d, but on
-    # this layer's real (rotated) calibration activations.
-    X_had_flat = X_had.reshape(-1).contiguous()
-    n_blocks_cal = X_had_flat.numel() // GF4_BLOCK
-    best_alpha, best_mse = CLIP_RATIO_CANDIDATES[0], float("inf")
-    for alpha in CLIP_RATIO_CANDIDATES:
-        codes_c, scales_c = ext.gf4_encode(X_had_flat, alpha, True, mu)
-        x_dec_c = ext.gf4_decode(codes_c, scales_c, n_blocks_cal)
-        # gf4_decode doesn't re-add mu (by design - see gf4_decode_kernel),
-        # so compare against the mean-centered activations it's meant to
-        # reconstruct, matching clip_ratio_search_ref's convention.
-        mu_tiled = mu.repeat(X_had.shape[0])
-        mse_c = float(((X_had_flat - mu_tiled - x_dec_c) ** 2).mean().item())
-        if mse_c < best_mse:
-            best_mse, best_alpha = mse_c, alpha
+            # Clip-ratio calibration search: real gf4_encode(mu=...)/gf4_decode
+            # round trip per candidate, exactly like bench.py section 5d, but on
+            # this layer's real (rotated) calibration activations.
+            X_had_flat = X_had.reshape(-1).contiguous()
+            n_blocks_cal = X_had_flat.numel() // GF4_BLOCK
+            best_alpha, best_mse = CLIP_RATIO_CANDIDATES[0], float("inf")
+            for alpha in CLIP_RATIO_CANDIDATES:
+                codes_c, scales_c = ext.gf4_encode(X_had_flat, alpha, True, mu)
+                x_dec_c = ext.gf4_decode(codes_c, scales_c, n_blocks_cal)
+                # gf4_decode doesn't re-add mu (by design - see gf4_decode_kernel),
+                # so compare against the mean-centered activations it's meant to
+                # reconstruct, matching clip_ratio_search_ref's convention.
+                mu_tiled = mu.repeat(X_had.shape[0])
+                mse_c = float(((X_had_flat - mu_tiled - x_dec_c) ** 2).mean().item())
+                if mse_c < best_mse:
+                    best_mse, best_alpha = mse_c, alpha
 
-    rot_quant_state[name] = dict(
-        K=K, N=N,
-        weight_had_q_half=W_had_hat.half().cpu().contiguous(),
-        bias_correction=bias_correction.float().cpu(),
-        orig_bias=(module.bias.data.float().cpu().clone() if module.bias is not None else None),
-        d_sign=d_sign.cpu(), had_block=ACT_HAD_BLOCK, mu=mu.cpu(), clip_ratio=best_alpha,
-    )
+            rot_quant_state[name] = dict(
+                K=K, N=N,
+                weight_had_q_half=W_had_hat.half().cpu().contiguous(),
+                bias_correction=bias_correction.float().cpu(),
+                orig_bias=(module.bias.data.float().cpu().clone() if module.bias is not None else None),
+                d_sign=d_sign.cpu(), had_block=ACT_HAD_BLOCK, mu=mu.cpu(), clip_ratio=best_alpha,
+            )
+            del X_had, X_had_flat, W_had, H_r, H_r_damped, Wc_r, Wa_r, Wb_r, W_had_hat
 
-    del (X_raw, X_had, X_had_flat, W_fp32, W_had, H, H_damped, H_r, H_r_damped,
-         W_codes, W_alpha, W_bias, W_hat, Wc_r, Wa_r, Wb_r, W_had_hat)
-    torch.cuda.empty_cache()
+        del X_raw, W_fp32
+        torch.cuda.empty_cache()
 
-t_quant = time.time() - t_start
-print(f"Computed both quantization bases for {len(targets)} layers in {t_quant:.1f}s "
-      f"using the real CUDA kernels.\n")
-print("Per-layer weight reconstruction relative error, raw basis (Frobenius norm):")
-for name, err in per_layer_relerr:
-    print(f"  {name:45s} {err:.4f}")
-print()
-print("Per-layer calibrated clip_ratio (alpha*), Hadamard-rotated basis:")
-for name in rot_quant_state:
-    print(f"  {name:45s} alpha*={rot_quant_state[name]['clip_ratio']}")
-print()
+    t_quant = time.time() - t_start
+    print(f"Computed {_bases} quantization for {len(targets)} layers in {t_quant:.1f}s "
+          f"using the real CUDA kernels.\n")
+if per_layer_relerr:
+    print("Per-layer weight reconstruction relative error, raw basis (Frobenius norm):")
+    for name, err in per_layer_relerr:
+        print(f"  {name:45s} {err:.4f}")
+    print()
+if rot_quant_state:
+    print("Per-layer calibrated clip_ratio (alpha*), Hadamard-rotated basis:")
+    for name in rot_quant_state:
+        print(f"  {name:45s} alpha*={rot_quant_state[name]['clip_ratio']}")
+    print()
 
 # ============================================================================
 # 8. Apply the raw-basis weights and compute W4A16 perplexity.
 # ============================================================================
-print("Applying raw-basis Hessian-weighted W4A16 weights...")
-for name, module in targets:
-    st = raw_quant_state[name]
-    W_hat = dequantize_e2m1(
-        st["codes"].to(KERNEL_DEVICE), st["alpha"].to(KERNEL_DEVICE), st["bias"].to(KERNEL_DEVICE), HESS_BLOCK)
-    module.weight.data.copy_(W_hat.to(module.weight.device).to(module.weight.dtype))
-    del W_hat
+ppl_quantized = None
+if WANT_W4A16_RAW:
+    print("Applying raw-basis Hessian-weighted W4A16 weights...")
+    for name, module in targets:
+        st = raw_quant_state[name]
+        W_hat = dequantize_e2m1(
+            st["codes"].to(KERNEL_DEVICE), st["alpha"].to(KERNEL_DEVICE), st["bias"].to(KERNEL_DEVICE), HESS_BLOCK)
+        module.weight.data.copy_(W_hat.to(module.weight.device).to(module.weight.dtype))
+        del W_hat
 
-print("Computing QUANTIZED (real CUDA kernel, fake-quant) perplexity...")
-t0 = time.time()
-ppl_quantized = compute_perplexity(model, eval_windows)
-print(f"Quantized PPL: {ppl_quantized:.4f}  ({time.time()-t0:.1f}s)\n")
+    print("Computing QUANTIZED (real CUDA kernel, fake-quant) perplexity...")
+    t0 = time.time()
+    ppl_quantized = compute_perplexity(model, eval_windows)
+    print(f"Quantized PPL: {ppl_quantized:.4f}  ({time.time()-t0:.1f}s)\n")
+    _append_result("w4a16_raw", ppl_quantized)
 
 # ============================================================================
 # 9. Control: naive round-to-nearest quantization, SAME 4-bit E2M1 format and
@@ -809,11 +874,14 @@ print(f"Quantized PPL: {ppl_quantized:.4f}  ({time.time()-t0:.1f}s)\n")
 #    script deliberately doesn't include (activation quant, residual passes,
 #    Hadamard rotation), not a bug in the kernel.
 # ============================================================================
-print("Restoring original weights, then running a naive round-to-nearest")
-print("ablation (same format/block size, NO Hessian weighting) for a")
-print("same-conditions comparison...")
-for name, module in targets:
-    module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
+ppl_naive = None
+if WANT_NAIVE and NEED_CLONE:
+    # 'all' mode only: a prior config overwrote the weights in this same process,
+    # so restore the originals before the naive ablation. A single --config naive
+    # run has untouched weights (and no clone), so it skips straight to quantizing.
+    print("Restoring original weights before the naive round-to-nearest ablation...")
+    for name, module in targets:
+        module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
 
 
 def quantize_scale_e4m3_torch(alpha, e_bits=4, m_bits=3):
@@ -864,23 +932,25 @@ def quantize_e2m1_naive_torch(W_fp32, block_size, bias=1):
     return W_hat.reshape(N, M)
 
 
-t0 = time.time()
-for name, module in targets:
-    W_fp32 = module.weight.data.float().to(KERNEL_DEVICE).contiguous()
-    W_hat = quantize_e2m1_naive_torch(W_fp32, HESS_BLOCK)
-    module.weight.data.copy_(W_hat.to(module.weight.device).to(module.weight.dtype))
-    del W_fp32, W_hat
-print(f"Naive-rounding quantization done in {time.time()-t0:.1f}s.\n")
+if WANT_NAIVE:
+    print("Naive round-to-nearest (same 4-bit E2M1 format/block, NO Hessian weighting)...")
+    t0 = time.time()
+    for name, module in targets:
+        W_fp32 = module.weight.data.float().to(KERNEL_DEVICE).contiguous()
+        W_hat = quantize_e2m1_naive_torch(W_fp32, HESS_BLOCK)
+        module.weight.data.copy_(W_hat.to(module.weight.device).to(module.weight.dtype))
+        del W_fp32, W_hat
+    print(f"Naive-rounding quantization done in {time.time()-t0:.1f}s.")
+    ppl_naive = compute_perplexity(model, eval_windows)
+    print(f"Naive round-to-nearest PPL: {ppl_naive:.4f}\n")
+    _append_result("naive", ppl_naive)
 
-ppl_naive = compute_perplexity(model, eval_windows)
-print(f"Naive round-to-nearest PPL: {ppl_naive:.4f}\n")
-
-# Restore original (un-rotated) weights before the rotated-basis passes below
-# read module.bias / module.weight.device for their own state, and so
-# module.weight.data is back to a clean baseline in case anything else
-# inspects it between here and the next config.
-for name, module in targets:
-    module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
+if NEED_CLONE:
+    # 'all' mode: restore the un-rotated originals before the rotated-basis passes
+    # below inspect module state. Single-config runs never overwrote the weights
+    # this way (the patched-forward configs don't touch module.weight at all).
+    for name, module in targets:
+        module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
 
 # ============================================================================
 # 10. W4A4: weights AND activations quantized, using the real Hadamard,
@@ -939,19 +1009,22 @@ def make_w4a4_forward(st, ext_ref, kernel_device):
     return forward
 
 
-print("Patching forward pass for each target layer (real kernels run on every token)...")
 orig_forwards = {}
-for name, module in targets:
-    orig_forwards[name] = module.forward
-    module.forward = make_w4a4_forward(rot_quant_state[name], ext, KERNEL_DEVICE)
+ppl_w4a4 = None
+if WANT_W4A4:
+    print("Patching forward pass for each target layer (real kernels run on every token)...")
+    for name, module in targets:
+        orig_forwards[name] = module.forward
+        module.forward = make_w4a4_forward(rot_quant_state[name], ext, KERNEL_DEVICE)
 
-print("Computing W4A4 (real Hadamard + Hessian + GF4 encode/decode) perplexity...")
-t0 = time.time()
-ppl_w4a4 = compute_perplexity(model, eval_windows)
-print(f"W4A4 PPL: {ppl_w4a4:.4f}  ({time.time()-t0:.1f}s)\n")
+    print("Computing W4A4 (real Hadamard + Hessian + GF4 encode/decode) perplexity...")
+    t0 = time.time()
+    ppl_w4a4 = compute_perplexity(model, eval_windows)
+    print(f"W4A4 PPL: {ppl_w4a4:.4f}  ({time.time()-t0:.1f}s)\n")
+    _append_result("w4a4", ppl_w4a4)
 
-for name, module in targets:
-    module.forward = orig_forwards[name]
+    for name, module in targets:
+        module.forward = orig_forwards[name]
 
 # ============================================================================
 # 11. Isolation ablation: Hadamard-rotated Hessian weight-quant, activations
@@ -1004,44 +1077,67 @@ def make_w4a16_hadamard_forward(st, ext_ref, kernel_device):
     return forward
 
 
-print("Patching forward pass (Hadamard-rotated weights, FP16 activations)...")
-for name, module in targets:
-    orig_forwards[name] = module.forward
-    module.forward = make_w4a16_hadamard_forward(rot_quant_state[name], ext, KERNEL_DEVICE)
+ppl_w4a16_had = None
+if WANT_W4A16_HAD:
+    print("Patching forward pass (Hadamard-rotated weights, FP16 activations)...")
+    for name, module in targets:
+        orig_forwards[name] = module.forward
+        module.forward = make_w4a16_hadamard_forward(rot_quant_state[name], ext, KERNEL_DEVICE)
 
-print("Computing W4A16-Hadamard (rotated weight quant, no activation quant) perplexity...")
-t0 = time.time()
-ppl_w4a16_had = compute_perplexity(model, eval_windows)
-print(f"W4A16-Hadamard PPL: {ppl_w4a16_had:.4f}  ({time.time()-t0:.1f}s)\n")
+    print("Computing W4A16-Hadamard (rotated weight quant, no activation quant) perplexity...")
+    t0 = time.time()
+    ppl_w4a16_had = compute_perplexity(model, eval_windows)
+    print(f"W4A16-Hadamard PPL: {ppl_w4a16_had:.4f}  ({time.time()-t0:.1f}s)\n")
+    _append_result("w4a16_hadamard", ppl_w4a16_had)
 
-for name, module in targets:
-    module.forward = orig_forwards[name]
-    module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
+    for name, module in targets:
+        module.forward = orig_forwards[name]
+    if NEED_CLONE:
+        for name, module in targets:
+            module.weight.data.copy_(original_weights[name].to(module.weight.device).to(module.weight.dtype))
 
 print("=" * 72)
-print(f"{MODEL_NAME}  -  WikiText-2, {len(eval_windows)} non-overlapping {SEQLEN}-token windows")
+print(f"{MODEL_NAME}  -  WikiText-2, {len(eval_windows)} non-overlapping {SEQLEN}-token windows"
+      f"  (--config {CONFIG})")
 print("=" * 72)
-print(f"  FP16 baseline PPL:                            {ppl_baseline:.4f}")
-print(f"  Naive round-to-nearest (no Hessian):           {ppl_naive:.4f}   (delta {ppl_naive - ppl_baseline:+.4f})")
-print(f"  Hessian-weighted W4A16, raw basis:              {ppl_quantized:.4f}   (delta {ppl_quantized - ppl_baseline:+.4f})")
-print(f"  Hessian-weighted W4A16, Hadamard-rotated basis: {ppl_w4a16_had:.4f}   (delta {ppl_w4a16_had - ppl_baseline:+.4f})")
-print(f"  W4A4 (Hadamard-rotated + GF4-quantized acts):   {ppl_w4a4:.4f}   (delta {ppl_w4a4 - ppl_baseline:+.4f})")
+
+
+def _summary_line(label, ppl, is_baseline=False):
+    if ppl is None:
+        return
+    if ppl_baseline is not None and not is_baseline:
+        print(f"  {label:46s} {ppl:.4f}   (delta {ppl - ppl_baseline:+.4f})")
+    else:
+        print(f"  {label:46s} {ppl:.4f}")
+
+
+_summary_line("FP16 baseline PPL:", ppl_baseline, is_baseline=True)
+_summary_line("Naive round-to-nearest (no Hessian):", ppl_naive)
+_summary_line("Hessian-weighted W4A16, raw basis:", ppl_quantized)
+_summary_line("Hessian-weighted W4A16, Hadamard-rotated basis:", ppl_w4a16_had)
+_summary_line("W4A4 (Hadamard-rotated + GF4-quantized acts):", ppl_w4a4)
 print()
-if ppl_quantized < ppl_naive:
-    print(f"Hessian weighting beats naive rounding by {ppl_naive - ppl_quantized:.4f} PPL at identical "
-          f"bit width/block size - the kernel's weighting is doing real work.")
-else:
-    print(f"Hessian weighting did NOT beat naive rounding in the raw basis (worse by "
-          f"{ppl_quantized - ppl_naive:.4f} PPL).")
-rotation_gain = ppl_quantized - ppl_w4a16_had     # positive = rotation helped
-actquant_cost = ppl_w4a16_had - ppl_w4a4          # positive = activation quant cost extra PPL (should be small/negative if act quant is nearly free here)
-print(f"Rotating the weights before the Hessian solve changed PPL by {-rotation_gain:+.4f} "
-      f"(raw-basis {ppl_quantized:.4f} -> rotated-basis {ppl_w4a16_had:.4f}) - this isolates the "
-      f"rotation's effect with activations held at FP16 the whole time.")
-print(f"Adding GF4 activation quantization (mu-centering + bias-correction + calibrated "
-      f"clip_ratio) on top of the rotated weights changed PPL by {ppl_w4a4 - ppl_w4a16_had:+.4f} "
-      f"(rotated-basis-FP16-acts {ppl_w4a16_had:.4f} -> W4A4 {ppl_w4a4:.4f}).")
+
+# Commentary only where BOTH operands were computed in this same process.
+if ppl_quantized is not None and ppl_naive is not None:
+    if ppl_quantized < ppl_naive:
+        print(f"Hessian weighting beats naive rounding by {ppl_naive - ppl_quantized:.4f} PPL at identical "
+              f"bit width/block size - the kernel's weighting is doing real work.")
+    else:
+        print(f"Hessian weighting did NOT beat naive rounding in the raw basis (worse by "
+              f"{ppl_quantized - ppl_naive:.4f} PPL).")
+if ppl_quantized is not None and ppl_w4a16_had is not None:
+    print(f"Rotating the weights before the Hessian solve changed PPL by {ppl_w4a16_had - ppl_quantized:+.4f} "
+          f"(raw-basis {ppl_quantized:.4f} -> rotated-basis {ppl_w4a16_had:.4f}).")
+if ppl_w4a16_had is not None and ppl_w4a4 is not None:
+    print(f"Adding GF4 activation quantization on top of the rotated weights changed PPL by "
+          f"{ppl_w4a4 - ppl_w4a16_had:+.4f} (rotated-basis-FP16-acts {ppl_w4a16_had:.4f} -> W4A4 {ppl_w4a4:.4f}).")
 print()
+if CONFIG != "all":
+    print(f"[--config {CONFIG}] only the config(s) above ran in this process (no clone; memory")
+    print(f"freed on exit). Run the other --config values in separate processes - every row")
+    print(f"accumulates in {_args.results_csv}; read it back for the full comparison table.")
+    print()
 print("Remember: the deck's Table 1 numbers are the FULL pipeline (Hadamard-")
 print("rotated activations + GF4 residual passes + outlier retention +")
 print("Hessian weight quant together, with clip-ratio calibration and")
