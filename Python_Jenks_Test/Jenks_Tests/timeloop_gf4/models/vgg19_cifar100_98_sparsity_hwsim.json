@@ -1,0 +1,163 @@
+{
+  "model": "vgg19_cifar100_98_sparsity",
+  "source": "harvested",
+  "input_hw": 32,
+  "note": "conv/linear as GEMM: C=Cin*R*S, K=Cout, N=P*Q; density=nonzero frac",
+  "shapes": [
+    {
+      "name": "L0",
+      "K": 27,
+      "N": 13,
+      "batchN": 1024,
+      "count": 1,
+      "density": 0.1111,
+      "macs": 359424
+    },
+    {
+      "name": "L1",
+      "K": 117,
+      "N": 30,
+      "batchN": 1024,
+      "count": 1,
+      "density": 0.0724,
+      "macs": 3594240
+    },
+    {
+      "name": "L2",
+      "K": 270,
+      "N": 55,
+      "batchN": 256,
+      "count": 1,
+      "density": 0.073,
+      "macs": 3801600
+    },
+    {
+      "name": "L3",
+      "K": 495,
+      "N": 59,
+      "batchN": 256,
+      "count": 1,
+      "density": 0.1133,
+      "macs": 7476480
+    },
+    {
+      "name": "L4",
+      "K": 531,
+      "N": 123,
+      "batchN": 64,
+      "count": 1,
+      "density": 0.1218,
+      "macs": 4180032
+    },
+    {
+      "name": "L5",
+      "K": 1107,
+      "N": 111,
+      "batchN": 64,
+      "count": 1,
+      "density": 0.1292,
+      "macs": 7864128
+    },
+    {
+      "name": "L6",
+      "K": 999,
+      "N": 100,
+      "batchN": 64,
+      "count": 1,
+      "density": 0.128,
+      "macs": 6393600
+    },
+    {
+      "name": "L7",
+      "K": 900,
+      "N": 107,
+      "batchN": 64,
+      "count": 1,
+      "density": 0.1322,
+      "macs": 6163200
+    },
+    {
+      "name": "L8",
+      "K": 963,
+      "N": 142,
+      "batchN": 16,
+      "count": 1,
+      "density": 0.136,
+      "macs": 2187936
+    },
+    {
+      "name": "L9",
+      "K": 1278,
+      "N": 137,
+      "batchN": 16,
+      "count": 1,
+      "density": 0.1343,
+      "macs": 2801376
+    },
+    {
+      "name": "L10",
+      "K": 1233,
+      "N": 125,
+      "batchN": 16,
+      "count": 1,
+      "density": 0.1388,
+      "macs": 2466000
+    },
+    {
+      "name": "L11",
+      "K": 1125,
+      "N": 126,
+      "batchN": 16,
+      "count": 1,
+      "density": 0.1441,
+      "macs": 2268000
+    },
+    {
+      "name": "L12",
+      "K": 1134,
+      "N": 120,
+      "batchN": 4,
+      "count": 1,
+      "density": 0.141,
+      "macs": 544320
+    },
+    {
+      "name": "L13",
+      "K": 1080,
+      "N": 132,
+      "batchN": 4,
+      "count": 1,
+      "density": 0.1479,
+      "macs": 570240
+    },
+    {
+      "name": "L14",
+      "K": 1188,
+      "N": 119,
+      "batchN": 4,
+      "count": 1,
+      "density": 0.1411,
+      "macs": 565488
+    },
+    {
+      "name": "L15",
+      "K": 1071,
+      "N": 166,
+      "batchN": 4,
+      "count": 1,
+      "density": 0.0828,
+      "macs": 711144
+    },
+    {
+      "name": "L16",
+      "K": 166,
+      "N": 100,
+      "batchN": 1,
+      "count": 1,
+      "density": 0.113,
+      "macs": 16600
+    }
+  ],
+  "total_macs": 51963808,
+  "effective_macs_sparse": 6227597
+}

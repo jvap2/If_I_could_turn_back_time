@@ -20,29 +20,49 @@ MODELS = {
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def _shape(name, C, K_out, count, N=T, density=1.0):
+    return dict(name=name, C=C, K_out=K_out, N=N, count=count, density=density)
+
+
 def opt_shapes(d, ff, n_layers, vocab):
-    # (shape_name, C=in, K_out, count over the whole model)
+    # dense LLM GEMM shapes (batch=T, density=1.0)
     return [
-        ("attn_dxd", d,  d,  4 * n_layers),   # q,k,v,out
-        ("fc1_dxff", d,  ff, 1 * n_layers),
-        ("fc2_ffxd", ff, d,  1 * n_layers),
-        ("lm_head",  d,  vocab, 1),
+        _shape("attn_dxd", d,  d,     4 * n_layers),   # q,k,v,out
+        _shape("fc1_dxff", d,  ff,    1 * n_layers),
+        _shape("fc2_ffxd", ff, d,     1 * n_layers),
+        _shape("lm_head",  d,  vocab, 1),
     ]
 
 
 def json_shapes(path):
-    """(model_key, [(shape_name, C, K_out, count), ...]) from a Colab export."""
+    """(model_key, [shape_dict, ...]) from a Colab/harvest export. Each shape_dict
+    carries C, K_out, N(batch), count, density. Supports two schemas:
+      - LLM GEMM  : {"K": in, "N": out, "count": c}                    (batch=T, dense)
+      - harvested : {"name","K": Cin*R*S, "N": Cout, "batchN": B*P*Q,
+                     "count","density"}  (conv-as-GEMM, per-layer batch + density)
+    """
     d = json.load(open(path))
     key = d["model"].split("/")[-1]
-    shapes = [(f"K{s['K']}_N{s['N']}", int(s["K"]), int(s["N"]), int(s["count"]))
-              for s in d["shapes"]]
+    shapes = []
+    for s in d["shapes"]:
+        shapes.append(dict(
+            name=s.get("name", f"K{s['K']}_N{s['N']}"),
+            C=int(s["K"]), K_out=int(s["N"]),
+            N=int(s.get("batchN", T)),                 # per-layer batch (spatial) or T
+            count=int(s.get("count", 1)),
+            density=float(s.get("density", 1.0))))     # 1.0 = dense
     return key, shapes
 
 
-def prob_yaml(C, K_out):
-    return {"problem": {"version": 0.3, "instance": {
-        "C": C, "K": K_out, "N": T,
-        "R": 1, "S": 1, "P": 1, "Q": 1}}}
+def prob_yaml(C, K_out, N=T, density=1.0):
+    """Timeloop problem. When density<1 a Sparseloop `densities` block is added for
+    the Weights data-space so a Sparseloop run can skip the zeros (pair with
+    sparse_opt/skip_zeros.yaml). A dense Timeloop run simply ignores `densities`."""
+    inst = {"C": C, "K": K_out, "N": N, "R": 1, "S": 1, "P": 1, "Q": 1}
+    if density < 1.0:
+        inst["densities"] = {"Weights": {"distribution": "hypergeometric",
+                                         "density": round(density, 4)}}
+    return {"problem": {"version": 0.3, "instance": inst}}
 
 
 def collect_models():
@@ -64,12 +84,14 @@ def main():
     nfiles = 0
     for mkey, shapes in collect_models().items():
         manifest[mkey] = []
-        for name, C, K_out, count in shapes:
-            fname = f"{mkey}__{name}.yaml"
+        for s in shapes:
+            fname = f"{mkey}__{s['name']}.yaml"
             with open(os.path.join(outdir, fname), "w") as f:
-                yaml.safe_dump(prob_yaml(C, K_out), f, sort_keys=False)
-            manifest[mkey].append({"shape": name, "file": fname,
-                                   "C": C, "K": K_out, "N": T, "count": count})
+                yaml.safe_dump(prob_yaml(s["C"], s["K_out"], s["N"], s["density"]),
+                               f, sort_keys=False)
+            manifest[mkey].append({"shape": s["name"], "file": fname,
+                                   "C": s["C"], "K": s["K_out"], "N": s["N"],
+                                   "count": s["count"], "density": s["density"]})
             nfiles += 1
     with open(os.path.join(HERE, "manifest.yaml"), "w") as f:
         yaml.safe_dump(manifest, f, sort_keys=False)

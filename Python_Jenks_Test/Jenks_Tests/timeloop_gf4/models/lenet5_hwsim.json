@@ -1,0 +1,46 @@
+{
+  "model": "lenet5",
+  "source": "harvested",
+  "input_hw": 28,
+  "note": "conv/linear as GEMM: C=Cin*R*S, K=Cout, N=P*Q; density=nonzero frac",
+  "shapes": [
+    {
+      "name": "L0",
+      "K": 25,
+      "N": 18,
+      "batchN": 576,
+      "count": 1,
+      "density": 0.2533,
+      "macs": 259200
+    },
+    {
+      "name": "L1",
+      "K": 450,
+      "N": 33,
+      "batchN": 64,
+      "count": 1,
+      "density": 0.0786,
+      "macs": 950400
+    },
+    {
+      "name": "L2",
+      "K": 528,
+      "N": 57,
+      "batchN": 1,
+      "count": 1,
+      "density": 0.0248,
+      "macs": 30096
+    },
+    {
+      "name": "L3",
+      "K": 57,
+      "N": 10,
+      "batchN": 1,
+      "count": 1,
+      "density": 0.1193,
+      "macs": 570
+    }
+  ],
+  "total_macs": 1240266,
+  "effective_macs_sparse": 141170
+}

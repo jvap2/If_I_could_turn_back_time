@@ -1,0 +1,32 @@
+# Sparseloop SAF: SKIP zero-weight ops on the GF4-Engine (VALIDATED on ricky-bobby).
+# ---------------------------------------------------------------------------
+# Findings from the conv8 sweep (VGG-19 CIFAR-100 98%, density 0.136):
+#   * representation-format on Weights ONLY works at weight_reg (per-PE, below the
+#     16x16 spatial fanout). Putting it on DRAM/global_buffer -> 'no valid mappings'
+#     (fanout violations): compressed weights can't scatter across the 256 PEs.
+#   * `skipping` (not gating) yields the throughput win — it eliminates the
+#     zero-weight op, cutting CYCLES. With mapper optimization-metrics = [delay,energy]
+#     the best mapping drops 729312 -> 99190 cycles (~7.4x) vs dense-delay-optimal.
+#   * ENERGY does NOT improve: metadata overhead cancels it (energy-optimal mapping
+#     is the dense one, ~17.5 pJ/op). So unstructured weight sparsity here = a
+#     latency win, not an energy win -> reinforces that the structured harvest (#1)
+#     is the headline (lossless, smaller, AND lower energy).
+#
+# To reproduce the throughput number the mapper must value latency:
+#   sed -i 's/\[ "energy", "delay" \]/[ "delay", "energy" ]/' mapper/mapper.yaml
+sparse_optimizations:
+  version: 0.3
+  targets:
+    - name: weight_reg
+      representation-format:
+        data-spaces:
+          - name: Weights
+            ranks:
+              - format: UOP
+      action-optimization:
+        - type: skipping
+          target: Outputs
+          condition-on: [Weights]
+        - type: skipping
+          target: Inputs
+          condition-on: [Weights]
