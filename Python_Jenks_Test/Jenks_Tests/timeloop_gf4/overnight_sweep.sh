@@ -28,7 +28,8 @@ vgg19_test
 RES=sparse_sweep_results.txt; : > "$RES"
 echo "sweep started $(date)" | tee -a "$RES"
 for m in $MODELS; do
-  [ -e "prob/${m}__"*.yaml ] 2>/dev/null || { echo "skip $m (no problems)"; continue; }
+  set -- prob/${m}__*.yaml            # expand glob into $@ (robust for many files)
+  [ -e "$1" ] || { echo "skip $m (no problems)"; continue; }
   echo "==================================================================" | tee -a "$RES"
   echo "### $m  $(date +%F_%H:%M:%S)" | tee -a "$RES"
   bash run_pareto_sweep.sh "$m" 2>&1 | tee "log_${m}.txt" | grep -E "^L[0-9]|^conv|ENERGY|THROUGHPUT" | tee -a "$RES"
