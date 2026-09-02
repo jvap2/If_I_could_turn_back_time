@@ -401,15 +401,17 @@ if _args.device_map and hasattr(model, "hf_device_map"):
 #    the perplexity number is measured on.
 # ============================================================================
 def load_wikitext2(split):
-    # `datasets`' wikitext loader has changed its trust_remote_code
-    # requirement across versions; try the plain call first and only fall
-    # back if that's actually the problem, rather than guessing up front.
-    try:
-        return load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
-    except ValueError as e:
-        if "trust_remote_code" in str(e):
-            return load_dataset("wikitext", "wikitext-2-raw-v1", split=split, trust_remote_code=True)
-        raise
+    # Newer datasets/huggingface_hub reject the legacy bare name "wikitext"
+    # (HfUriError: "Repository id must be 'namespace/name'"). The parquet-hosted
+    # Salesforce/wikitext mirror has no loading script and works on both old and
+    # new library versions.
+    last = None
+    for repo in ("Salesforce/wikitext", "wikitext"):
+        try:
+            return load_dataset(repo, "wikitext-2-raw-v1", split=split)
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"could not load wikitext-2-raw-v1 (try: pip install -U datasets): {last}")
 
 
 print("Loading WikiText-2...")
