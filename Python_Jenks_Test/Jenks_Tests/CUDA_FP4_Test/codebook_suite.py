@@ -92,7 +92,11 @@ def _write_csv(path, rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", default="facebook/opt-125m,facebook/opt-1.3b,facebook/opt-2.7b")
-    ap.add_argument("--eval-windows", type=int, default=20)
+    ap.add_argument("--eval-windows", type=int, default=10000,
+                    help="Non-overlapping 2048-tok windows; default caps to the FULL WikiText-2 "
+                         "test set (load_windows uses min(n, tokens//seqlen)). Set small only for "
+                         "a quick smoke test -- a subset gives optimistic PPL not comparable to the "
+                         "full-set big-table / literature numbers.")
     ap.add_argument("--seqlen", type=int, default=2048)
     ap.add_argument("--scale-mode", default="fp16", choices=["fp16", "e4m3"])
     ap.add_argument("--load-8bit", action="store_true")
