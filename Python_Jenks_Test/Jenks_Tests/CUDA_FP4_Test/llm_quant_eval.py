@@ -859,6 +859,16 @@ if rot_quant_state:
     print("Per-layer calibrated clip_ratio (alpha*), Hadamard-rotated basis:")
     for name in rot_quant_state:
         print(f"  {name:45s} alpha*={rot_quant_state[name]['clip_ratio']}")
+    # DIAGNOSTIC: distribution of selected alphas. If this is a single value for
+    # every layer, adaptive == fixed by construction (suspicious - see below).
+    from collections import Counter as _Counter
+    _alpha_hist = _Counter(rot_quant_state[n]["clip_ratio"] for n in rot_quant_state)
+    print(f"  [alpha* histogram] {dict(sorted(_alpha_hist.items()))}   "
+          f"(candidates were {CLIP_RATIO_CANDIDATES})")
+    if len(_alpha_hist) == 1:
+        print(f"  [WARN] every layer selected the SAME clip {next(iter(_alpha_hist))} -- "
+              f"adaptive will tie a fixed run at that clip; verify this is real, not a "
+              f"degenerate/no-op search.")
     print()
 
 # ============================================================================
