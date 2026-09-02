@@ -35,6 +35,18 @@ void launch_e2m1_naive_gemv(const uint8_t* d_Wc, const __half* d_Wa, const uint8
                              __half* d_Wdequant_scratch, const __half* d_x, __half* d_y,
                              int M, int K, const float* d_bias_correction, cudaStream_t stream);
 
+void launch_gf4_fused_gemv(const uint8_t* d_Wc, const __half* d_Wa,
+                           const __half* d_x, __half* d_y, int M, int K,
+                           const float* d_bias_correction, cudaStream_t stream);
+void launch_gf4_lattice_gemv(const uint8_t* d_Wc, const __half* d_Wa,
+                             const __half* d_x, __half* d_y, int M, int K,
+                             const float* d_bias_correction, cudaStream_t stream);
+void launch_gf4_naive_gemv(const uint8_t* d_Wc, const __half* d_Wa,
+                           __half* d_Wdequant_scratch, const __half* d_x, __half* d_y,
+                           int M, int K, const float* d_bias_correction, cudaStream_t stream);
+void launch_dense_fp16_gemv(const __half* d_W, const __half* d_x, __half* d_y,
+                            int M, int K, const float* d_bias_correction, cudaStream_t stream);
+
 void launch_hessian_accumulate(const float* d_X, float* d_H_out, int n_tokens, int M,
                                 int block_size, cudaStream_t stream);
 void launch_hessian_damp_blocks(const float* d_H_in, float* d_H_out, int n_blocks,
@@ -209,6 +221,118 @@ torch::Tensor e2m1_naive_gemv(torch::Tensor W_codes, torch::Tensor W_alpha, torc
 }
 
 // ---------------------------------------------------------------------------
+// GF4 weight-only GEMV (datapath analog): y[M] = W[M,K] @ x[K], GF4 weight
+// codes decoded with the 8-entry Gaussian-quantile LUT (no per-block bias,
+// unlike E2M1). W_alpha is [M, K/GF4_BLOCK] fp16 per-block scale. Used to
+// measure the GF4 codebook decode + fp16 datapath on silicon against the
+// dense-fp16 measuring stick; see gf4_fused_gemv_kernel.cu for why the
+// benchmark decodes GF4-coded WEIGHTS.
+// ---------------------------------------------------------------------------
+torch::Tensor gf4_fused_gemv(torch::Tensor W_codes, torch::Tensor W_alpha,
+                             torch::Tensor x, int64_t K, torch::Tensor bias_correction) {
+    CHECK_CUDA(W_codes); CHECK_CUDA(W_alpha); CHECK_CUDA(x);
+    CHECK_CONTIG(W_codes); CHECK_CONTIG(W_alpha); CHECK_CONTIG(x);
+    TORCH_CHECK(W_codes.dtype() == torch::kUInt8, "W_codes must be uint8");
+    TORCH_CHECK(W_alpha.dtype() == torch::kFloat16, "W_alpha must be fp16");
+    TORCH_CHECK(x.dtype() == torch::kFloat16, "x must be fp16");
+
+    int M = W_codes.size(0);
+    auto y = torch::empty({M}, x.options());
+
+    const float* bc_ptr = nullptr;
+    if (bias_correction.numel() > 0) {
+        CHECK_CUDA(bias_correction); CHECK_CONTIG(bias_correction);
+        TORCH_CHECK(bias_correction.dtype() == torch::kFloat32, "bias_correction must be fp32");
+        TORCH_CHECK(bias_correction.numel() == M, "bias_correction must have M elements");
+        bc_ptr = bias_correction.data_ptr<float>();
+    }
+
+    launch_gf4_fused_gemv(
+        W_codes.data_ptr<uint8_t>(),
+        reinterpret_cast<const __half*>(W_alpha.data_ptr<at::Half>()),
+        reinterpret_cast<const __half*>(x.data_ptr<at::Half>()),
+        reinterpret_cast<__half*>(y.data_ptr<at::Half>()),
+        M, (int)K, bc_ptr, at::cuda::getCurrentCUDAStream());
+    return y;
+}
+
+// Same fused GEMV but SHIFT-AND-ADD decode for the constrained-optimal codebook
+// {0,2,4,6,8,10,12,16}/16 (no arbitrary-fp16 LUT). Times against gf4_fused_gemv.
+torch::Tensor gf4_lattice_gemv(torch::Tensor W_codes, torch::Tensor W_alpha,
+                               torch::Tensor x, int64_t K, torch::Tensor bias_correction) {
+    CHECK_CUDA(W_codes); CHECK_CUDA(W_alpha); CHECK_CUDA(x);
+    CHECK_CONTIG(W_codes); CHECK_CONTIG(W_alpha); CHECK_CONTIG(x);
+    int M = W_codes.size(0);
+    auto y = torch::empty({M}, x.options());
+    const float* bc_ptr = nullptr;
+    if (bias_correction.numel() > 0) {
+        CHECK_CUDA(bias_correction); CHECK_CONTIG(bias_correction);
+        bc_ptr = bias_correction.data_ptr<float>();
+    }
+    launch_gf4_lattice_gemv(
+        W_codes.data_ptr<uint8_t>(),
+        reinterpret_cast<const __half*>(W_alpha.data_ptr<at::Half>()),
+        reinterpret_cast<const __half*>(x.data_ptr<at::Half>()),
+        reinterpret_cast<__half*>(y.data_ptr<at::Half>()),
+        M, (int)K, bc_ptr, at::cuda::getCurrentCUDAStream());
+    return y;
+}
+
+torch::Tensor gf4_naive_gemv(torch::Tensor W_codes, torch::Tensor W_alpha,
+                             torch::Tensor x, int64_t K, torch::Tensor bias_correction) {
+    CHECK_CUDA(W_codes); CHECK_CUDA(W_alpha); CHECK_CUDA(x);
+    CHECK_CONTIG(W_codes); CHECK_CONTIG(W_alpha); CHECK_CONTIG(x);
+
+    int M = W_codes.size(0);
+    auto y = torch::empty({M}, x.options());
+    auto W_dequant = torch::empty({(int64_t)M * K}, x.options());
+
+    const float* bc_ptr = nullptr;
+    if (bias_correction.numel() > 0) {
+        CHECK_CUDA(bias_correction); CHECK_CONTIG(bias_correction);
+        TORCH_CHECK(bias_correction.dtype() == torch::kFloat32, "bias_correction must be fp32");
+        TORCH_CHECK(bias_correction.numel() == M, "bias_correction must have M elements");
+        bc_ptr = bias_correction.data_ptr<float>();
+    }
+
+    launch_gf4_naive_gemv(
+        W_codes.data_ptr<uint8_t>(),
+        reinterpret_cast<const __half*>(W_alpha.data_ptr<at::Half>()),
+        reinterpret_cast<__half*>(W_dequant.data_ptr<at::Half>()),
+        reinterpret_cast<const __half*>(x.data_ptr<at::Half>()),
+        reinterpret_cast<__half*>(y.data_ptr<at::Half>()),
+        M, (int)K, bc_ptr, at::cuda::getCurrentCUDAStream());
+    return y;
+}
+
+// All-fp16 measuring stick: dense GEMV over a native fp16 weight matrix.
+torch::Tensor dense_fp16_gemv(torch::Tensor W, torch::Tensor x, torch::Tensor bias_correction) {
+    CHECK_CUDA(W); CHECK_CUDA(x);
+    CHECK_CONTIG(W); CHECK_CONTIG(x);
+    TORCH_CHECK(W.dtype() == torch::kFloat16, "W must be fp16");
+    TORCH_CHECK(x.dtype() == torch::kFloat16, "x must be fp16");
+    TORCH_CHECK(W.dim() == 2, "W must be [M, K]");
+
+    int M = W.size(0), K = W.size(1);
+    auto y = torch::empty({M}, x.options());
+
+    const float* bc_ptr = nullptr;
+    if (bias_correction.numel() > 0) {
+        CHECK_CUDA(bias_correction); CHECK_CONTIG(bias_correction);
+        TORCH_CHECK(bias_correction.dtype() == torch::kFloat32, "bias_correction must be fp32");
+        TORCH_CHECK(bias_correction.numel() == M, "bias_correction must have M elements");
+        bc_ptr = bias_correction.data_ptr<float>();
+    }
+
+    launch_dense_fp16_gemv(
+        reinterpret_cast<const __half*>(W.data_ptr<at::Half>()),
+        reinterpret_cast<const __half*>(x.data_ptr<at::Half>()),
+        reinterpret_cast<__half*>(y.data_ptr<at::Half>()),
+        M, K, bc_ptr, at::cuda::getCurrentCUDAStream());
+    return y;
+}
+
+// ---------------------------------------------------------------------------
 // Hessian-weighted weight quantization (v5): the three-kernel pipeline.
 // ---------------------------------------------------------------------------
 torch::Tensor hessian_accumulate(torch::Tensor X, int64_t block_size) {
@@ -270,6 +394,17 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("e2m1_naive_gemv", &e2m1_naive_gemv, "Baseline: dequant-to-HBM kernel + dense fp16 GEMV",
           py::arg("W_codes"), py::arg("W_alpha"), py::arg("W_bias"), py::arg("x"), py::arg("K"),
           py::arg("bias_correction") = torch::empty({0}));
+    m.def("gf4_lattice_gemv", &gf4_lattice_gemv, "Fused GEMV, shift-and-add decode (opt lattice codebook)",
+          py::arg("W_codes"), py::arg("W_alpha"), py::arg("x"), py::arg("K"),
+          py::arg("bias_correction") = torch::empty({0}));
+    m.def("gf4_fused_gemv", &gf4_fused_gemv, "Fused GF4-dequant + GEMV (no materialized W; 8-entry LUT)",
+          py::arg("W_codes"), py::arg("W_alpha"), py::arg("x"), py::arg("K"),
+          py::arg("bias_correction") = torch::empty({0}));
+    m.def("gf4_naive_gemv", &gf4_naive_gemv, "GF4 baseline: dequant-to-HBM kernel + dense fp16 GEMV",
+          py::arg("W_codes"), py::arg("W_alpha"), py::arg("x"), py::arg("K"),
+          py::arg("bias_correction") = torch::empty({0}));
+    m.def("dense_fp16_gemv", &dense_fp16_gemv, "All-fp16 measuring stick: dense GEMV over native fp16 W",
+          py::arg("W"), py::arg("x"), py::arg("bias_correction") = torch::empty({0}));
     m.def("hessian_accumulate", &hessian_accumulate, "H = X^T X / n_tokens, block-diagonal");
     m.def("hessian_damp_blocks", &hessian_damp_blocks,
           "Condition-number damping via shifted power iteration (approximates eigvalsh)");

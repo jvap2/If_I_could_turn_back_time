@@ -230,6 +230,14 @@ _cli.add_argument("--offload-folder", default=None,
                         "disk's RAM savings for those blocks in exchange for correctness - if "
                         "your machine can't absorb that, raise --max-memory's cpu= budget or use "
                         "a smaller --model instead of leaning on disk for target layers.")
+_cli.add_argument("--fixed-clip", type=float, default=None,
+                   help="Use a single fixed activation clip ratio (e.g. 2.5) instead of the "
+                        "per-layer adaptive clip search. Weight-side Hessian reconstruction is "
+                        "unchanged, so this gives the fixed-clip + Hessian form of GF4.")
+_cli.add_argument("--hess-block", type=int, default=32,
+                   help="Block size for the E2M1/Hessian weight reconstruction (must divide "
+                        "each target layer's in_features and be <= 32, the kernel max). Set 16 "
+                        "to match the deployed 'pure GF4' pipeline's block size.")
 _args = _cli.parse_args()
 
 
@@ -274,7 +282,8 @@ def _append_result(config, ppl):
         w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), MODEL_NAME, config,
                     f"{ppl:.4f}", SEQLEN, NUM_EVAL_WINDOWS, NUM_CALIB_WINDOWS])
     print(f"  [recorded {config} -> {ppl:.4f} in {path}]")
-HESS_BLOCK = 32                # must divide every target layer's in_features; must be <= HESSIAN_MAX_BLOCK (32) in the kernel
+HESS_BLOCK = _args.hess_block  # E2M1/Hessian weight block; must divide in_features and be <= 32 (kernel max)
+assert HESS_BLOCK <= 32, "hess-block must be <= 32 (HESSIAN_MAX_BLOCK in the kernel)"
 KAPPA = 100.0
 POWER_ITERS = 30
 # --- W4A4 (activation quantization) config ---
@@ -283,6 +292,9 @@ ACT_HAD_BLOCK = 32              # blockwise Hadamard block size for the activati
                                  # than trying to match a specific block size from the notebook, and still
                                  # a real randomized-Hadamard rotation, not a placeholder
 CLIP_RATIO_CANDIDATES = (1.5, 2.0, 2.5, 3.0, 4.0)  # matches calibrate_model_gf4's real search grid
+if _args.fixed_clip is not None:                    # fixed-clip + Hessian form (no per-layer search)
+    CLIP_RATIO_CANDIDATES = (_args.fixed_clip,)
+    print(f"[fixed-clip] activation clip ratio pinned to {_args.fixed_clip} (adaptive search disabled)")
 GF4_BLOCK = 32
 # Outlier-layer retention, matching the deck's own "down_proj / fc2 / LM head
 # stay FP16" policy. The FFN down-projection has a different name per model
@@ -329,6 +341,7 @@ ext = load(
         "hadamard_kernel.cu",
         "gf4_encode_kernel.cu",
         "e2m1_fused_gemv_kernel.cu",
+        "gf4_fused_gemv_kernel.cu",     # defines launch_gf4_fused/lattice/naive + dense_fp16 (referenced by bindings.cpp)
         "hessian_weight_quant_kernel.cu",
     ],
     extra_cflags=["-O3"],
