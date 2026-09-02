@@ -1,0 +1,2 @@
+model,fp16,exact_GF4,round_Q1.4,opt_Q1.4,opt_pop2
+mistralai/Mistral-7B-v0.1,5.4872,5.6066,5.6210,5.6024,5.5999

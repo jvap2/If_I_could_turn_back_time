@@ -32,6 +32,7 @@ ext = load(
         "hadamard_kernel.cu",
         "gf4_encode_kernel.cu",
         "e2m1_fused_gemv_kernel.cu",
+        "gf4_fused_gemv_kernel.cu",
         "hessian_weight_quant_kernel.cu",
     ],
     extra_cflags=["-O3"],
@@ -56,6 +57,34 @@ def cuda_time(fn, warmup=10, iters=100):
     end.record()
     torch.cuda.synchronize()
     return start.elapsed_time(end) / iters  # ms/iter
+
+
+# A single L2-sized scratch buffer, allocated lazily, used to evict the cache.
+_L2_FLUSH_BUF = None
+
+def cuda_time_l2flush(fn, warmup=10, iters=100):
+    """Time fn() with the L2 cache flushed before every call, so a matrix that
+    would otherwise stay warm in L2 (e.g. a 33 MB weight matrix on a 64 MB-L2
+    RTX 4080) is re-read from HBM each iteration. This is the memory-bound
+    regime a real large-model layer runs in - its weights never sit warm in L2
+    across a full forward pass - and is the honest denominator for a
+    traffic-reduction speedup. The flush write is NOT counted: only the
+    per-iter kernel time between the CUDA events is accumulated."""
+    global _L2_FLUSH_BUF
+    if _L2_FLUSH_BUF is None:
+        # 128 MB > any current GPU L2; zeroing it evicts everything else.
+        _L2_FLUSH_BUF = torch.empty(128 * 1024 * 1024 // 4, dtype=torch.float32, device="cuda")
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    total = 0.0
+    for i in range(warmup + iters):
+        _L2_FLUSH_BUF.zero_()          # evict L2 (not timed)
+        torch.cuda.synchronize()
+        start.record(); fn(); end.record()
+        torch.cuda.synchronize()
+        if i >= warmup:
+            total += start.elapsed_time(end)
+    return total / iters               # ms/iter, cold-L2
 
 
 # ============================================================================
@@ -367,6 +396,83 @@ assert best_alpha_cuda == best_alpha_ref, (
     f"clip-ratio search disagreement: CUDA picked {best_alpha_cuda}, reference picked {best_alpha_ref}")
 print(f"  5d. clip-ratio search:         CUDA picked alpha*={best_alpha_cuda}   "
       f"reference picked alpha*={best_alpha_ref}   (candidates={CANDIDATES})")
+
+# ============================================================================
+# 6. GF4 fused-dequant + GEMV vs the ALL-FP16 measuring stick.
+#
+# Datapath analog: decode GF4-coded WEIGHTS (8-entry Gaussian-quantile LUT, no
+# per-block bias) in the same W4A16 weight-stationary GEMV as section 4, then
+# compare against a DENSE all-fp16 GEMV over native fp16 weights. Both paths use
+# an identical fp16 multiplier, so (dense_fp16 / gf4_fused) is the pure
+# memory-traffic speedup from reading 4-bit codes instead of 16-bit weights.
+# This is the real-silicon corroboration of the Timeloop/Accelergy decode +
+# speedup numbers; the 4-bit-vs-fp16 MULTIPLY cost cannot be measured on this
+# GPU (no int4 multiplier) and stays a modeling question. See
+# gf4_fused_gemv_kernel.cu for the full rationale.
+# ============================================================================
+print()
+print("=" * 72)
+print("6. GF4 FUSED-DEQUANT + GEMV vs ALL-FP16 MEASURING STICK  (W4A16)")
+print("=" * 72)
+GF4_BLK = 32   # matches GF4_BLOCK in gf4_common.cuh
+for (M, K) in [(4096, 4096), (11008, 4096), (11008, 11008)]:
+    assert K % GF4_BLK == 0
+    W_np = (np.random.randn(M, K).astype(np.float32)) * 0.02
+    x_np = np.random.randn(K).astype(np.float32)
+
+    # GF4-encode the weights (block=32, clip_ratio=2.5) via the existing encoder.
+    W_flat = torch.from_numpy(W_np.reshape(-1)).to(device).contiguous()
+    n_blocks_w = (M * K) // GF4_BLK
+    codes_flat, scales_flat = ext.gf4_encode(W_flat, 2.5, True)   # clip_ratio=2.5, fused
+    W_codes = codes_flat.view(M, K // 2).contiguous()
+    W_alpha = scales_flat.view(M, K // GF4_BLK).contiguous()      # already fp16
+
+    x = torch.from_numpy(x_np).to(device).half()
+    W_fp16 = torch.from_numpy(W_np).to(device).half()             # native fp16 measuring stick
+
+    # fp32 reference: decode the GF4 weights and do the matmul in fp32.
+    W_deq = ext.gf4_decode(codes_flat, scales_flat, n_blocks_w).view(M, K).cpu().numpy()
+    y_ref = (W_deq @ x_np)
+
+    y_fused = ext.gf4_fused_gemv(W_codes, W_alpha, x, K).float().cpu().numpy()
+    y_naive = ext.gf4_naive_gemv(W_codes, W_alpha, x, K).float().cpu().numpy()
+
+    rel_err_fused = np.abs(y_fused - y_ref).max() / (np.abs(y_ref).max() + 1e-6)
+    rel_err_cross = np.abs(y_fused - y_naive).max() / (np.abs(y_naive).max() + 1e-6)
+    assert rel_err_fused < 5e-2, f"GF4 fused GEMV vs fp32 reference too far off: {rel_err_fused}"
+    assert rel_err_cross < 1e-2, f"GF4 fused vs naive CUDA paths disagree: {rel_err_cross}"
+
+    t_fused = cuda_time(lambda: ext.gf4_fused_gemv(W_codes, W_alpha, x, K))
+    t_naive = cuda_time(lambda: ext.gf4_naive_gemv(W_codes, W_alpha, x, K))
+    t_dense = cuda_time(lambda: ext.dense_fp16_gemv(W_fp16, x))
+
+    # Cold-L2 (memory-bound) timing: the regime a real large-model layer runs
+    # in, where the fp16 weight matrix does NOT stay warm in cache. At small
+    # sizes (33 MB < 64 MB L2) the warm speedup above is an L2 artifact - the
+    # dense path never reaches HBM. The flushed numbers below are the honest
+    # traffic-bound comparison.
+    t_fused_cold = cuda_time_l2flush(lambda: ext.gf4_fused_gemv(W_codes, W_alpha, x, K))
+    t_dense_cold = cuda_time_l2flush(lambda: ext.dense_fp16_gemv(W_fp16, x))
+    # (B) codebook-specific: shift-and-add decode (opt lattice) vs fp16-LUT decode.
+    t_latt_cold = cuda_time_l2flush(lambda: ext.gf4_lattice_gemv(W_codes, W_alpha, x, K))
+    t_fused_warm = cuda_time(lambda: ext.gf4_fused_gemv(W_codes, W_alpha, x, K))
+    t_latt_warm  = cuda_time(lambda: ext.gf4_lattice_gemv(W_codes, W_alpha, x, K))
+
+    # CALCULATED HBM bytes for W (not profiler-measured; see profile_hbm.py):
+    #   fused: 4-bit codes + fp16 per-block scales.   dense: full fp16 W.
+    bytes_fused = M * K // 2 + M * (K // GF4_BLK) * 2 + K * 2
+    bytes_dense = M * K * 2 + K * 2
+    fits_l2 = "(fp16 W fits L2)" if bytes_dense < 64 * 1024 * 1024 else "(fp16 W > L2)"
+    print(f"  M={M:6d} K={K:6d}  {fits_l2}")
+    print(f"      warm-L2:  gf4_fused={t_fused*1000:8.2f} us   fp16_dense={t_dense*1000:8.2f} us"
+          f"   speedup={t_dense/t_fused:5.2f}x   (naive={t_naive*1000:8.2f} us)")
+    print(f"      cold-L2:  gf4_fused={t_fused_cold*1000:8.2f} us   fp16_dense={t_dense_cold*1000:8.2f} us"
+          f"   speedup={t_dense_cold/t_fused_cold:5.2f}x   <- memory-bound regime")
+    print(f"      HBM(W) fused/dense (CALCULATED) = {bytes_fused/1e6:7.2f}MB / {bytes_dense/1e6:7.2f}MB "
+          f"({bytes_dense/bytes_fused:.1f}x less; code-mismatch vs ref {rel_err_fused:.1e})")
+    print(f"      decode: LUT(GF4)={t_fused_cold*1000:7.2f}/{t_fused_warm*1000:6.2f}  "
+          f"shift-add(opt lattice)={t_latt_cold*1000:7.2f}/{t_latt_warm*1000:6.2f} us (cold/warm)  "
+          f"lattice speedup {t_fused_cold/t_latt_cold:4.2f}x cold / {t_fused_warm/t_latt_warm:4.2f}x warm")
 
 print()
 print("All correctness checks passed. Paste the tables above into the")
