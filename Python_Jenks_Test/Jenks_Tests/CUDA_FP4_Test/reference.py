@@ -106,6 +106,47 @@ def clip_ratio_search_ref(X_cal: np.ndarray, block: int = GF4_BLOCK,
     return best_alpha
 
 
+def gf4_quantize_adaptive_vector_ref(x: np.ndarray, block: int = GF4_BLOCK,
+                                      candidates=(1.5, 2.0, 2.5, 3.0, 4.0),
+                                      mu: np.ndarray = None):
+    """Per-block ONLINE clip selection - the CPU reference for
+    gf4_encode_perblock_adaptive_kernel and a faithful port of
+    quantize_activations_gf4_adaptive() in bit_split.py.
+
+    For EACH block independently, evaluate every candidate clip_ratio (full
+    encode->decode round trip) and keep the one minimizing that block's
+    reconstruction MSE. No calibration state - the clip is chosen from the
+    block's own data. Returns (codes, scale) with the per-block-optimal clip
+    already baked into `scale`, so gf4_decode_vector_ref inverts it unchanged.
+
+    x, mu: same conventions as gf4_quantize_vector_ref (x flat, mu optional
+    per-channel and tiled across blocks). mu subtracted before RMS/quantize."""
+    assert x.shape[0] % block == 0
+    n_blocks = x.shape[0] // block
+    xb = x.reshape(n_blocks, block).astype(np.float32)
+    if mu is not None:
+        assert mu.shape[0] % block == 0, "mu length must be a multiple of block"
+        n_blocks_per_row = mu.shape[0] // block
+        assert n_blocks % n_blocks_per_row == 0, "n_blocks must be a multiple of mu's n_blocks_per_row"
+        mu_b = mu.reshape(n_blocks_per_row, block)
+        xb = xb - np.tile(mu_b, (n_blocks // n_blocks_per_row, 1))
+    rms = np.sqrt((xb ** 2).mean(axis=1) + 1e-12).astype(np.float32)   # [n_blocks]
+
+    best_mse   = np.full(n_blocks, np.inf, dtype=np.float32)
+    best_codes = np.zeros((n_blocks, block), dtype=np.uint8)
+    best_scale = (rms * candidates[0]).astype(np.float32)
+    for alpha in candidates:
+        scale = (rms * alpha).astype(np.float32)                       # [n_blocks]
+        codes = gf4_encode_one(xb / scale[:, None])                    # [n_blocks, block]
+        recon = gf4_decode_one(codes) * scale[:, None]
+        mse   = ((xb - recon) ** 2).mean(axis=1)                       # [n_blocks]
+        better = mse < best_mse
+        best_mse   = np.where(better, mse, best_mse)
+        best_codes = np.where(better[:, None], codes, best_codes)
+        best_scale = np.where(better, scale, best_scale)
+    return best_codes.reshape(-1), best_scale
+
+
 def pack_codes_ref(codes: np.ndarray) -> np.ndarray:
     """2 codes per byte, low nibble first - matches gf4_pack()."""
     assert codes.shape[0] % 2 == 0

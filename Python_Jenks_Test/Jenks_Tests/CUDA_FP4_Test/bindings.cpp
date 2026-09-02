@@ -25,6 +25,10 @@ void launch_gf4_encode_warp32(const float* d_x, uint8_t* d_codes, __half* d_scal
 void launch_gf4_encode_naive(const float* d_x, uint8_t* d_codes, __half* d_scales,
                               int n_blocks, float clip_ratio, const float* d_mu,
                               int n_blocks_per_row, cudaStream_t stream);
+void launch_gf4_encode_perblock_adaptive(const float* d_x, uint8_t* d_codes, __half* d_scales,
+                                          int n_blocks, const float* d_clip_candidates,
+                                          int n_candidates, const float* d_mu,
+                                          int n_blocks_per_row, cudaStream_t stream);
 void launch_gf4_decode(const uint8_t* d_codes, const __half* d_scales, float* d_x_out,
                         int n_blocks, cudaStream_t stream);
 
@@ -132,6 +136,47 @@ std::vector<torch::Tensor> gf4_encode(torch::Tensor x, double clip_ratio, bool f
         launch_gf4_encode_naive(x.data_ptr<float>(), codes.data_ptr<uint8_t>(), scales_ptr,
                                  n_blocks, (float)clip_ratio, mu_ptr, n_blocks_per_row, stream);
     }
+    return {codes, scales};
+}
+
+// ---------------------------------------------------------------------------
+// GF4 per-block ADAPTIVE-clip encoder: each block picks the clip in
+// clip_candidates that minimizes its own reconstruction MSE (online, no
+// calibration). Matches quantize_activations_gf4_adaptive() in bit_split.py.
+// Returns {codes, scales}, decodable by gf4_decode exactly like gf4_encode's
+// output - the chosen per-block clip is baked into the per-block scale.
+// ---------------------------------------------------------------------------
+std::vector<torch::Tensor> gf4_encode_adaptive(torch::Tensor x, torch::Tensor clip_candidates,
+                                               torch::Tensor mu) {
+    CHECK_CUDA(x); CHECK_CONTIG(x);
+    TORCH_CHECK(x.dtype() == torch::kFloat32, "x must be fp32");
+    TORCH_CHECK(x.numel() % 32 == 0, "x.numel() must be a multiple of 32");
+    CHECK_CUDA(clip_candidates); CHECK_CONTIG(clip_candidates);
+    TORCH_CHECK(clip_candidates.dtype() == torch::kFloat32, "clip_candidates must be fp32");
+    TORCH_CHECK(clip_candidates.numel() > 0, "clip_candidates must be non-empty");
+    int n_blocks = x.numel() / 32;
+    int n_candidates = clip_candidates.numel();
+
+    auto codes = torch::empty({n_blocks * 16}, x.options().dtype(torch::kUInt8));
+    auto scales = torch::empty({n_blocks}, x.options().dtype(torch::kFloat16));
+
+    const float* mu_ptr = nullptr;
+    int n_blocks_per_row = 0;
+    if (mu.numel() > 0) {
+        CHECK_CUDA(mu); CHECK_CONTIG(mu);
+        TORCH_CHECK(mu.dtype() == torch::kFloat32, "mu must be fp32");
+        TORCH_CHECK(mu.numel() % 32 == 0, "mu.numel() (row width) must be a multiple of 32");
+        mu_ptr = mu.data_ptr<float>();
+        n_blocks_per_row = mu.numel() / 32;
+        TORCH_CHECK(n_blocks % n_blocks_per_row == 0,
+                    "total n_blocks must be a multiple of mu's n_blocks_per_row");
+    }
+
+    auto stream = at::cuda::getCurrentCUDAStream();
+    __half* scales_ptr = reinterpret_cast<__half*>(scales.data_ptr<at::Half>());
+    launch_gf4_encode_perblock_adaptive(x.data_ptr<float>(), codes.data_ptr<uint8_t>(), scales_ptr,
+                                        n_blocks, clip_candidates.data_ptr<float>(), n_candidates,
+                                        mu_ptr, n_blocks_per_row, stream);
     return {codes, scales};
 }
 
@@ -386,6 +431,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("gf4_encode", &gf4_encode, "GF4 activation encoder (scale = rms*clip_ratio)",
           py::arg("x"), py::arg("clip_ratio") = 2.5, py::arg("fused") = true,
           py::arg("mu") = torch::empty({0}));
+    m.def("gf4_encode_adaptive", &gf4_encode_adaptive,
+          "GF4 per-block adaptive-clip encoder (online per-block MSE clip search; "
+          "matches quantize_activations_gf4_adaptive in bit_split.py)",
+          py::arg("x"), py::arg("clip_candidates"), py::arg("mu") = torch::empty({0}));
     m.def("gf4_decode", &gf4_decode, "GF4 decode: packed codes + scale -> dense fp32 activations",
           py::arg("codes"), py::arg("scales"), py::arg("n_blocks"));
     m.def("e2m1_fused_gemv", &e2m1_fused_gemv, "Fused E2M1-dequant + GEMV (no materialized W)",

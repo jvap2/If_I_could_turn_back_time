@@ -234,6 +234,12 @@ _cli.add_argument("--fixed-clip", type=float, default=None,
                    help="Use a single fixed activation clip ratio (e.g. 2.5) instead of the "
                         "per-layer adaptive clip search. Weight-side Hessian reconstruction is "
                         "unchanged, so this gives the fixed-clip + Hessian form of GF4.")
+_cli.add_argument("--per-block-clip", action="store_true",
+                   help="PER-BLOCK adaptive activation clip: each 32-elem block picks the clip "
+                        "in the candidate grid that minimizes its own reconstruction MSE, online, "
+                        "every forward (no per-layer calibration). Matches the original FP_Quant "
+                        "experiments' quantize_activations_gf4_adaptive (bit_split.py). This is the "
+                        "'alpha per block' iso-configuration. Mutually exclusive with --fixed-clip.")
 _cli.add_argument("--hess-block", type=int, default=32,
                    help="Block size for the E2M1/Hessian weight reconstruction (must divide "
                         "each target layer's in_features and be <= 32, the kernel max). Set 16 "
@@ -292,9 +298,16 @@ ACT_HAD_BLOCK = 32              # blockwise Hadamard block size for the activati
                                  # than trying to match a specific block size from the notebook, and still
                                  # a real randomized-Hadamard rotation, not a placeholder
 CLIP_RATIO_CANDIDATES = (1.5, 2.0, 2.5, 3.0, 4.0)  # matches calibrate_model_gf4's real search grid
+PER_BLOCK_CLIP = _args.per_block_clip               # per-block online adaptive clip (bit_split parity)
+if _args.per_block_clip and _args.fixed_clip is not None:
+    raise SystemExit("--per-block-clip and --fixed-clip are mutually exclusive: per-block searches "
+                     "the grid per block, fixed-clip pins one value.")
 if _args.fixed_clip is not None:                    # fixed-clip + Hessian form (no per-layer search)
     CLIP_RATIO_CANDIDATES = (_args.fixed_clip,)
     print(f"[fixed-clip] activation clip ratio pinned to {_args.fixed_clip} (adaptive search disabled)")
+if PER_BLOCK_CLIP:                                  # each block picks its own clip from this grid, online
+    print(f"[per-block-clip] online per-block adaptive clip over {CLIP_RATIO_CANDIDATES} "
+          f"(no per-layer calibration; alpha travels with each block's data)")
 GF4_BLOCK = 32
 # Outlier-layer retention, matching the deck's own "down_proj / fc2 / LM head
 # stay FP16" policy. The FFN down-projection has a different name per model
@@ -820,20 +833,27 @@ if NEED_CALIB:
 
             # Clip-ratio calibration search: real gf4_encode(mu=...)/gf4_decode
             # round trip per candidate, exactly like bench.py section 5d, but on
-            # this layer's real (rotated) calibration activations.
-            X_had_flat = X_had.reshape(-1).contiguous()
-            n_blocks_cal = X_had_flat.numel() // GF4_BLOCK
-            best_alpha, best_mse = CLIP_RATIO_CANDIDATES[0], float("inf")
-            for alpha in CLIP_RATIO_CANDIDATES:
-                codes_c, scales_c = ext.gf4_encode(X_had_flat, alpha, True, mu)
-                x_dec_c = ext.gf4_decode(codes_c, scales_c, n_blocks_cal)
-                # gf4_decode doesn't re-add mu (by design - see gf4_decode_kernel),
-                # so compare against the mean-centered activations it's meant to
-                # reconstruct, matching clip_ratio_search_ref's convention.
-                mu_tiled = mu.repeat(X_had.shape[0])
-                mse_c = float(((X_had_flat - mu_tiled - x_dec_c) ** 2).mean().item())
-                if mse_c < best_mse:
-                    best_mse, best_alpha = mse_c, alpha
+            # this layer's real (rotated) calibration activations. SKIPPED under
+            # --per-block-clip: there the clip is chosen per block, online, from
+            # each forward's own activations, so there is nothing to calibrate
+            # per layer (best_alpha is unused by the per-block forward path).
+            X_had_flat = None
+            if PER_BLOCK_CLIP:
+                best_alpha = None
+            else:
+                X_had_flat = X_had.reshape(-1).contiguous()
+                n_blocks_cal = X_had_flat.numel() // GF4_BLOCK
+                best_alpha, best_mse = CLIP_RATIO_CANDIDATES[0], float("inf")
+                for alpha in CLIP_RATIO_CANDIDATES:
+                    codes_c, scales_c = ext.gf4_encode(X_had_flat, alpha, True, mu)
+                    x_dec_c = ext.gf4_decode(codes_c, scales_c, n_blocks_cal)
+                    # gf4_decode doesn't re-add mu (by design - see gf4_decode_kernel),
+                    # so compare against the mean-centered activations it's meant to
+                    # reconstruct, matching clip_ratio_search_ref's convention.
+                    mu_tiled = mu.repeat(X_had.shape[0])
+                    mse_c = float(((X_had_flat - mu_tiled - x_dec_c) ** 2).mean().item())
+                    if mse_c < best_mse:
+                        best_mse, best_alpha = mse_c, alpha
 
             rot_quant_state[name] = dict(
                 K=K, N=N,
@@ -855,7 +875,10 @@ if per_layer_relerr:
     for name, err in per_layer_relerr:
         print(f"  {name:45s} {err:.4f}")
     print()
-if rot_quant_state:
+if rot_quant_state and PER_BLOCK_CLIP:
+    print(f"Activation clip: PER-BLOCK adaptive over {CLIP_RATIO_CANDIDATES} (chosen online per "
+          f"32-elem block every forward; no per-layer alpha* to report).\n")
+elif rot_quant_state:
     print("Per-layer calibrated clip_ratio (alpha*), Hadamard-rotated basis:")
     for name in rot_quant_state:
         print(f"  {name:45s} alpha*={rot_quant_state[name]['clip_ratio']}")
@@ -1013,6 +1036,11 @@ def make_w4a4_forward(st, ext_ref, kernel_device):
     had_block = st["had_block"]
     mu = st["mu"].to(kernel_device)
     clip_ratio = st["clip_ratio"]
+    # Per-block adaptive clip: candidate grid lives on the kernel device; each
+    # block picks its own clip online (see gf4_encode_adaptive). Built once per
+    # layer closure, not per forward call.
+    clip_candidates_t = (torch.tensor(CLIP_RATIO_CANDIDATES, dtype=torch.float32, device=kernel_device)
+                         if PER_BLOCK_CLIP else None)
 
     def forward(x):
         orig_dtype = x.dtype
@@ -1021,7 +1049,11 @@ def make_w4a4_forward(st, ext_ref, kernel_device):
         x_flat = x.reshape(-1, K).float().to(kernel_device).contiguous()
         x_had = ext_ref.hadamard_fwht(x_flat, had_block, d_sign)          # REAL kernel, every forward call
         n_blocks = x_had.numel() // GF4_BLOCK
-        codes, scales = ext_ref.gf4_encode(x_had.reshape(-1).contiguous(), clip_ratio, True, mu)  # REAL kernel
+        if PER_BLOCK_CLIP:
+            # each block searches the grid for its own MSE-optimal clip, online
+            codes, scales = ext_ref.gf4_encode_adaptive(x_had.reshape(-1).contiguous(), clip_candidates_t, mu)
+        else:
+            codes, scales = ext_ref.gf4_encode(x_had.reshape(-1).contiguous(), clip_ratio, True, mu)  # REAL kernel
         x_q = ext_ref.gf4_decode(codes, scales, n_blocks).reshape(x_had.shape)                     # REAL kernel
         W_half = W_half_cpu.to(kernel_device, non_blocking=True)          # stream this layer's weight in
         y = x_q.half() @ W_half.t()

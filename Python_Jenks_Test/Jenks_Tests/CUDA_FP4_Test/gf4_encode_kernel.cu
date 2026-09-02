@@ -200,3 +200,92 @@ void launch_gf4_decode(const uint8_t* d_codes, const __half* d_scales, float* d_
     const int blocks = (n_blocks + warps_per_block - 1) / warps_per_block;
     gf4_decode_kernel<<<blocks, threads, 0, stream>>>(d_codes, d_scales, d_x_out, n_blocks);
 }
+
+// ---------------------------------------------------------------------------
+// Per-block ADAPTIVE-clip encoder (GF4_BLOCK == 32, one warp per block).
+//
+// Matches quantize_activations_gf4_adaptive() in
+// FP_Quantization_Experiments/bit_split.py - the per-block ONLINE clip
+// selection the original FP_Quant experiments ran. Instead of one per-layer
+// clip_ratio, every block independently searches a small candidate grid and
+// keeps the clip minimizing THAT block's reconstruction MSE. There is no
+// calibration state: the clip is (re)chosen from the block's own data on every
+// forward, so a block's alpha travels with its data, not with a layer-wide
+// constant. This is the "alpha per block" iso-configuration.
+//
+// The candidate loop reuses the block's single RMS reduction and reduces each
+// candidate's MSE in-register via warp shuffles - same amortization as the
+// single-clip fused encoder. best_mse is warp-uniform after the reduction, so
+// the "is this candidate better?" decision is identical on all 32 lanes (no
+// divergence); each lane simply keeps its own winning code.
+// d_clip_candidates: length n_candidates, device pointer (e.g. {1.5,2,2.5,3,4}).
+// d_mu: optional per-channel mean (same nullable/tiling convention as above).
+// ---------------------------------------------------------------------------
+__global__ void gf4_encode_perblock_adaptive_kernel(const float* __restrict__ x,
+                                                     uint8_t* __restrict__ codes_packed,
+                                                     __half* __restrict__ scales,
+                                                     int n_blocks,
+                                                     const float* __restrict__ clip_candidates,
+                                                     int n_candidates,
+                                                     const float* __restrict__ mu,
+                                                     int n_blocks_per_row) {
+    const int block_id = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    if (block_id >= n_blocks) return;
+    const int lane = threadIdx.x & 31;
+
+    float xi = x[(size_t)block_id * 32 + lane];
+    if (mu != nullptr) {
+        const int block_within_row = block_id % n_blocks_per_row;
+        xi -= mu[block_within_row * 32 + lane];   // real pipeline: x_h = x_h - mu, before RMS/quantize
+    }
+
+    // Per-block RMS (shared across every candidate clip) - one warp reduction.
+    float sumsq = xi * xi;
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sumsq += __shfl_xor_sync(0xFFFFFFFF, sumsq, offset);
+    }
+    const float rms = sqrtf(sumsq / 32.0f + 1e-12f);
+
+    // Online per-block clip search: each candidate is a full encode->decode
+    // round trip whose block MSE is warp-reduced; keep the smallest.
+    float   best_mse   = 3.4e38f;                       // ~FLT_MAX; candidate 0 always wins first
+    uint8_t best_code  = 0;
+    float   best_scale = rms * clip_candidates[0];
+    for (int c = 0; c < n_candidates; ++c) {
+        const float   scale = rms * clip_candidates[c];
+        const uint8_t code  = gf4_encode_one(xi / scale);      // this lane's code for this clip
+        const float   recon = gf4_decode_one(code) * scale;    // signed reconstruction
+        const float   e     = xi - recon;
+        float mse = e * e;
+#pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            mse += __shfl_xor_sync(0xFFFFFFFF, mse, offset);   // block sum of squared error (uniform on all lanes)
+        }
+        if (mse < best_mse) {          // warp-uniform decision -> no divergence
+            best_mse   = mse;
+            best_code  = code;         // each lane keeps its own winning code
+            best_scale = scale;
+        }
+    }
+
+    // Pack two adjacent lanes' winning codes, same layout as the other encoders.
+    uint8_t other_code = __shfl_down_sync(0xFFFFFFFF, best_code, 1);
+    if ((lane & 1) == 0) {
+        codes_packed[(size_t)block_id * 16 + (lane / 2)] = gf4_pack(best_code, other_code);
+    }
+    if (lane == 0) {
+        scales[block_id] = __float2half(best_scale);   // store the FULL per-block scale (rms*alpha*)
+    }
+}
+
+void launch_gf4_encode_perblock_adaptive(const float* d_x, uint8_t* d_codes, __half* d_scales,
+                                          int n_blocks, const float* d_clip_candidates,
+                                          int n_candidates, const float* d_mu,
+                                          int n_blocks_per_row, cudaStream_t stream) {
+    const int warps_per_block = 8;
+    const int threads = warps_per_block * 32;
+    const int blocks = (n_blocks + warps_per_block - 1) / warps_per_block;
+    gf4_encode_perblock_adaptive_kernel<<<blocks, threads, 0, stream>>>(
+        d_x, d_codes, d_scales, n_blocks, d_clip_candidates, n_candidates, d_mu, n_blocks_per_row);
+}
