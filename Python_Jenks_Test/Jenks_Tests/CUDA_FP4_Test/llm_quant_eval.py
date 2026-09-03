@@ -240,6 +240,14 @@ _cli.add_argument("--per-block-clip", action="store_true",
                         "every forward (no per-layer calibration). Matches the original FP_Quant "
                         "experiments' quantize_activations_gf4_adaptive (bit_split.py). This is the "
                         "'alpha per block' iso-configuration. Mutually exclusive with --fixed-clip.")
+_cli.add_argument("--residual-passes", type=int, default=1,
+                   help="N-pass RESIDUAL GF4 on activations: q=0; repeat N times q += GF4(x-q). "
+                        "N=1 (default) is single-pass; N=2 is the residual-GF4 headline; N=4 is "
+                        "residual4. Codes are summed in fp16 before the GEMM (matches "
+                        "quantize_activations_gf4_residual/_npass in bit_split.py). Pass "
+                        "--fixed-clip 2.5 alongside to reproduce the deployed Residual GF4 rows "
+                        "(fixed 2.5 per pass); combine with --per-block-clip for per-block clip "
+                        "in every pass.")
 _cli.add_argument("--hess-block", type=int, default=32,
                    help="Block size for the E2M1/Hessian weight reconstruction (must divide "
                         "each target layer's in_features and be <= 32, the kernel max). Set 16 "
@@ -299,9 +307,15 @@ ACT_HAD_BLOCK = 32              # blockwise Hadamard block size for the activati
                                  # a real randomized-Hadamard rotation, not a placeholder
 CLIP_RATIO_CANDIDATES = (1.5, 2.0, 2.5, 3.0, 4.0)  # matches calibrate_model_gf4's real search grid
 PER_BLOCK_CLIP = _args.per_block_clip               # per-block online adaptive clip (bit_split parity)
+RESIDUAL_PASSES = _args.residual_passes             # N-pass residual GF4 on activations (>=1)
+if RESIDUAL_PASSES < 1:
+    raise SystemExit("--residual-passes must be >= 1")
 if _args.per_block_clip and _args.fixed_clip is not None:
     raise SystemExit("--per-block-clip and --fixed-clip are mutually exclusive: per-block searches "
                      "the grid per block, fixed-clip pins one value.")
+if RESIDUAL_PASSES > 1:
+    print(f"[residual-passes] {RESIDUAL_PASSES}-pass residual GF4 on activations "
+          f"(codes summed in fp16 before the GEMM)")
 if _args.fixed_clip is not None:                    # fixed-clip + Hessian form (no per-layer search)
     CLIP_RATIO_CANDIDATES = (_args.fixed_clip,)
     print(f"[fixed-clip] activation clip ratio pinned to {_args.fixed_clip} (adaptive search disabled)")
@@ -1041,6 +1055,18 @@ def make_w4a4_forward(st, ext_ref, kernel_device):
     # layer closure, not per forward call.
     clip_candidates_t = (torch.tensor(CLIP_RATIO_CANDIDATES, dtype=torch.float32, device=kernel_device)
                          if PER_BLOCK_CLIP else None)
+    _empty_mu = torch.empty(0, dtype=torch.float32, device=kernel_device)
+
+    def _encode_decode(sig_flat, n_blocks, use_mu):
+        # One GF4 pass on a flat signal -> dequantized reconstruction.
+        # use_mu=True means the encoder mean-centers with this layer's mu (only
+        # the first residual pass; residuals are already ~zero-mean).
+        mu_arg = mu if use_mu else _empty_mu
+        if PER_BLOCK_CLIP:
+            codes, scales = ext_ref.gf4_encode_adaptive(sig_flat, clip_candidates_t, mu_arg)
+        else:
+            codes, scales = ext_ref.gf4_encode(sig_flat, clip_ratio, True, mu_arg)
+        return ext_ref.gf4_decode(codes, scales, n_blocks)
 
     def forward(x):
         orig_dtype = x.dtype
@@ -1049,12 +1075,20 @@ def make_w4a4_forward(st, ext_ref, kernel_device):
         x_flat = x.reshape(-1, K).float().to(kernel_device).contiguous()
         x_had = ext_ref.hadamard_fwht(x_flat, had_block, d_sign)          # REAL kernel, every forward call
         n_blocks = x_had.numel() // GF4_BLOCK
-        if PER_BLOCK_CLIP:
-            # each block searches the grid for its own MSE-optimal clip, online
-            codes, scales = ext_ref.gf4_encode_adaptive(x_had.reshape(-1).contiguous(), clip_candidates_t, mu)
+        if RESIDUAL_PASSES > 1:
+            # N-pass residual GF4 on the mean-centered activation: pass 1 centers
+            # via mu (kernel subtracts it), later passes quantize the leftover
+            # residual (already ~zero-mean, so no mu). Codes summed in fp16 before
+            # the GEMM (matches quantize_activations_gf4_residual in bit_split.py;
+            # mu compensated by bias_correction after the GEMM, as in single-pass).
+            x_centered = x_had - mu.unsqueeze(0)                          # [rows, K], mean-centered
+            q = torch.zeros_like(x_had)
+            for _ in range(RESIDUAL_PASSES):
+                r = (x_centered - q).reshape(-1).contiguous()
+                q = q + _encode_decode(r, n_blocks, use_mu=False).reshape(x_had.shape)
+            x_q = q
         else:
-            codes, scales = ext_ref.gf4_encode(x_had.reshape(-1).contiguous(), clip_ratio, True, mu)  # REAL kernel
-        x_q = ext_ref.gf4_decode(codes, scales, n_blocks).reshape(x_had.shape)                     # REAL kernel
+            x_q = _encode_decode(x_had.reshape(-1).contiguous(), n_blocks, use_mu=True).reshape(x_had.shape)
         W_half = W_half_cpu.to(kernel_device, non_blocking=True)          # stream this layer's weight in
         y = x_q.half() @ W_half.t()
         del W_half                                                        # free before the next layer streams its own
@@ -1078,7 +1112,7 @@ if WANT_W4A4:
     t0 = time.time()
     ppl_w4a4 = compute_perplexity(model, eval_windows)
     print(f"W4A4 PPL: {ppl_w4a4:.4f}  ({time.time()-t0:.1f}s)\n")
-    _append_result("w4a4", ppl_w4a4)
+    _append_result(f"w4a4_residual{RESIDUAL_PASSES}" if RESIDUAL_PASSES > 1 else "w4a4", ppl_w4a4)
 
     for name, module in targets:
         module.forward = orig_forwards[name]
