@@ -1,4 +1,4 @@
-from custom_optimizer import Prune_Score_v3, train_one_step_prune_v2, train_one_step_prune, Prune_Score, Prune_Score_v2, train_one_step_prune_global, Prune_Score_Global, train_one_step_prune_v2_ResNet, train_one_step_prune_v2_ResNetETF, train_one_step_prune_v2_ETF, train_one_step_prune_HPO,Prune_Score_Reset
+﻿from custom_optimizer import Prune_Score_v3, train_one_step_prune_v2, train_one_step_prune, Prune_Score, Prune_Score_v2, train_one_step_prune_global, Prune_Score_Global, train_one_step_prune_v2_ResNet, train_one_step_prune_v2_ResNetETF, train_one_step_prune_v2_ETF, train_one_step_prune_HPO,Prune_Score_Reset
 from time import time
 from cuda_helpers import get_memory_free_MiB
 import torch
@@ -1439,11 +1439,11 @@ def train_val_loop_global(model, train_dataloader, val_dataloader, optimizer, lo
         print(f"Epoch: {epoch}| Sparsity: {sparsity: .5f}", file=f) 
 
 
-def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device, experiment_name, model_name, timestamp, 
+def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_fn, scheduler, accuracy, top5accuracy, writer, device, experiment_name, model_name, timestamp,
                    train_filename, val_filename, log_filename, sparsity_filename, prune_filename, debug_filename, jenks_filename,
                    prune_count=0, one_update=False, EPOCHS=100, sparsity=0.0,
                    prune_epoch_list=None, prune_epoch=0, prune_between=1, prune_ratio=0.5, one_shot=False, mask=True,
-                   mag_prune=False, bias_prune=False, kill_velocity=False, l2=0.0, lambda_=0.0, warmup_epochs=0, min_epochs=1, elem_bias = False, accum_steps=1, weight_reset=False):
+                   mag_prune=False, bias_prune=False, kill_velocity=False, l2=0.0, lambda_=0.0, warmup_epochs=0, min_epochs=1, elem_bias = False, accum_steps=1, weight_reset=False, ema_model=None):
     no_jenks =False
     l2 = True
     mag_prune = True
@@ -1456,6 +1456,7 @@ def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_
     print(f"Prune epoch: {prune_epoch}")
     print(f"Prune between: {prune_between}")
     max_val_acc = 0.0
+    max_ema_val_acc = 0.0
     while (sparsity < prune_ratio and epoch<EPOCHS) or epoch<=min_epochs:    # Training loop
         print("Epoch: ", epoch)
         epoch += 1
@@ -1510,6 +1511,8 @@ def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_
                     ## Go through all the parameters and set the pruned ones to zero
                 for name, param in model.named_parameters():
                     param.data = param.data * optimizer.state[param]['mask']
+            if ema_model is not None:
+                ema_model.update_parameters(model)
             l2_reg = sum(torch.norm(p) ** 2 for p in model.parameters())
             lr_prune = sum(torch.norm(p)**2 for p in model.parameters() if p.dim() in [2, 4])
             with open(train_filename, "a") as f:
@@ -1527,6 +1530,8 @@ def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_
                     ## Go through all the parameters and set the pruned ones to zero
                     for name, param in model.named_parameters():
                         param.data = param.data * optimizer.state[param]['mask']
+                if ema_model is not None:
+                    ema_model.update_parameters(model)
                 # acc = accuracy(y_pred, y)
                 # acc_5 = top5accuracy(y_pred, y)
                 train_loss += loss.item()
@@ -1554,11 +1559,15 @@ def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_
             #     param_group['momentum'] = 0.99
             
         model.eval()
+        if ema_model is not None:
+            ema_model.eval()
         with torch.inference_mode():
             with open(val_filename,"a") as f:
                 print(f"Epoch: {epoch}", file=f)
             val_loss, val_acc = 0.0, 0.0
             val_top5acc = 0.0
+            ema_val_acc = 0.0
+            ema_val_top5acc = 0.0
             count_val = 0
             for X, y in val_dataloader:
                 count_val += 1
@@ -1572,16 +1581,26 @@ def train_val_loop_HPO(model, train_dataloader, val_dataloader, optimizer, loss_
                 top5_acc = top5accuracy(y_pred, y)
                 val_top5acc += top5_acc
                 val_acc += acc
+                if ema_model is not None:
+                    ema_pred = ema_model(X)
+                    ema_val_acc += accuracy(ema_pred, y)
+                    ema_val_top5acc += top5accuracy(ema_pred, y)
                 with open(val_filename,"a") as f:
                     print(f"Iteration: {count_val}| Loss: {val_loss/count_val: .5f}| Acc: {val_acc/count_val: .5f} | Top 5 Acc {val_top5acc/count_val}", file=f)
             if val_acc/count_val > max_val_acc and epoch>prune_epoch:
                 max_val_acc = val_acc/count_val
                 torch.save(model.state_dict(), f"models/best_{timestamp}_{experiment_name}_{model_name}.pth")
+            if ema_model is not None:
+                ema_avg = ema_val_acc / count_val
+                with open(val_filename, "a") as f:
+                    print(f"EMA Val Acc: {ema_avg:.5f} | EMA Top5: {ema_val_top5acc/count_val:.5f}", file=f)
+                if ema_avg > max_ema_val_acc and epoch > prune_epoch:
+                    max_ema_val_acc = ema_avg
+                    torch.save(ema_model.module.state_dict(), f"models/best_ema_{timestamp}_{experiment_name}_{model_name}.pth")
         writer.add_scalars(main_tag="Loss", tag_scalar_dict={"train/loss": train_loss, "val/loss": val_loss}, global_step=epoch)
         writer.add_scalars(main_tag="Accuracy", tag_scalar_dict={"train/acc": train_acc, "val/acc": val_acc}, global_step=epoch)
         with open("LeNet300_100_MNIST_output/output_(1).txt","a") as f:
             print(f"Epoch: {epoch}| Train loss: {train_loss: .5f}| Train acc: {train_acc: .5f}| Val loss: {val_loss: .5f}| Val acc: {val_acc: .5f}", file=f)
-
 
 
     val_loss, val_acc = 0.0, 0.0

@@ -1,0 +1,183 @@
+\begin{table*}[t]
+\centering
+\begingroup
+\setlength{\tabcolsep}{2pt}
+\scriptsize
+\caption{
+WikiText-2 perplexity ($\downarrow$), 2048-token non-overlapping protocol of \cite{frantar2023gptq}.
+Parenthetical $\Delta$ is the increase over FP16.
+W4A16 rows are weight-only; W4A4 rows quantize activations.
+$^\dagger$ numbers reported by the original authors.
+$^\ddagger$ The GF4-pipeline W4A16 row is the weights-only ceiling (E2M1 weights) the W4A4 rows build on.
+$^\S$ Residual GF4 sums both FP4 codes in full precision before the GEMM (W4A16 throughput; see \S\ref{sub:w4a4}).
+$^\parallel$ OPAL's ``W4A4/7'' keeps post-LayerNorm activations at 4-bit but all other activations at 7-bit
+(mixed precision, not uniform W4A4), and uses INT4 weights via OWQ rather than FP4.
+$^{\#}$ The hardware-constrained codebook rows use the codebook-comparison harness
+(NVFP4-absmax weights, block-32, \emph{no} Hessian reconstruction).
+$^{\ast}$ Ablation rows: \texttt{RETAIN\_FP16}$=\emptyset$ — lm\_head and fc2 are also quantized
+(no outlier retention); OPT-125M through 6.7B, LLaMA-2-13B, LLaMA-3-8B, and Mistral-7B available, remaining models pending.
+}
+\label{tab:llm_comparison_clean}
+\begin{tabular}{llccccccccccc}
+\toprule
+\multirow{2}{*}{Method} & \multirow{2}{*}{Format} &
+\multicolumn{6}{c}{OPT} &
+\multicolumn{2}{c}{LLaMA} &
+\multicolumn{3}{c}{Mistral / Qwen} \\
+\cmidrule(lr){3-8}\cmidrule(lr){9-10}\cmidrule(lr){11-13}
+ & & 125M & 1.3B & 2.7B & 6.7B & 13B & 30B & 2-13B & 3-8B & M-7B & Q-7B & Q-14B \\
+\midrule
+\multicolumn{13}{l}{\textbf{Full Precision Baselines}} \\
+FP16 (ours)
+  & FP16
+  & \textit{27.66} & \textit{14.62} & \textit{12.47} & \textit{10.86}
+  & \textit{10.13} & \textit{9.56}  & \textit{4.88}  & \textit{6.14}
+  & \textit{5.25}  & \textit{6.85}  & \textit{5.29}  \\
+\midrule
+\multicolumn{13}{l}{\textbf{W4A16, INT4 (Prior Work)}} \\
+RTN$^\dagger$
+  & INT4
+  & 33.80 (+6.15) & 17.21 (+2.58) & 17.52 (+5.05) & 13.38 (+2.52)
+  & 11.32 (+1.19) & 10.98 (+1.42) & -- & -- & -- & -- & -- \\
+GPTQ$^\dagger$~\cite{frantar2023gptq}
+  & INT4
+  & 31.12 (+3.47) & 15.47 (+0.84) & 12.87 (+0.40) & 11.39 (+0.53)
+  & 10.31 (+0.18) & 9.63 (+0.07)  & -- & -- & -- & -- & -- \\
+AWQ$^\dagger$~\cite{lin2023awq}
+  & INT4
+  & -- & 15.70 (+1.07) & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+OmniQuant$^\dagger$~\cite{shao2023omniquant}
+  & INT4
+  & -- & 14.82 (+0.19) & 12.62 (+0.15) & 10.96 (+0.10)
+  & -- & -- & -- & -- & -- & -- & -- \\
+OPAL (MX-OPAL)$^{\dagger\parallel}$~\cite{koo2024opal}
+  & INT4 (W4A4/7)
+  & -- & -- & -- & 10.98 (+0.12)
+  & 10.31 (+0.18) & -- & 5.30 (+0.42) & -- & -- & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textbf{W4A16, FP4 (This Work)}} \\
+GF4 pipeline (ours)$^\ddagger$
+  & FP4 (W4A16)
+  & 30.97 (+3.37) & 16.81 (+2.19) & 13.29 (+0.81) & 12.11 (+1.25)
+  & 10.51 (+0.38) & 9.87 (+0.31)  & 4.95 (+0.07)  & 6.50 (+0.36)
+  & -- & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textbf{W4A4 (Prior Work)}} \\
+LLM-FP4$^\dagger$~\cite{liu2023llmfp4}
+  & FP4 (W4A4)
+  & 34.15 (+6.50) & 16.68 (+2.05) & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+RPTQ$^\dagger$~\cite{yuan2023rptq}
+  & INT4 (W4A4)
+  & -- & -- & -- & -- & 12.74 (+2.61) & 11.15 (+1.59) & -- & -- & -- & -- & -- \\
+QuaRot$^\dagger$~\cite{quarot2024}
+  & INT4 (W4A4KV4)
+  & -- & -- & -- & -- & -- & -- & 5.40 (+0.52) & 8.16 (+2.02) & -- & -- & -- \\
+SpinQuant$^\dagger$~\cite{liu2025spinquant}
+  & INT4 (W4A4KV4)
+  & -- & -- & -- & -- & -- & -- & 5.30 (+0.42) & 7.30 (+1.16) & -- & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textbf{W4A4, FP4 Activations (This Work)}} \\
+NVFP4 fixed (ours)
+  & FP4 (W4A4)
+  & 36.14 (+8.54) & 18.88 (+4.26) & 13.59 (+1.11) & 12.54 (+1.68)
+  & 11.01 (+0.88) & 12.30 (+2.74) & 5.13 (+0.25)  & 6.98 (+0.84)
+  & -- & -- & -- \\
+NVFP4 adaptive (ours)
+  & FP4 (W4A4)
+  & 34.43 (+6.83) & 18.36 (+3.74) & 13.47 (+0.99) & 12.37 (+1.51)
+  & 10.92 (+1.03) & 11.14 (+1.58) & 5.04 (+0.16)  & 6.80 (+0.66)
+  & -- & -- & -- \\
+GF4 (ours)
+  & FP4 (W4A4)
+  & 34.02 (+6.42) & 18.68 (+4.06) & 13.56 (+1.08) & 12.45 (+1.59)
+  & 12.22 (+2.09) & 12.48 (+2.92) & 5.09 (+0.21)  & 6.90 (+0.76)
+  & -- & -- & -- \\
+Adaptive GF4 (ours)
+  & FP4 (W4A4)
+  & 33.33 (+5.73) & 18.30 (+3.68) & 13.44 (+0.96) & 12.35 (+1.49)
+  & 10.79 (+0.66) & 10.55 (+0.99) & 5.04 (+0.16)  & 6.75 (+0.61)
+  & -- & -- & -- \\
+Residual GF4 (ours)$^\S$
+  & FP4 (W4A4)
+  & \best{31.01}{(+3.41)} & \best{16.86}{(+2.24)} & \best{13.30}{(+0.82)}
+  & \best{12.11}{(+1.25)} & \best{10.51}{(+0.38)} & \best{9.87}{(+0.31)}
+  & \best{4.95}{(+0.07)} & \best{6.51}{(+0.37)}
+  & -- & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textbf{W4A4KV4, FP4 Activations (This Work)}} \\
+Adaptive GF4 + KV4 (ours)
+  & FP4 (W4A4KV4)
+  & 41.43 (+13.83) & 19.38 (+4.76) & 13.96 (+1.48) & 12.35 (+1.49)
+  & -- & -- & 4.75 & 6.42 & -- & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textbf{Hardware-constrained codebooks, FP4 activations (no Hessian; codebook harness$^{\#}$)}} \\
+round
+  & FP4 (W4A4)
+  & 32.92 & 17.76 & 13.50 & 12.00 & 10.71 & -- & -- & --
+  & 5.84 & 7.43 & 6.10 \\
+opt Q1.4
+  & FP4 (W4A4)
+  & 32.61 & 17.52 & 13.49 & 11.98 & 10.68 & -- & -- & --
+  & 5.78 & 7.40 & 6.06 \\
+opt +pc$\le$2
+  & FP4 (W4A4)
+  & 32.61 & 17.55 & 13.48 & 12.00 & 10.68 & -- & -- & --
+  & 5.78 & 7.39 & 6.05 \\
+\midrule
+\multicolumn{13}{l}{\textbf{W8A8 (context only)}} \\
+SmoothQuant$^\dagger$~\cite{xiao2023smoothquant}
+  & INT8 (W8A8)
+  & -- & -- & -- & 11.34 (+0.48) & -- & -- & -- & -- & -- & -- & -- \\
+%
+% ─────────────────────────────────────────────────────────────────────────────
+% Ablation: RETAIN_FP16 = ∅  (lm_head and fc2 also quantized; no outlier
+% retention).  Remaining models (OPT-6.7B+, LLaMA, Mistral, Qwen) pending.
+% ─────────────────────────────────────────────────────────────────────────────
+\midrule
+\multicolumn{13}{l}{\textbf{Ablation — no outlier retention (\texttt{RETAIN\_FP16}$=\emptyset$)$^{\ast}$}} \\
+\midrule
+\multicolumn{13}{l}{\textit{W4A16, FP4}} \\
+GF4 pipeline (ours)$^\ddagger$
+  & FP4 (W4A16)
+  & 32.39 (+4.74) & 16.64 (+2.02) & 13.59 (+1.12) & 12.39 (+1.53) & -- & -- & 5.12 (+0.24) & 7.19 (+1.05) & 5.59 (+0.34) & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textit{W4A4, FP4 Activations}} \\
+NVFP4 no-Hess (ours)
+  & FP4 (W4A4)
+  & 32.67 (+5.01) & 18.39 (+3.76) & 13.58 (+1.11) & 12.48 (+1.62) & -- & -- & 5.12 (+0.24) & 7.20 (+1.06) & 5.89 (+0.64) & -- & -- \\
+NVFP4 +Hess (ours)
+  & FP4 (W4A4)
+  & 38.00 (+10.35) & 18.59 (+3.96) & 13.87 (+1.40) & 12.88 (+2.02) & -- & -- & 5.32 (+0.43) & 7.72 (+1.58) & 6.01 (+0.76) & -- & -- \\
+GF4 (ours)
+  & FP4 (W4A4)
+  & 37.52 (+9.87)  & 19.01 (+4.39) & 13.96 (+1.49) & 12.94 (+2.08) & -- & -- & 5.40 (+0.52) & 7.80 (+1.67) & 6.10 (+0.84) & -- & -- \\
+Adaptive GF4 (ours)
+  & FP4 (W4A4)
+  & 35.34 (+7.69)  & 18.37 (+3.75) & 13.84 (+1.37) & 12.76 (+1.90) & -- & -- & 5.28 (+0.39) & 7.61 (+1.48) & 5.88 (+0.63) & -- & -- \\
+Residual GF4 (ours)$^\S$
+  & FP4 (W4A4)
+  & \best{32.41}{(+4.75)} & \best{16.75}{(+2.12)} & \best{13.59}{(+1.12)}
+  & \best{12.40}{(+1.54)} & -- & -- & \best{5.13}{(+0.24)} & \best{7.19}{(+1.06)} & \best{5.60}{(+0.34)} & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textit{W4A4KV4, FP4 Activations}} \\
+Adaptive GF4 + KV4 (ours)
+  & FP4 (W4A4KV4)
+  & 36.07 (+8.42) & 19.42 (+4.79) & 14.08 (+1.61) & 12.91 (+2.05) & -- & -- & 5.34 (+0.46) & 7.80 (+1.66) & 5.97 (+0.72) & -- & -- \\
+\midrule
+\multicolumn{13}{l}{\textit{Hardware-constrained codebooks (no Hessian)$^{\#}$}} \\
+round
+  & FP4 (W4A4)
+  & 32.54 (+4.88) & 18.69 (+4.07) & 13.60 (+1.13) & 12.44 (+1.58) & -- & -- & 5.17 (+0.28) & 7.42 (+1.28) & 5.96 (+0.71) & -- & -- \\
+opt Q1.4
+  & FP4 (W4A4)
+  & 32.05 (+4.40) & 18.21 (+3.59) & 13.52 (+1.04) & 12.37 (+1.50) & -- & -- & 5.18 (+0.30) & 7.31 (+1.18) & 5.88 (+0.63) & -- & -- \\
+opt +pc$\le$2
+  & FP4 (W4A4)
+  & 32.09 (+4.44) & 18.34 (+3.71) & 13.54 (+1.07) & 12.34 (+1.48) & -- & -- & 5.18 (+0.29) & 7.31 (+1.18) & 5.88 (+0.63) & -- & -- \\
+opt Q1.4 + KV4
+  & FP4 (W4A4KV4)
+  & 32.78 (+5.12) & 19.20 (+4.58) & 13.78 (+1.31) & 12.52 (+1.66) & -- & -- & 5.23 (+0.35) & 7.50 (+1.36) & 5.96 (+0.70) & -- & -- \\
+\bottomrule
+\end{tabular}
+\endgroup
+\end{table*}

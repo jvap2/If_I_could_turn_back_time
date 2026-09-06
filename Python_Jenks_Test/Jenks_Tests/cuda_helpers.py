@@ -57,9 +57,21 @@ def load_cuda(cuda_src, cpp_src, funcs, opt=False, verbose=False):
         module: Loaded Python extension module containing the compiled functions.
     """
     # Use load_inline to compile and load the CUDA and C++ source code
+    import sys as _sys
+    if opt:
+        _cuda_flags = ["-O3", "--use_fast_math", "--ptxas-options=-v",
+                       "-gencode", "arch=compute_86,code=sm_86"]
+        if _sys.platform == "win32":
+            _cuda_flags += ["--allow-unsupported-compiler"]
+        else:
+            _cuda_flags += ["-Xcompiler", "-fPIC"]
+    else:
+        _cuda_flags = []
+    import hashlib as _hashlib
+    _src_hash = _hashlib.md5((cuda_src + cpp_src + str(funcs) + str(_cuda_flags)).encode()).hexdigest()[:12]
     return load_inline(cuda_sources=[cuda_src], cpp_sources=[cpp_src], functions=funcs,
-                       extra_cuda_cflags=["-O3","--use_fast_math","-Xcompiler", "-fPIC","--ptxas-options=-v","-gencode", "arch=compute_86,code=sm_86"] if opt else [], 
-                       verbose=verbose, name=f"inline_ext_{os.getpid()}")
+                       extra_cuda_cflags=_cuda_flags,
+                       verbose=verbose, name=f"inline_ext_{_src_hash}")
 
 
 # Define CUDA boilerplate code and utility macros
